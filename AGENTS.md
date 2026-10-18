@@ -23,6 +23,9 @@ Nova для Android: приложение с активной адаптацие
 
 ## Сборка
 
+- PC-форк (`Nova-main`) использует этот каталог через junction
+  `C:\Users\User\Documents\Nova Android` (пути `../../Nova Android` в `go.mod`). Для Go-сборки PC
+  сначала выполнить `tools/deps/fetch_go_deps.sh`.
 - Требуются JDK 17, Android SDK Platform 34 и Gradle wrapper 9.3.1.
 - Debug: `./gradlew assembleGithubDebug` (Windows: `gradlew.bat assembleGithubDebug`);
   результат — `app/build/outputs/apk/github/debug/`.
