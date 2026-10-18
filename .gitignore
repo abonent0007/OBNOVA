@@ -5,6 +5,13 @@ local.properties
 captures/
 .cxx/
 
+# Fetched Go dependencies (tools/deps/fetch_go_deps.sh)
+build/deps/
+tools/amneziawg-go/
+tools/anet/
+tools/snowflake/
+tools/warp-plus/
+
 # IDE
 .idea/
 *.iml
