@@ -331,7 +331,7 @@ object LogManager {
         val offsetMinutes = TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000
         val sign = if (offsetMinutes < 0) "-" else "+"
         val offset = String.format(Locale.US, "%s%02d:%02d", sign, Math.abs(offsetMinutes) / 60, Math.abs(offsetMinutes) % 60)
-        return "Nova ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.FLAVOR}) - " +
+        return "OBNOVA ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.FLAVOR}) - " +
             "Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
             "${Build.MANUFACTURER} ${Build.MODEL}, $abi, процесс $process, " +
             "часовой пояс UTC$offset, язык системы ${Locale.getDefault().toLanguageTag()}"

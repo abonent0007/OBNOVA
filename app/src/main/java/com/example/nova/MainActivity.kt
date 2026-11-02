@@ -12,7 +12,6 @@ import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.content.ComponentName
 import android.content.Intent
-import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.VpnService
 import android.os.Bundle
@@ -22,7 +21,6 @@ import android.os.Looper
 import android.os.SystemClock
 import android.service.quicksettings.TileService
 import android.util.Log
-import android.widget.Button
 import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.TextView
@@ -326,6 +324,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var latencyGraph: LatencyGraphView
     private lateinit var ivBackgroundArt: BackdropRevealImageView
     private lateinit var networkBackground: NovaNetworkBackgroundView
+    private lateinit var matrixRain: MatrixRainView
     private lateinit var tronBackdrop: TronRingsView
     private lateinit var tvVersion: TextView
     
@@ -449,6 +448,7 @@ class MainActivity : AppCompatActivity() {
         isIpVisible = false
         updateIpDisplay()
     }
+    private var topNoticeHideRunnable: Runnable? = null
     private var startFlowExecutor = Executors.newSingleThreadExecutor()
     private val ipExecutor = Executors.newFixedThreadPool(3)
     private val latencyExecutor = Executors.newFixedThreadPool(2)
@@ -519,6 +519,8 @@ class MainActivity : AppCompatActivity() {
     private val ipv6Candidate = ObservedIpCandidate()
 
     private var usePrimaryLatencyServer = true
+    private val profileHealthRotation = ProfileHealthRotation()
+    private var autoRotationClick = false
     private var vpnNetwork: Network? = null
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     @Volatile
@@ -760,6 +762,7 @@ class MainActivity : AppCompatActivity() {
             NovaMainBackdrop.requestDiveLayer(this, cycle, onReady)
         }
         networkBackground = findViewById(R.id.nova_background_animation)
+        matrixRain = findViewById(R.id.matrix_rain)
         tronBackdrop = findViewById(R.id.tron_backdrop)
         tronBackdrop.setYogurtIndigoEnabled(mainBackgroundMode() == MainBackgroundPolicy.MODE_ANIMATION)
         tvIpAddress = findViewById(R.id.tv_ip_address)
@@ -778,6 +781,12 @@ class MainActivity : AppCompatActivity() {
         tvProfileIssueProgress = findViewById(R.id.tv_profile_issue_progress)
         setNextProfileVisible(false)
         btnNextProfile.setOnClickListener {
+            // Ручной выбор — это сигнал «не трогай меня»: политика сбрасывает
+            // накопленную деградацию и не переключит профиль ближайшие 5 минут.
+            // Автоматический клик ставит флаг, чтобы не считать его ручным.
+            if (!autoRotationClick) {
+                profileHealthRotation.noteUserAction(SystemClock.elapsedRealtime())
+            }
             // Кнопка одна на все протоколы, а списки у них разные. При выбранном VLESS
             // машинерия WARP не подходит вовсе: там профиль опознаётся парой
             // «режим + endpoint», а здесь узел задаётся целиком ссылкой — раньше
@@ -1078,6 +1087,8 @@ class MainActivity : AppCompatActivity() {
         ivBackgroundArt.revealProgress = 0f
         networkBackground.visibility = View.GONE
         networkBackground.alpha = 0f
+        matrixRain.visibility = View.GONE
+        matrixRain.stopRain()
         tronBackdrop.visibility = View.VISIBLE
         tronBackdrop.alpha = 1f
         val isFirstAppLaunch = clientData.getIsFirstLaunch()
@@ -1197,7 +1208,8 @@ class MainActivity : AppCompatActivity() {
             insets
         }
 
-        val btnSettings = findViewById<TextView>(R.id.btn_settings)
+        val btnSettings = findViewById<View>(R.id.btn_settings)
+        btnSettings.contentDescription = NovaLanguage.tr(this, "Настройки")
         btnSettings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
@@ -1263,6 +1275,7 @@ class MainActivity : AppCompatActivity() {
     private var landscapeInsetLeft = 0
     private var landscapeInsetTop = 0
     private var landscapeInsetRight = 0
+    private var systemInsetBottom = 0
 
     private val isLandscapeLayout: Boolean
         get() = appliedLandscape == true
@@ -1289,15 +1302,129 @@ class MainActivity : AppCompatActivity() {
                 androidx.core.view.WindowInsetsCompat.Type.systemBars() or
                     androidx.core.view.WindowInsetsCompat.Type.displayCutout()
             )
-            if (bars.left != landscapeInsetLeft || bars.top != landscapeInsetTop || bars.right != landscapeInsetRight) {
+            if (bars.left != landscapeInsetLeft ||
+                bars.top != landscapeInsetTop ||
+                bars.right != landscapeInsetRight ||
+                bars.bottom != systemInsetBottom
+            ) {
                 landscapeInsetLeft = bars.left
                 landscapeInsetTop = bars.top
                 landscapeInsetRight = bars.right
-                if (isLandscapeLayout) mainRoot.post { applyOrientationLayout(force = true) }
+                systemInsetBottom = bars.bottom
+                if (isLandscapeLayout) {
+                    mainRoot.post { applyOrientationLayout(force = true) }
+                } else {
+                    mainRoot.post { applySystemBarInsets() }
+                }
             }
             insets
         }
         applyOrientationLayout()
+        mainRoot.post { applySystemBarInsets() }
+    }
+
+    /**
+     * Держит верхнюю строку узла и нижнюю строку версии внутри рабочей области.
+     *
+     * В портрете приложение рисуется edge-to-edge (`decorFitsSystemWindows =
+     * false`): без этого верхняя строка уезжала под статус-бар, а «Настройки» и
+     * версия — под навигационную панель. Отступы считаются от системных
+     * insets, а не от фиксированных dp: высота статус-бара и gesture bar
+     * различается на устройствах.
+     */
+    private fun applySystemBarInsets() {
+        if (!::mainRoot.isInitialized) return
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        val ipRow = findViewById<View>(R.id.ll_ip_row)
+        val ipParams = ipRow?.layoutParams as? ViewGroup.MarginLayoutParams
+        if (ipParams != null) {
+            val desiredTop = if (isLandscapeLayout) 0 else dp(32) + landscapeInsetTop
+            if (ipParams.topMargin != desiredTop) {
+                ipParams.topMargin = desiredTop
+                ipRow.layoutParams = ipParams
+            }
+        }
+
+        val version = findViewById<View>(R.id.tv_version)
+        val versionParams = version?.layoutParams as? ViewGroup.MarginLayoutParams
+        if (versionParams != null) {
+            val desiredBottom = dp(2) + systemInsetBottom
+            if (versionParams.bottomMargin != desiredBottom) {
+                versionParams.bottomMargin = desiredBottom
+                version.layoutParams = versionParams
+            }
+        }
+
+        // Плашка уведомления — сразу под статус-баром, выше строки IP. Её
+        // высота (одна-две строки) укладывается в отступ 32dp до IP-строки.
+        val topNotice = findViewById<View>(R.id.tv_top_notice)
+        val topNoticeParams = topNotice?.layoutParams as? ViewGroup.MarginLayoutParams
+        if (topNoticeParams != null) {
+            val desiredTop = if (isLandscapeLayout) dp(6) + landscapeInsetTop else landscapeInsetTop + dp(2)
+            if (topNoticeParams.topMargin != desiredTop) {
+                topNoticeParams.topMargin = desiredTop
+                topNotice.layoutParams = topNoticeParams
+            }
+        }
+
+        // Гамбургер — в правом верхнем углу, в той же полосе, что и плашка.
+        val settings = findViewById<View>(R.id.btn_settings)
+        if (settings != null) {
+            val settingsParams = settings.layoutParams as? ViewGroup.MarginLayoutParams
+            if (settingsParams != null) {
+                val desiredTop = landscapeInsetTop + dp(2)
+                val desiredEnd = landscapeInsetRight + dp(12)
+                if (settingsParams.topMargin != desiredTop || settingsParams.rightMargin != desiredEnd) {
+                    settingsParams.topMargin = desiredTop
+                    settingsParams.rightMargin = desiredEnd
+                    settings.layoutParams = settingsParams
+                }
+            }
+        }
+
+        // «Настройки» привязаны к версии, селектор — к «Настройкам». После
+        // изменения нижнего отступа их высоты нужно пересчитать.
+        mainRoot.post { applyRegionChipHeights() }
+    }
+
+    /**
+     * Короткое сообщение в верхней части экрана вместо системного Toast.
+     *
+     * Toast на современных Android всегда всплывает у нижней кромки, а выбор
+     * узла происходит в dock — сообщение «Выбрано: …» оказывалось рядом с
+     * источником и сливалось с ним. Верхняя плашка отделяет подтверждение от
+     * dock и не перекрывает строку IP.
+     */
+    private fun showTopNotice(message: String) {
+        if (message.isBlank() || isFinishing || isDestroyed) return
+        val notice = findViewById<TextView>(R.id.tv_top_notice) ?: return
+        val density = resources.displayMetrics.density
+        topNoticeHideRunnable?.let { notice.removeCallbacks(it) }
+        notice.animate().cancel()
+        notice.text = message
+        notice.visibility = View.VISIBLE
+        notice.alpha = 0f
+        notice.translationY = -8f * density
+        notice.animate()
+            .alpha(1f)
+            .translationY(0f)
+            .setDuration(170L)
+            .start()
+        val hide = Runnable {
+            if (isFinishing || isDestroyed) return@Runnable
+            notice.animate()
+                .alpha(0f)
+                .translationY(-8f * density)
+                .setDuration(180L)
+                .withEndAction {
+                    if (notice.alpha <= 0.01f) notice.visibility = View.GONE
+                }
+                .start()
+        }
+        topNoticeHideRunnable = hide
+        notice.postDelayed(hide, 1800L)
     }
 
     /**
@@ -1360,19 +1487,22 @@ class MainActivity : AppCompatActivity() {
             set.connect(R.id.graph_latency, start, logEdge, start, landscapeInsetLeft + dp(12))
             set.connect(R.id.graph_latency, end, split, start, dp(16))
             set.constrainHeight(R.id.graph_latency, dp(48))
+            // В горизонтали верхняя полоса занята статусом/кнопкой в средней
+            // колонке; адреса и график остаются внизу, как было. Портретная
+            // верхняя компоновка задана в XML.
+            set.clear(R.id.ll_ip_row, top)
+            set.connect(R.id.ll_ip_row, bottom, R.id.graph_latency, top, 0)
+            set.clear(R.id.graph_latency, top)
+            set.connect(R.id.graph_latency, bottom, R.id.tv_version, top, 0)
 
-            // Правая колонка: селектор от верха, под ним строка пояснений и
-            // «Настройки» с языком.
+            // Правая колонка: селектор от верха, под ним строка пояснений;
+            // гамбургер настроек закреплён в правом верхнем углу.
             set.clear(R.id.sv_exit_region_main, bottom)
             set.connect(R.id.sv_exit_region_main, top, parent, top, landscapeInsetTop + dp(8))
             set.connect(R.id.sv_exit_region_main, start, split, start, dp(8))
             set.connect(R.id.sv_exit_region_main, end, parent, end, landscapeInsetRight + dp(12))
             set.connect(R.id.tv_exit_last, start, split, start, dp(8))
             set.connect(R.id.tv_exit_last, end, parent, end, landscapeInsetRight + dp(12))
-            set.clear(R.id.btn_settings, bottom)
-            set.clear(R.id.btn_settings, start)
-            set.connect(R.id.btn_settings, top, R.id.tv_exit_last, bottom, dp(10))
-            set.connect(R.id.btn_settings, start, split, start, dp(16))
         }
         // `applyTo` переносит не только привязки, но и видимость, прозрачность и
         // сдвиги — из снимка, сделанного при создании экрана. Без этого поворот
@@ -1402,6 +1532,7 @@ class MainActivity : AppCompatActivity() {
         regionChipHeightPx = 0
         regionChipGapPx = 0
         mainRoot.post { applyRegionChipHeights() }
+        applySystemBarInsets()
         // Кольца расходятся от кнопки, а она переехала.
         syncPulseOriginToConnectButton()
         // Фактура собрана под размер экрана: повёрнутый растр растягивался бы
@@ -1473,16 +1604,49 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNetworkBackground() {
+        // Matrix — единственная тема, у которой фон является частью выбранного
+        // оформления, а не отдельной картинкой. Дождь заменяет созвездие, чтобы
+        // зелёный терминал не смешивался с бирюзовыми узлами.
+        if (isMatrixTheme()) {
+            networkBackground.stopAnimation()
+            networkBackground.visibility = View.GONE
+            networkBackground.alpha = 0f
+            showMatrixRain()
+            return
+        }
+        matrixRain.stopRain()
+        matrixRain.visibility = View.GONE
         networkBackground.visibility = View.VISIBLE
         networkBackground.alpha = 1f
         networkBackground.startAnimation()
     }
 
     private fun hideNetworkBackground() {
+        matrixRain.stopRain()
+        matrixRain.visibility = View.GONE
         networkBackground.stopAnimation()
         networkBackground.visibility = View.GONE
         networkBackground.alpha = 0f
+        // Matrix-дождь — не только «фон подключённого экрана»: он должен
+        // быть виден и в покое/при подключении. Иначе тема выглядит как
+        // обычный чёрный экран с зелёными кольцами.
+        showMatrixRain()
     }
+
+    private fun showMatrixRain() {
+        if (!::matrixRain.isInitialized || !isMatrixTheme() ||
+            mainBackgroundMode() != MainBackgroundPolicy.MODE_ANIMATION
+        ) {
+            return
+        }
+        matrixRain.applyAccent(themeAccentColor)
+        matrixRain.visibility = View.VISIBLE
+        matrixRain.alpha = 1f
+        matrixRain.startRain()
+    }
+
+    private fun isMatrixTheme(): Boolean =
+        runCatching { NovaTheme.current(this) == "matrix" }.getOrDefault(false)
 
     private fun maybeRequestNotificationPermission() {
         if (!canRequestNotificationPermissionNow()) return
@@ -1552,6 +1716,7 @@ class MainActivity : AppCompatActivity() {
         AppUpdateManager.resumePendingInstallIfAllowed(this)
         currentTunnelBackend = resolveUiBackend(clientData.getServiceBackend())
         reconcileSystemVpnStateIfNeeded()
+        restoreDeadSessionOnOpen()
         val resumedState = clientData.getServiceState()
         if (resumedState == NovaVpnService.STATE_CONNECTING && recoverDeadConnectingStateIfNeeded()) {
             currentTunnelBackend = resolveUiBackend(clientData.getServiceBackend())
@@ -1571,6 +1736,7 @@ class MainActivity : AppCompatActivity() {
             restoreDirectUiSnapshot()
         }
         updateUiByState(resumedState)
+        maybeShowBackgroundGuide(resumedState)
         prewarmRestrictedMobileDetectionIfNeeded(resumedState)
         if (resumedState == NovaVpnService.STATE_CONNECTED || isTunnelConnected()) {
             requestImmediateVpnHealthRecheck(
@@ -1667,6 +1833,13 @@ class MainActivity : AppCompatActivity() {
      * пока состояние деятельное, см. [syncUpdateChipTicker].
      */
     private fun refreshInstallUpdateButton() {
+        // В личном форке официальный апдейтер выключен целиком. Проверка стоит
+        // первой, чтобы плашка не могла всплыть из сохранённого состояния
+        // прошлой сборки и не тянула за собой опрос DownloadManager.
+        if (!AppUpdateManager.isUpdaterEnabled) {
+            btnInstallUpdate.visibility = View.GONE
+            return
+        }
         val progress = AppUpdateManager.getDownloadProgress(this)
         updateChipState = progress.state
         syncUpdateChipTicker()
@@ -2128,12 +2301,15 @@ class MainActivity : AppCompatActivity() {
      */
     private fun applyRegionChipHeights() {
         if (mainRegionButtons.isEmpty()) return
-        // В горизонтали «Настройки» стоят под селектором, а не ограничивают его
-        // снизу: граница — низ экрана за вычетом их строки и строки пояснений.
+        // Dock-иконки имеют фиксированный размер; сжимать их под четыре ряда
+        // нельзя — исчезнет и иконка, и подпись.
+        if ((mainRegionGroup as? FlowRadioGroup)?.dockMode == true) return
+        // В горизонтали нижнюю границу селектора задаёт низ экрана за вычетом
+        // строки языка и пояснений; в портрете — верх кнопки языка.
         val settingsTop = if (isLandscapeLayout) {
             mainRoot.height - (LANDSCAPE_SELECTOR_FOOTER_DP * resources.displayMetrics.density).toInt()
         } else {
-            findViewById<View>(R.id.btn_settings)?.top ?: 0
+            findViewById<View>(R.id.btn_language)?.top ?: 0
         }
         // В горизонтали селектор стоит в правой колонке от самого верха, и над ним
         // кнопки подключения нет: верхняя граница — край экрана (отступ под строку
@@ -2217,12 +2393,12 @@ class MainActivity : AppCompatActivity() {
         // способом, которым случается G49: один список узнаёт о новом значении,
         // остальные молчат.
         (mainRegionGroup as? FlowRadioGroup)?.let { group ->
-            group.rowPlan = ConnectionSelectorPolicy.ROWS
-            // Владелец попросил левый край и ровные ряды: у центрированных полос
-            // 3/2/1 левый край «лесенкой», а при одной ширине кнопок колонки
-            // соседних строк встают друг под друга.
-            group.alignRowsToStart = true
-            group.uniformItemWidth = true
+            // Главный экран — dock: одна полоса из точек. Смысловые группы
+            // 3/2/2 остаются в настройках, где кнопки подписаны постоянно.
+            group.dockMode = true
+            group.rowPlan = listOf(ConnectionSelectorPolicy.SIZE)
+            group.alignRowsToStart = false
+            group.uniformItemWidth = false
         }
         (mainSubRegionGroup as? FlowRadioGroup)?.let { group ->
             group.alignRowsToStart = true
@@ -2243,6 +2419,7 @@ class MainActivity : AppCompatActivity() {
             group.setPadding(glowPad, glowPad, glowPad, glowPad)
         }
         mainRegionButtons = ConnectionSelectorPolicy.BUTTON_IDS.mapNotNull { findViewById<RadioButton>(it) }
+        mainRegionButtons.forEach { (it as? DockRadioButton)?.setAccentColor(themeAccentColor) }
         if (mainRegionButtons.size < ConnectionSelectorPolicy.SIZE) {
             LogManager.log(
                 "Главный экран: селектор не собран — найдено ${mainRegionButtons.size} " +
@@ -2351,11 +2528,11 @@ class MainActivity : AppCompatActivity() {
      */
     private val languageListener = NovaLanguage.Listener { renderLanguageBadge() }
 
-    /** «🌍 RU» / «🌍 EN»: планета и код выбранного языка. */
+    /** Код выбранного языка; глобус — SVG в `drawableStart`. */
     private fun renderLanguageBadge() {
         val badge = findViewById<TextView>(R.id.btn_language) ?: return
         val language = NovaLanguage.current(this)
-        badge.text = "🌍 ${language.badge}"
+        badge.text = language.badge
         badge.contentDescription = "Язык интерфейса: ${language.nativeName}"
     }
 
@@ -3026,11 +3203,11 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                 })
-                Toast.makeText(this, NovaLanguage.tr(this, "Выпуск профилей Proton уже идёт"), Toast.LENGTH_SHORT).show()
+                showTopNotice(NovaLanguage.tr(this, "Выпуск профилей Proton уже идёт"))
                 refreshMainRegionSelector()
                 return
             }
-            Toast.makeText(this, NovaLanguage.tr(this, "Готовим профили Proton..."), Toast.LENGTH_SHORT).show()
+            showTopNotice(NovaLanguage.tr(this, "Готовим профили Proton..."))
             refreshMainRegionSelector()
             return
         }
@@ -3047,7 +3224,7 @@ class MainActivity : AppCompatActivity() {
             .getOrNull(ConnectionSelectorPolicy.indexOf(value))
             .orEmpty()
         if (!hasLiveSessionToReapply()) {
-            Toast.makeText(this, NovaLanguage.tr(this, "Выбрано: $label"), Toast.LENGTH_SHORT).show()
+            showTopNotice(NovaLanguage.tr(this, "Выбрано: $label"))
             refreshMainRegionSelector()
             return
         }
@@ -3059,16 +3236,12 @@ class MainActivity : AppCompatActivity() {
         // принимает [SessionReapply]: он один знает про exit(-1) в tun2proxy (G3).
         val started = SessionReapply.applyToLiveSession(this, clientData)
         if (started) {
-            Toast.makeText(this, NovaLanguage.tr(this, "Переключаем VPN на $label..."), Toast.LENGTH_SHORT).show()
+            showTopNotice(NovaLanguage.tr(this, "Переключаем VPN на $label..."))
             updateUiByState(NovaVpnService.STATE_CONNECTING)
         } else {
             // Отказ запуска молчать не должен (I4): предпочтение уже записано, и
             // без слов это выглядит как «кнопка не сработала».
-            Toast.makeText(
-                this,
-                "Не удалось переключить на $label — выбор сохранён, примените переподключением.",
-                Toast.LENGTH_LONG,
-            ).show()
+            showTopNotice("Не удалось переключить на $label — выбор сохранён, примените переподключением.")
         }
         refreshMainRegionSelector()
     }
@@ -3168,6 +3341,111 @@ class MainActivity : AppCompatActivity() {
             preferredOperaBackend.isNotBlank() -> preferredOperaBackend
             currentTunnelBackend.isNotBlank() -> currentTunnelBackend
             else -> NovaVpnService.BACKEND_WARP
+        }
+    }
+
+    /**
+     * Поднимает сессию, если процесс `:vpn` был убит системой, а человек вернулся.
+     *
+     * `reconcileSystemVpnStateIfNeeded()` умеет восстанавливать только случай,
+     * когда система всё ещё держит VPN-интерфейс Nova. После kill процесса
+     * интерфейс исчезает вместе с ним, поэтому там мы выходили по `?: return`,
+     * и экран оставался в STOPPED — человеку приходилось нажимать «Подключить».
+     *
+     * Условия намеренно узкие: автопереподключение разрешено, сессия сохранена,
+     * службы нет, и это не ручной останов (в том числе только что нажатый).
+     */
+    private fun restoreDeadSessionOnOpen() {
+        if (isStartFlowActive) return
+        if (isNovaVpnServiceRunning()) return
+        if (isManualStopUiSuppressed() || isRecentLocalStop()) return
+        if (!clientData.getAutoReconnect()) return
+        if (clientData.getRestartSession() == null) return
+        val persisted = clientData.getServiceState()
+        if (persisted != NovaVpnService.STATE_CONNECTED && persisted != NovaVpnService.STATE_CONNECTING) return
+
+        val backend = clientData.getServiceBackend().ifBlank { NovaVpnService.BACKEND_WARP }
+        LogManager.log(
+            "Служба :vpn не найдена при возврате в приложение (состояние $persisted, $backend) — " +
+                "восстанавливаем сеанс автоматически."
+        )
+        currentTunnelBackend = backend
+        markServiceConnectingLocally(backend)
+        try {
+            ContextCompat.startForegroundService(
+                this,
+                Intent(this, NovaVpnService::class.java).apply {
+                    action = NovaVpnService.ACTION_RESTORE_LAST_SESSION
+                }
+            )
+        } catch (e: Exception) {
+            LogManager.log("Не удалось автоматически восстановить сеанс Nova: ${e.message}")
+        }
+    }
+
+    /**
+     * Один раз после первого успешного подключения объясняет, что мешает фону.
+     *
+     * Манифест сам по себе не спасает от OEM-киллера: нужны исключение из
+     * батарейной оптимизации, вендорный автозапуск и системный Always-on VPN.
+     * Показываем ровно один раз и только если хоть что-то ещё не настроено —
+     * иначе это превращается в навязчивый диалог при каждом запуске.
+     */
+    private fun maybeShowBackgroundGuide(resumedState: String) {
+        if (resumedState != NovaVpnService.STATE_CONNECTED) return
+        if (!isActivityResumed || isFinishing) return
+        if (clientData.hasShownBackgroundGuide()) return
+
+        val powerManager = getSystemService(android.os.PowerManager::class.java)
+        val batteryUnrestricted = Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
+            powerManager?.isIgnoringBatteryOptimizations(packageName) == true
+        val alwaysOn = AlwaysOnVpn.isNovaAlwaysOn(this)
+        val autoStartAvailable = VendorBackgroundSettingsHelper.canOpenAutoStart(this)
+
+        if (batteryUnrestricted && alwaysOn && !autoStartAvailable) {
+            clientData.setShownBackgroundGuide()
+            return
+        }
+
+        val actions = mutableListOf<Pair<String, () -> Unit>>()
+        if (!batteryUnrestricted) {
+            actions += "Разрешить работу без ограничений батареи" to { requestBatteryExemptionFromGuide() }
+        }
+        if (autoStartAvailable) {
+            val label = VendorBackgroundSettingsHelper.getAutoStartLabel(this) ?: "система"
+            actions += "Разрешить автозапуск ($label)" to {
+                if (!VendorBackgroundSettingsHelper.openAutoStart(this)) {
+                    LogManager.log("Не удалось открыть экран автозапуска производителя.")
+                }
+            }
+        }
+        if (!alwaysOn) {
+            actions += "Включить постоянный VPN" to { AlwaysOnVpn.openSettings(this) }
+        }
+        actions += "Не сейчас" to {}
+
+        clientData.setShownBackgroundGuide()
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Стабильная работа в фоне")
+            .setMessage(
+                "Android и оболочка производителя могут останавливать VPN в фоне. " +
+                    "Эти настройки снимают ограничения — их можно изменить позже в настройках Nova."
+            )
+            .setItems(actions.map { it.first }.toTypedArray()) { _, which ->
+                actions.getOrNull(which)?.second?.invoke()
+            }
+            .setNegativeButton("Закрыть", null)
+            .show()
+    }
+
+    private fun requestBatteryExemptionFromGuide() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
+        val direct = Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+            .setData(android.net.Uri.parse("package:$packageName"))
+        if (runCatching { startActivity(direct) }.isSuccess) return
+        val list = Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        if (runCatching { startActivity(list) }.isFailure) {
+            LogManager.log("Экран ограничений батареи недоступен на этой прошивке.")
         }
     }
 
@@ -4587,6 +4865,7 @@ class MainActivity : AppCompatActivity() {
                          labelView.text = "Ping:\n---"
                          labelView.setTextColor(android.graphics.Color.GRAY)
                     }
+                    maybeRotateProfile(latency)
                     promoteConnectedUiIfVerified()
                 }
             } finally {
@@ -4790,6 +5069,14 @@ class MainActivity : AppCompatActivity() {
         // остальных веток — иначе «MASQUE: RU» проигрывал общему «WARP: RU», и по
         // экрану нельзя было понять, работает ли выбранный протокол.
         val transport = clientData.getServiceTransport()
+        // MULTI — отдельный транспорт, а не «WARP» и не «VLESS»: внутри него
+        // PRIMARY может быть DESYNC или VLESS, но человеку важно видеть, что
+        // выбранный чип (WARP/MASQUE) сейчас не работает, а идёт MULTI.
+        // Без этой ветки бейдж показывал «WARP: RU» или «VLESS: …», и экран
+        // расходился с тем, что реально несёт туннель.
+        if (NovaVpnService.isPublishedTransport(transport, NovaVpnService.TRANSPORT_MULTI)) {
+            return "${NovaVpnService.TRANSPORT_MULTI}: $effectiveCountry"
+        }
         if (NovaVpnService.isPublishedTransport(transport, NovaVpnService.TRANSPORT_MASQUE)) {
             return "${NovaVpnService.TRANSPORT_MASQUE}: $effectiveCountry"
         }
@@ -5104,6 +5391,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun resetLatencyDisplay() {
+        profileHealthRotation.onDisconnected()
         if (!::latencyGraph.isInitialized) return
         // Сеанса нет — объяснению про DNS тем более неоткуда взяться.
         hideDnsPingNotice()
@@ -6709,7 +6997,12 @@ class MainActivity : AppCompatActivity() {
         val accent = NovaTheme.color(themedForAccent, R.attr.novaAccent)
         themeAccentColor = accent
         listOfNotNull(mainRegionGroup as? FlowRadioGroup, mainSubRegionGroup).forEach { group ->
-            group.selectionGlowColor = accent
+            if (group.dockMode) {
+                group.selectionGlowColor = 0
+                group.dockAccentColor = accent
+            } else {
+                group.selectionGlowColor = accent
+            }
         }
 
         // Акцент принадлежит экрану, а не одним чипам.
@@ -6721,6 +7014,7 @@ class MainActivity : AppCompatActivity() {
         // экрана нет — см. `NovaDialogs.apply`), поэтому цвет ставится кодом, и
         // ровно в одном месте.
         if (::tvVersion.isInitialized) tvVersion.setTextColor(accent)
+        mainRegionButtons.forEach { (it as? DockRadioButton)?.setAccentColor(accent) }
 
         // У IP цвет означает «туннель поднят и адрес за ним настоящий», поэтому
         // здесь ставится только зелёная половина этого признака; белую половину
@@ -6741,6 +7035,7 @@ class MainActivity : AppCompatActivity() {
         // внутри самого вида, поэтому он появляется ровно тогда, когда включена
         // анимация, и гаснет вместе с ней — отдельного признака не нужно.
         if (::networkBackground.isInitialized) networkBackground.applyAccent(accent)
+        if (::matrixRain.isInitialized) matrixRain.applyAccent(accent)
 
         applyCountryBadgeAccent(accent)
 
@@ -6748,6 +7043,17 @@ class MainActivity : AppCompatActivity() {
         if (::tronBackdrop.isInitialized) {
             tronBackdrop.applyAccent(accent)
             syncPulseOriginToConnectButton()
+        }
+
+        // Тема могла смениться без пересоздания Activity (возврат с экрана
+        // оформления). Переключаем именно фон: иначе Matrix-дождь остался бы
+        // поверх другой темы, а созвездие — скрытым.
+        if (::matrixRain.isInitialized &&
+            ::networkBackground.isInitialized &&
+            backdropState == BackdropState.CONNECTED &&
+            mainBackgroundMode() == MainBackgroundPolicy.MODE_ANIMATION
+        ) {
+            showNetworkBackground()
         }
     }
 
@@ -7435,6 +7741,50 @@ class MainActivity : AppCompatActivity() {
 
     private fun isTunnelConnected(): Boolean {
         return vpnState == NovaVpnService.STATE_CONNECTED
+    }
+
+    /**
+     * Автоматическая смена профиля только в режиме AUTO.
+     *
+     * Явно выбранный WARP/MASQUE/OPERA/PROTON/TOR/DNS не подменяется — это
+     * правило PC-форка. Кандидата выбирает существующая сортировка профилей в
+     * обработчике кнопки «следующий», поэтому здесь не нужен второй список.
+     */
+    private fun maybeRotateProfile(latencyMs: Int) {
+        if (!isTunnelConnected() || !::btnNextProfile.isInitialized) {
+            profileHealthRotation.onDisconnected()
+            return
+        }
+        val mode = clientData.getExitRegionPreference().trim().lowercase(Locale.ROOT)
+        if (mode != "auto") {
+            profileHealthRotation.onDisconnected()
+            return
+        }
+        // PC-форк в auto меняет только MASQUE и Proton. WARP/Opera/Tor/DNS
+        // перебираются своей машинерией, и сторонний таймер здесь только мешал бы.
+        val transport = clientData.getServiceTransport().trim()
+        if (transport != NovaVpnService.TRANSPORT_MASQUE &&
+            transport != NovaVpnService.TRANSPORT_AWG_PROTON
+        ) {
+            profileHealthRotation.onDisconnected()
+            return
+        }
+        if (btnNextProfile.visibility != View.VISIBLE) {
+            profileHealthRotation.onDisconnected()
+            return
+        }
+        val now = SystemClock.elapsedRealtime()
+        profileHealthRotation.onConnected(now)
+        val decision = profileHealthRotation.observe(now, latencyMs, mode)
+        if (!decision.rotate) return
+        LogManager.log("Ротация профилей: ${decision.reason}; переключаемся на следующий.")
+        autoRotationClick = true
+        val clicked = try {
+            btnNextProfile.performClick()
+        } finally {
+            autoRotationClick = false
+        }
+        profileHealthRotation.noteRotation(now, clicked)
     }
 
     private fun hasConnectedUiProof(): Boolean {

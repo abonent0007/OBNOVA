@@ -132,6 +132,36 @@
             android:theme="@style/Theme.Nova.Settings"/>
 
         <activity
+            android:name=".ParityScreenActivity"
+            android:label="OBNOVA"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".RoutesActivity"
+            android:label="Маршруты"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".SlotsActivity"
+            android:label="Слоты"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".DiagnosticsReportActivity"
+            android:label="Диагностика"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".StrategiesActivity"
+            android:label="Стратегии"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
             android:name=".DnsSettingsActivity"
             android:label="Настройка DNS"
             android:launchMode="singleTop"
@@ -205,12 +235,22 @@
             android:process=":vpn"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse"
+            android:stopWithTask="false"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="VPN service for secure connectivity" />
+            <!--
+                Явно подтверждаем поддержку Always-on VPN. Без этой мета-даты
+                система считает поддержку включённой, но с ней Nova корректно
+                показывается в списке «Постоянный VPN» и переживает kill
+                силами самой ОС, а не только нашего AlarmManager.
+            -->
+            <meta-data
+                android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
+                android:value="true" />
         </service>
 
         <!--
@@ -227,7 +267,7 @@
         <service
             android:name=".NovaTileService"
             android:icon="@drawable/ic_qs_nova"
-            android:label="Nova"
+            android:label="OBNOVA"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
             android:exported="true">
             <intent-filter>

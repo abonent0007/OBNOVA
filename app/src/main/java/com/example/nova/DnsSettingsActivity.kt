@@ -1,6 +1,5 @@
 package com.example.nova
 
-import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.text.Editable
@@ -720,9 +719,9 @@ class DnsSettingsActivity : AppCompatActivity() {
 
         fun renderTransport() {
             valueField.hint = when (selectedTransport()) {
-                DnsRule.Transport.DOT -> "tls://dns.example.com"
-                DnsRule.Transport.ANY -> "https://dns.example.com/dns-query или tls://dns.example.com"
-                else -> "https://dns.example.com/dns-query"
+                DnsRule.Transport.DOT -> "tls://dns.google"
+                DnsRule.Transport.ANY -> "https://dns.google/dns-query или tls://dns.google"
+                else -> "https://dns.google/dns-query"
             }
         }
 

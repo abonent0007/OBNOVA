@@ -33,9 +33,9 @@ class NotificationSettingsActivity : AppCompatActivity() {
 
         fun renderPreview(details: Boolean, collapsed: Boolean) {
             val line = if (details) {
-                "Nova VPN — AWG PROTON · NL · ↓ 1,4 МБ/с ↑ 0,2 МБ/с"
+                "OBNOVA VPN — AWG PROTON · NL · ↓ 1,4 МБ/с ↑ 0,2 МБ/с"
             } else {
-                "Nova VPN"
+                "OBNOVA VPN"
             }
             preview.text = if (collapsed) {
                 "В шторке: $line. Кнопка «Отключить» — после разворота карточки."

@@ -105,6 +105,35 @@ class DomainBypassRulesTest {
 
     // ---- edge cases --------------------------------------------------------
 
+    // ---- fork defaults -----------------------------------------------------
+
+    @Test
+    fun `blank zones use PC fork defaults`() {
+        val zones = DomainBypassRules.effectiveZones("")
+        assertTrue("ru" in zones)
+        assertTrue("su" in zones)
+        assertTrue("xn--80adxhks" in zones)
+        assertTrue("xn--p1acf" in zones)
+        assertTrue(DomainBypassRules.CYRILLIC_TOKEN in zones)
+    }
+
+    @Test
+    fun `explicit none clears all zones`() {
+        assertTrue(DomainBypassRules.effectiveZones(DomainBypassRules.NONE_TOKEN).isEmpty())
+    }
+
+    @Test
+    fun `builtin direct domains are always present`() {
+        val domains = DomainBypassRules.effectiveDomains("")
+        assertTrue("vk.com" in domains)
+        assertTrue("yandex.com" in domains)
+    }
+
+    @Test
+    fun `none token is not parsed as a zone`() {
+        assertTrue(DomainBypassRules.parseZones("none").isEmpty())
+    }
+
     @Test
     fun `empty host returns false`() {
         val rules = DomainBypassRules.rulesFrom("ru", "ozon.ru", true)

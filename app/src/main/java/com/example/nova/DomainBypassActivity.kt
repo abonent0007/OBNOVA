@@ -27,6 +27,7 @@ class DomainBypassActivity : AppCompatActivity() {
     private lateinit var cbZoneRu: CheckBox
     private lateinit var cbZoneSu: CheckBox
     private lateinit var cbZoneCyrillic: CheckBox
+    private lateinit var cbZoneLocalExtra: CheckBox
     private lateinit var etCustom: EditText
     private lateinit var tvSummary: TextView
 
@@ -101,6 +102,7 @@ class DomainBypassActivity : AppCompatActivity() {
         cbZoneRu = findViewById(R.id.cb_zone_ru)
         cbZoneSu = findViewById(R.id.cb_zone_su)
         cbZoneCyrillic = findViewById(R.id.cb_zone_cyrillic)
+        cbZoneLocalExtra = findViewById(R.id.cb_zone_local_extra)
         etCustom = findViewById(R.id.et_domain_bypass_custom)
         tvSummary = findViewById(R.id.tv_domain_bypass_summary)
 
@@ -130,11 +132,13 @@ class DomainBypassActivity : AppCompatActivity() {
             cbZoneRu.isChecked = true
             cbZoneSu.isChecked = true
             cbZoneCyrillic.isChecked = true
+            cbZoneLocalExtra.isChecked = true
         } else {
             val zones = DomainBypassRules.parseZones(zonesRaw)
             cbZoneRu.isChecked = "ru" in zones
             cbZoneSu.isChecked = "su" in zones
             cbZoneCyrillic.isChecked = DomainBypassRules.CYRILLIC_TOKEN in zones
+            cbZoneLocalExtra.isChecked = DomainBypassRules.LOCAL_EXTRA_ZONES.all { it in zones }
         }
 
         val customRaw = clientData.getDomainBypassCustomRaw() ?: ""
@@ -181,6 +185,7 @@ class DomainBypassActivity : AppCompatActivity() {
         cbZoneRu.setOnCheckedChangeListener(zoneChangeListener)
         cbZoneSu.setOnCheckedChangeListener(zoneChangeListener)
         cbZoneCyrillic.setOnCheckedChangeListener(zoneChangeListener)
+        cbZoneLocalExtra.setOnCheckedChangeListener(zoneChangeListener)
 
         etCustom.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
@@ -239,6 +244,9 @@ class DomainBypassActivity : AppCompatActivity() {
         cbZoneCyrillic.isEnabled = enabled
         cbZoneCyrillic.alpha = alpha
 
+        cbZoneLocalExtra.isEnabled = enabled
+        cbZoneLocalExtra.alpha = alpha
+
         etCustom.isEnabled = enabled
         etCustom.alpha = alpha
 
@@ -257,17 +265,20 @@ class DomainBypassActivity : AppCompatActivity() {
         if (cbZoneRu.isChecked) zoneLabels.add(".ru")
         if (cbZoneSu.isChecked) zoneLabels.add(".su")
         if (cbZoneCyrillic.isChecked) zoneLabels.add("кириллические")
+        if (cbZoneLocalExtra.isChecked) zoneLabels.add("локальные TLD")
 
         val customRaw = etCustom.text?.toString() ?: ""
-        val domainCount = DomainBypassRules.parseDomains(customRaw).size
+        val domainCount = DomainBypassRules.effectiveDomains(customRaw).size
 
         // Потолок называется вслух: вырезом маршрута служба применяет первые
         // MAX_APPLIED_DOMAINS, и молчаливое «доменов: 40» обещало бы покрытие,
         // которого нет.
+        val builtinCount = DomainBypassRules.BUILTIN_DIRECT_DOMAINS.size
         val domainPart = if (domainCount > MAX_APPLIED_DOMAINS) {
-            "доменов: $domainCount (адресами применяются первые $MAX_APPLIED_DOMAINS)"
+            "доменов: $domainCount, встроенных: $builtinCount " +
+                "(адресами применяются первые $MAX_APPLIED_DOMAINS)"
         } else {
-            "доменов: $domainCount"
+            "доменов: $domainCount, встроенных: $builtinCount"
         }
         val zonePart = if (zoneLabels.isEmpty()) "зоны не выбраны" else "зоны: ${zoneLabels.joinToString(", ")}"
 
@@ -403,7 +414,10 @@ class DomainBypassActivity : AppCompatActivity() {
         if (cbZoneRu.isChecked) tokens.add("ru")
         if (cbZoneSu.isChecked) tokens.add("su")
         if (cbZoneCyrillic.isChecked) tokens.add(DomainBypassRules.CYRILLIC_TOKEN)
-        return tokens.joinToString(",")
+        if (cbZoneLocalExtra.isChecked) tokens.addAll(DomainBypassRules.LOCAL_EXTRA_ZONES)
+        // Пустая строка означала бы «настройка не трогалась» и вернула бы набор
+        // по умолчанию. Явное `none` фиксирует «все галочки сняты».
+        return tokens.joinToString(",").ifBlank { DomainBypassRules.NONE_TOKEN }
     }
 
     /**

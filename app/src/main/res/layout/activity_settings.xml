@@ -652,6 +652,74 @@
                 android:textSize="11sp"
                 android:textStyle="bold" />
 
+            <TextView
+                android:id="@+id/row_parity_routes"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:background="?attr/novaCardBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:text="Маршруты и приложения  ›"
+                android:textColor="?attr/novaTextTitle"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/row_parity_slots"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:background="?attr/novaCardBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:text="Слоты  ›"
+                android:textColor="?attr/novaTextTitle"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/row_parity_strategy"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:background="?attr/novaCardBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:text="Стратегии  ›"
+                android:textColor="?attr/novaTextTitle"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/row_parity_diagnostics"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="6dp"
+                android:background="?attr/novaCardBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center_vertical"
+                android:minHeight="56dp"
+                android:paddingLeft="16dp"
+                android:paddingRight="16dp"
+                android:text="Диагностика  ›"
+                android:textColor="?attr/novaTextTitle"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
 
             <LinearLayout
                 android:id="@+id/row_dns_settings"
@@ -944,6 +1012,48 @@
                     android:id="@+id/sw_autostart"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"/>
+            </LinearLayout>
+
+            <!--
+                Состояние системного Always-on VPN. Переключатель только
+                отражает настройку Android: включить её можно лишь на системном
+                экране VPN, поэтому строка открывает его, а сам тумблер не
+                реагирует на нажатие.
+            -->
+            <LinearLayout
+                android:id="@+id/row_always_on"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:background="?attr/novaCardBackground"
+                android:minHeight="64dp"
+                android:paddingLeft="16dp"
+                android:paddingTop="8dp"
+                android:paddingRight="16dp"
+                android:paddingBottom="8dp"
+                android:layout_marginBottom="6dp"
+                android:clickable="true"
+                android:focusable="true">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Постоянный VPN"
+                    android:textColor="?attr/novaTextTitle"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:drawableStart="@drawable/ic_nova_power"
+                    android:drawablePadding="14dp"
+                    android:drawableTint="?attr/novaIconTint" />
+
+                <Switch
+                    android:id="@+id/sw_always_on"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:clickable="false"
+                    android:focusable="false"/>
             </LinearLayout>
 
             <!--

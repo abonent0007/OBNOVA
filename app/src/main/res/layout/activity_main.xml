@@ -32,6 +32,17 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
+    <com.example.nova.MatrixRainView
+        android:id="@+id/matrix_rain"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
     <com.example.nova.TronRingsView
         android:id="@+id/tron_backdrop"
         android:layout_width="match_parent"
@@ -224,6 +235,7 @@
         android:stateListAnimator="@null"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.62"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
@@ -403,7 +415,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/btnConnect"
-        app:layout_constraintBottom_toTopOf="@+id/btn_settings"
+        app:layout_constraintBottom_toTopOf="@+id/btn_language"
         app:layout_constraintVertical_bias="0">
 
         <!--
@@ -416,7 +428,12 @@
         <HorizontalScrollView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:background="@drawable/bg_dock_panel"
             android:fillViewport="true"
+            android:paddingStart="8dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp"
             android:scrollbars="none">
 
         <com.example.nova.FlowRadioGroup
@@ -426,40 +443,47 @@
             android:layout_gravity="center_horizontal"
             android:orientation="horizontal">
 
-            <RadioButton
+            <com.example.nova.DockRadioButton
                 android:id="@+id/rb_exit_auto"
-                style="@style/NovaMainRegionChip"
-                android:text="AUTO" />
+                style="@style/NovaDockChip"
+                android:text="AUTO"
+                app:dockIcon="@drawable/ic_node_auto" />
 
-            <RadioButton
+            <com.example.nova.DockRadioButton
                 android:id="@+id/rb_exit_ru"
-                style="@style/NovaMainRegionChip"
-                android:text="WARP" />
+                style="@style/NovaDockChip"
+                android:text="WARP"
+                app:dockIcon="@drawable/ic_node_warp" />
 
-            <RadioButton
+            <com.example.nova.DockRadioButton
                 android:id="@+id/rb_exit_masque"
-                style="@style/NovaMainRegionChip"
-                android:text="MASQUE" />
+                style="@style/NovaDockChip"
+                android:text="MASQUE"
+                app:dockIcon="@drawable/ic_node_masque" />
 
-            <RadioButton
+            <com.example.nova.DockRadioButton
                 android:id="@+id/rb_exit_opera"
-                style="@style/NovaMainRegionChip"
-                android:text="OPERA" />
+                style="@style/NovaDockChip"
+                android:text="OPERA"
+                app:dockIcon="@drawable/ic_node_opera" />
 
-            <RadioButton
+            <com.example.nova.DockRadioButton
                 android:id="@+id/rb_exit_proton"
-                style="@style/NovaMainRegionChip"
-                android:text="PROTON" />
+                style="@style/NovaDockChip"
+                android:text="PROTON"
+                app:dockIcon="@drawable/ic_node_proton" />
 
-            <RadioButton
+            <com.example.nova.DockRadioButton
                 android:id="@+id/rb_exit_tor"
-                style="@style/NovaMainRegionChip"
-                android:text="TOR" />
+                style="@style/NovaDockChip"
+                android:text="TOR"
+                app:dockIcon="@drawable/ic_node_tor" />
 
-            <RadioButton
+            <com.example.nova.DockRadioButton
                 android:id="@+id/rb_exit_dns"
-                style="@style/NovaMainRegionChip"
-                android:text="DNS" />
+                style="@style/NovaDockChip"
+                android:text="DNS"
+                app:dockIcon="@drawable/ic_node_dns" />
         </com.example.nova.FlowRadioGroup>
         </HorizontalScrollView>
 
@@ -472,8 +496,14 @@
             android:id="@+id/ll_exit_sub_region"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_dock_panel"
             android:gravity="center_vertical|start"
             android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp"
             android:visibility="gone">
 
             <TextView
@@ -546,16 +576,21 @@
         кнопки подключения.
 
         Кнопки «Конфигурации» здесь больше нет: владелец попросил её убрать.
-        Единственный вход в тот экран теперь — «⚙️ Настройки».
+        Единственный вход в тот экран теперь — гамбургер в правом верхнем углу.
     -->
     <TextView
         android:id="@+id/tv_exit_last"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="8dp"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_dock_panel"
         android:gravity="center"
+        android:paddingStart="8dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="6dp"
         android:textColor="#B9C4D6"
         android:textSize="12sp"
         android:visibility="gone"
@@ -563,51 +598,49 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/sv_exit_region_main" />
 
-    <!-- Settings Button (Gear Emoji) -->
-    <TextView
+    <!-- Settings Button: SVG hamburger in the top-right corner. -->
+    <ImageButton
         android:id="@+id/btn_settings"
-        android:layout_width="wrap_content"
-        android:layout_height="38dp"
-        android:clickable="true"
-        android:focusable="true"
-        android:minWidth="112dp"
-        android:text="⚙️ Настройки"
-        android:textColor="#FFFFFF"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:background="@drawable/bg_settings_button"
-        android:paddingStart="14dp"
-        android:paddingEnd="14dp"
-        android:layout_marginBottom="2dp"
-        app:layout_constraintBottom_toTopOf="@+id/ll_ip_row"
-        app:layout_constraintStart_toStartOf="@+id/graph_latency"/>
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginTop="0dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_icon_button"
+        android:contentDescription="Настройки"
+        android:padding="4dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_menu_hamburger"
+        android:tint="#DFFFE7"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
 
     <!--
-        Язык интерфейса — справа от «Настроек», той же капсулой: планета и код
-        выбранного языка. Нажатие открывает список языков; выбор применяется сразу,
-        без перезапуска. Подпись ставит код (`renderLanguageBadge`), здесь — только
-        заглушка на время раздувания.
+        Язык интерфейса — внизу слева, той же капсулой: SVG-глобус и код
+        выбранного языка. Нажатие открывает список языков; выбор применяется
+        сразу, без перезапуска.
     -->
     <TextView
         android:id="@+id/btn_language"
         android:layout_width="wrap_content"
         android:layout_height="38dp"
-        android:layout_marginStart="8dp"
+        android:layout_marginStart="0dp"
+        android:layout_marginBottom="2dp"
         android:background="@drawable/bg_settings_button"
         android:clickable="true"
+        android:drawableStart="@drawable/ic_globe"
+        android:drawablePadding="6dp"
+        android:drawableTint="#DFFFE7"
         android:focusable="true"
         android:gravity="center"
         android:minWidth="64dp"
         android:paddingStart="12dp"
         android:paddingEnd="12dp"
-        android:text="🌍 RU"
+        android:text="RU"
         android:textColor="#FFFFFF"
         android:textSize="13sp"
         android:textStyle="bold"
-        app:layout_constraintBottom_toBottomOf="@+id/btn_settings"
-        app:layout_constraintStart_toEndOf="@+id/btn_settings"
-        app:layout_constraintTop_toTopOf="@+id/btn_settings" />
+        app:layout_constraintBottom_toTopOf="@+id/tv_version"
+        app:layout_constraintStart_toStartOf="@+id/graph_latency" />
 
     <!--
         Строка адресов не заходит на пинг справа: ширина — по содержимому, но не дальше
@@ -619,12 +652,12 @@
         android:id="@+id/ll_ip_row"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="0dp"
+        android:layout_marginTop="32dp"
         android:layout_marginEnd="8dp"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         app:layout_constrainedWidth="true"
-        app:layout_constraintBottom_toTopOf="@+id/graph_latency"
+        app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintEnd_toStartOf="@+id/tv_internet_label"
         app:layout_constraintHorizontal_bias="0"
         app:layout_constraintStart_toStartOf="@+id/graph_latency">
@@ -651,11 +684,11 @@
         android:id="@+id/graph_latency"
         android:layout_width="0dp"
         android:layout_height="64dp"
-        android:layout_marginBottom="0dp"
+        android:layout_marginTop="8dp"
         android:layout_marginStart="24dp"
         android:layout_marginEnd="24dp"
         android:background="@drawable/bg_latency_graph"
-        app:layout_constraintBottom_toTopOf="@+id/tv_version"
+        app:layout_constraintTop_toBottomOf="@+id/ll_ip_row"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent" />
 
@@ -711,5 +744,150 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <!--
+        Верхнее информационное уведомление (выбор узла, переключение VPN).
+        Лежит поверх льда и не перехватывает касания: это короткая плашка,
+        которая не должна сдвигать IP/график и не должна уезжать вниз, как
+        системный Toast.
+    -->
+    <TextView
+        android:id="@+id/tv_top_notice"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="0dp"
+        android:layout_marginEnd="64dp"
+        android:background="@drawable/bg_top_notice"
+        android:clickable="false"
+        android:elevation="12dp"
+        android:focusable="false"
+        android:gravity="center"
+        android:accessibilityLiveRegion="polite"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:paddingStart="16dp"
+        android:paddingTop="5dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="5dp"
+        android:textColor="#DFFFE7"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+    <View
+        android:id="@+id/drawer_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="20dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <LinearLayout
+        android:id="@+id/drawer_panel"
+        android:layout_width="300dp"
+        android:layout_height="match_parent"
+        android:background="#F20B0F0C"
+        android:elevation="24dp"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="56dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NOVA"
+            android:textColor="#DFFFE7"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.18" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="24dp"
+            android:text="маршруты и слоты"
+            android:textColor="#7FA98C"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/drawer_routes"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Маршруты"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/drawer_slots"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Слоты"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/drawer_strategy"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Стратегии"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/drawer_diagnostics"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Диагностика"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/drawer_logs"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Журналы"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:background="#1F2E23" />
+
+        <TextView
+            android:id="@+id/drawer_settings"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Настройки"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

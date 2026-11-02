@@ -6,12 +6,16 @@ import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RadialGradient
 import android.graphics.RectF
+import android.graphics.Shader
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CompoundButton
 import android.widget.RadioGroup
+import kotlin.math.abs
 
 /**
  * `RadioGroup`, который переносит не поместившиеся кнопки на следующую строку.
@@ -108,8 +112,184 @@ class FlowRadioGroup @JvmOverloads constructor(
     private val haloPad = 6f * resources.displayMetrics.density
     private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
 
+    /**
+     * Включает dock-режим для этого ряда.
+     *
+     * Главный экран использует его, экран настроек — нет: там те же
+     * `RadioButton` остаются обычными чипами. При включении дочерние
+     * [DockRadioButton] получают магнификацию от положения пальца, а не от
+     * нажатия. Увеличивается только ближайшая иконка, а под пальцем рисуется
+     * линза с расходящимися волнами.
+     */
+    var dockMode: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            requestLayout()
+        }
+
+    /** Акцент дорожки dock; 0 — рисовать нейтральную дорожку. */
+    var dockAccentColor: Int = 0
+        set(value) {
+            if (field == value) return
+            field = value
+            invalidate()
+        }
+
+    private val dockCollapse = Runnable {
+        forEachDockButton { it.collapseDock() }
+    }
+
+    private var dockTouchActive = false
+    private var dockPreviewButton: DockRadioButton? = null
+    private var dockPointerX = 0f
+    private var dockPointerActive = false
+    private var dockWaveProgress = 0f
+    private var dockWaveAnimator: android.animation.ValueAnimator? = null
+    private val dockLensPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val dockWavePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+
+    private fun forEachDockButton(action: (DockRadioButton) -> Unit) {
+        for (index in 0 until childCount) {
+            (getChildAt(index) as? DockRadioButton)?.let(action)
+        }
+    }
+
+    /**
+     * Увеличивает **только точку под пальцем**.
+     *
+     * Раньше здесь было косинусное затухание как в macOS Dock, и соседние точки
+     * тоже частично раздувались. Владелец попросил эффект линзы/волны: палец
+     * ведёт по дорожке, растёт одна точка под ним, а покинутая плавно сжимается
+     * обратно. Соседние точки остаются точками.
+     */
+    private fun updateDockMagnification(x: Float) {
+        if (!dockMode) return
+        dockPointerX = x
+        dockPointerActive = true
+        var nearest: DockRadioButton? = null
+        var nearestDistance = Float.MAX_VALUE
+        forEachDockButton { button ->
+            if (button.visibility != View.VISIBLE || button.width <= 0) return@forEachDockButton
+            val centerX = (button.left + button.right) / 2f
+            val distance = abs(x - centerX)
+            if (button.isEnabled && distance < nearestDistance) {
+                nearestDistance = distance
+                nearest = button
+            }
+        }
+        forEachDockButton { button ->
+            if (button === nearest) {
+                // При касании раскрытие ведёт preview-анимация кнопки; иначе
+                // (курсор/мышь) точку можно увеличить сразу.
+                if (!dockTouchActive) button.setDockMagnification(1f)
+            } else {
+                button.setDockMagnification(0f)
+            }
+        }
+        // Пока палец на дорожке, акцент и раскрытая подпись едут за ближайшей
+        // точкой. Окончательный выбор RadioGroup получает только на ACTION_UP,
+        // поэтому перетаскивание не дёргает переподключение на каждом пикселе.
+        if (dockTouchActive && nearest !== dockPreviewButton) {
+            dockPreviewButton?.setDockPreview(false)
+            nearest?.setDockPreview(true)
+            dockPreviewButton = nearest
+        }
+        invalidate()
+    }
+
+    private fun startDockWave() {
+        dockWaveAnimator?.cancel()
+        dockWaveProgress = 0f
+        dockWaveAnimator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 700L
+            repeatCount = android.animation.ValueAnimator.INFINITE
+            interpolator = android.view.animation.LinearInterpolator()
+            addUpdateListener {
+                dockWaveProgress = it.animatedValue as Float
+                invalidate()
+            }
+            start()
+        }
+    }
+
+    private fun stopDockWave() {
+        dockWaveAnimator?.cancel()
+        dockWaveAnimator = null
+        dockWaveProgress = 0f
+    }
+
+    private fun beginDockTouch() {
+        removeCallbacks(dockCollapse)
+        dockTouchActive = true
+        startDockWave()
+        forEachDockButton { it.setDockTouchActive(true) }
+        // Иначе HorizontalScrollView перехватит горизонтальное движение и
+        // превратит выбор узла в прокрутку ряда.
+        parent?.requestDisallowInterceptTouchEvent(true)
+    }
+
+    private fun commitDockSelection() {
+        val target = dockPreviewButton ?: return
+        if (target.id != checkedRadioButtonId) check(target.id)
+    }
+
+    private fun endDockTouch() {
+        if (!dockTouchActive) return
+        dockTouchActive = false
+        dockPointerActive = false
+        stopDockWave()
+        dockPreviewButton?.setDockPreview(false)
+        dockPreviewButton = null
+        forEachDockButton { it.setDockTouchActive(false) }
+        parent?.requestDisallowInterceptTouchEvent(false)
+        invalidate()
+        removeCallbacks(dockCollapse)
+        postDelayed(dockCollapse, DOCK_COLLAPSE_MS)
+    }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (dockMode) {
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    beginDockTouch()
+                    updateDockMagnification(ev.x)
+                }
+                MotionEvent.ACTION_MOVE -> updateDockMagnification(ev.x)
+                MotionEvent.ACTION_UP -> {
+                    updateDockMagnification(ev.x)
+                    commitDockSelection()
+                    endDockTouch()
+                }
+                MotionEvent.ACTION_CANCEL -> endDockTouch()
+            }
+        }
+        return super.dispatchTouchEvent(ev)
+    }
+
+    override fun dispatchHoverEvent(event: MotionEvent): Boolean {
+        if (dockMode) {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_HOVER_ENTER -> {
+                    startDockWave()
+                    updateDockMagnification(event.x)
+                }
+                MotionEvent.ACTION_HOVER_MOVE -> updateDockMagnification(event.x)
+                MotionEvent.ACTION_HOVER_EXIT -> {
+                    dockPointerActive = false
+                    stopDockWave()
+                    invalidate()
+                    removeCallbacks(dockCollapse)
+                    postDelayed(dockCollapse, DOCK_COLLAPSE_MS)
+                }
+            }
+        }
+        return super.dispatchHoverEvent(event)
+    }
+
     /** Своя кисть для растра: через неё ореол гаснет вместе с кнопкой. */
     private val haloPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val dockTrackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
 
     /**
      * Отметка двигается — надо перерисовать **группу**, а не кнопку.
@@ -125,12 +305,104 @@ class FlowRadioGroup @JvmOverloads constructor(
         super.onViewAdded(child)
         (child as? CompoundButton)?.setOnCheckedChangeListener { _, _ ->
             if (selectionGlowColor != 0) invalidate()
+            if (dockMode) invalidateDockChildren()
         }
     }
 
     override fun check(id: Int) {
         super.check(id)
         if (selectionGlowColor != 0) invalidate()
+        if (dockMode) invalidateDockChildren()
+    }
+
+    private fun invalidateDockChildren() {
+        forEachDockButton { it.invalidate() }
+    }
+
+    private fun dockTrackY(): Float? {
+        for (index in 0 until childCount) {
+            val child = getChildAt(index) as? DockRadioButton ?: continue
+            if (child.visibility != View.VISIBLE || child.width <= 0) continue
+            return child.bottom - 14f * resources.displayMetrics.density
+        }
+        return null
+    }
+
+    /**
+     * Дорожка под точками делает ряд похожим на ползунок, а не на россыпь
+     * отдельных кнопок. Она рисуется до детей и не участвует в hit-testing.
+     */
+    private fun drawDockTrack(canvas: Canvas) {
+        if (!dockMode) return
+        var first: DockRadioButton? = null
+        var last: DockRadioButton? = null
+        for (index in 0 until childCount) {
+            val child = getChildAt(index) as? DockRadioButton ?: continue
+            if (child.visibility != View.VISIBLE || child.width <= 0) continue
+            if (first == null) first = child
+            last = child
+        }
+        val left = first ?: return
+        val right = last ?: return
+        if (left === right) return
+        val y = left.bottom - 14f * resources.displayMetrics.density
+        val color = if (dockAccentColor != 0) dockAccentColor else Color.WHITE
+        dockTrackPaint.color = Color.argb(70, Color.red(color), Color.green(color), Color.blue(color))
+        val radius = 1.5f * resources.displayMetrics.density
+        canvas.drawRoundRect(
+            (left.left + left.right) / 2f,
+            y - radius,
+            (right.left + right.right) / 2f,
+            y + radius,
+            radius,
+            radius,
+            dockTrackPaint,
+        )
+    }
+
+    /**
+     * Линза/волна под пальцем: мягкое свечение и тонкое кольцо на дорожке.
+     * Раздувается при этом только одна точка — ближайшая к пальцу; свечение
+     * связывает её с дорожкой и читается как линза, а не как ещё одна кнопка.
+     */
+    private fun drawDockLens(canvas: Canvas) {
+        if (!dockMode || !dockPointerActive) return
+        val y = dockTrackY() ?: return
+        val density = resources.displayMetrics.density
+        val cx = dockPointerX.coerceIn(0f, width.toFloat())
+        if (width <= 0f) return
+        val color = if (dockAccentColor != 0) dockAccentColor else Color.WHITE
+        val red = Color.red(color)
+        val green = Color.green(color)
+        val blue = Color.blue(color)
+        val radius = 28f * density
+        dockLensPaint.shader = RadialGradient(
+            cx,
+            y,
+            radius,
+            intArrayOf(
+                Color.argb(64, red, green, blue),
+                Color.argb(24, red, green, blue),
+                Color.TRANSPARENT,
+            ),
+            floatArrayOf(0f, 0.62f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        canvas.drawCircle(cx, y, radius, dockLensPaint)
+        dockLensPaint.shader = null
+        dockWavePaint.strokeWidth = 1.2f * density
+        // Две расходящиеся волны: одна рождается, вторая догоняет. Они
+        // подчёркивают точку под пальцем, но не увеличивают соседние.
+        repeat(2) { index ->
+            val phase = (dockWaveProgress + index * 0.5f) % 1f
+            dockWavePaint.color = Color.argb(
+                ((1f - phase) * 92f).toInt().coerceIn(0, 255),
+                red,
+                green,
+                blue,
+            )
+            canvas.drawCircle(cx, y, (16f + 14f * phase) * density, dockWavePaint)
+        }
     }
 
     override fun dispatchDraw(canvas: Canvas) {
@@ -153,6 +425,8 @@ class FlowRadioGroup @JvmOverloads constructor(
                 canvas.drawBitmap(it, checked.left - haloPad, checked.top - haloPad, haloPaint)
             }
         }
+        if (dockMode) drawDockTrack(canvas)
+        if (dockMode) drawDockLens(canvas)
         super.dispatchDraw(canvas)
         // Ядро — поверх: 1dp обводка тем же цветом. Радиус берётся от **высоты
         // кнопки**, а не константой 18dp: на тесном экране кнопка сжимается до
@@ -373,6 +647,12 @@ class FlowRadioGroup @JvmOverloads constructor(
         }
     }
 
+    override fun onDetachedFromWindow() {
+        stopDockWave()
+        removeCallbacks(dockCollapse)
+        super.onDetachedFromWindow()
+    }
+
     private companion object {
         /** Пары «доля радиуса — доля непрозрачности». Взяты у `StrokeTextView`. */
         private val HALO_LAYERS = arrayOf(
@@ -386,5 +666,7 @@ class FlowRadioGroup @JvmOverloads constructor(
 
         /** «Мягко, а не резко»: у кнопки 36dp сильнее выглядит тревогой. */
         private const val HALO_BASE_ALPHA = 96
+
+        private const val DOCK_COLLAPSE_MS = 140L
     }
 }

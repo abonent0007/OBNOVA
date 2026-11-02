@@ -104,8 +104,8 @@ val tgCfWsSecret: String = run {
  * `NOVA_OPERA_RELAY_PASSWORD` остаётся аварийной подменой — но сборка с ней
  * перестаёт быть воспроизводимой, поэтому публиковать её нельзя.
  */
-val relayKeyId: String = "nova-android-163"
-val relayKeyToken: String = "fWf7pm6cvVZoTL4ICOWDamCqnRdNMv2B"
+val relayKeyId: String = "nova-android-164"
+val relayKeyToken: String = "lT9I8ANMn7SONxgv0MGU7pAG8kALlm1_"
 
 val operaRelayPassword: String = run {
     val override = System.getenv("NOVA_OPERA_RELAY_PASSWORD")?.trim()?.takeIf { it.isNotEmpty() }
@@ -165,8 +165,8 @@ android {
         // упаковывается (проверка ниже), а быстрая и диагностическая сборки идут с
         // прежним ключом, который сервер принимает. Провернуть ключ в обход сервера —
         // получить `407` у всех пользователей.
-        versionCode = 163
-        versionName = "1.33"
+        versionCode = 165
+        versionName = "1.34.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -212,7 +212,10 @@ android {
         create("github") {
             dimension = "distribution"
             isDefault = true
-            buildConfigField("boolean", "UPDATER_ENABLED", "true")
+            // Личный форк: официальный апдейтер выключен для обоих вариантов.
+            // Код AppUpdateManager остаётся ради helper'ов foreground-уведомления,
+            // но все сетевые входы и UI обновлений заглушены.
+            buildConfigField("boolean", "UPDATER_ENABLED", "false")
         }
         create("fdroid") {
             dimension = "distribution"
@@ -220,11 +223,27 @@ android {
         }
     }
 
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true
+        }
+    }
+
     applicationVariants.all {
-        // Имя файла не зависит от варианта: у владельца в релизах лежит
-        // `Nova_<версия>.apk`, и менять это из-за появления flavor нельзя.
+        // Универсальный APK и отдельные APK по ABI: телефону нужен один,
+        // а не оба набора библиотек сразу.
         outputs.map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
-            .forEach { output -> output.outputFileName = "Nova_$versionName.apk" }
+            .forEach { output ->
+                val abi = output.filters.firstOrNull { it.filterType == "ABI" }?.identifier
+                output.outputFileName = if (abi.isNullOrBlank()) {
+                    "OBNOVA_$versionName-universal.apk"
+                } else {
+                    "OBNOVA_$versionName-$abi.apk"
+                }
+            }
     }
 
     signingConfigs {
@@ -292,6 +311,12 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            // Go-бинарь DESYNC не трогаем strip'ом: это исполняемый файл,
+            // а не библиотека для JNI, и урезание символов ему не нужно.
+            keepDebugSymbols += "**/libnova-desync.so"
+            keepDebugSymbols += "**/libnova-router.so"
+            keepDebugSymbols += "**/libnovaxray.so"
+            keepDebugSymbols += "**/libnovaxrayjni.so"
         }
         resources {
             // Мёртвый вес из BouncyCastle, который R8 не трогает: ресурсы — не код.

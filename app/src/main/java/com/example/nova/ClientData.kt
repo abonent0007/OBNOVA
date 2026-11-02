@@ -695,6 +695,57 @@ class ClientData(context: Context) {
     // Auto-Reconnect Persistence
     fun getAutoReconnect(): Boolean = prefs.getBoolean("auto_reconnect", true)
     fun setAutoReconnect(enabled: Boolean) { prefs.edit().putBoolean("auto_reconnect", enabled).commit() }
+
+    /** Одноразовая подсказка про фон: батарея, автозапуск, постоянный VPN. */
+    fun hasShownBackgroundGuide(): Boolean = prefs.getBoolean("background_guide_shown", false)
+    fun setShownBackgroundGuide() { prefs.edit().putBoolean("background_guide_shown", true).commit() }
+
+    /** Параметры узла ZAPRET: значения из настроек, не из кода. */
+    fun getDesyncOptions(): DesyncOptions = DesyncOptions(
+        split = prefs.getInt("desync_split", DesyncOptions.DEFAULT_SPLIT),
+        delayMs = prefs.getInt("desync_delay_ms", DesyncOptions.DEFAULT_DELAY_MS),
+        recordSplit = prefs.getBoolean("desync_record_split", true),
+        decoyEnabled = prefs.getBoolean("desync_decoy_enabled", true),
+        decoySni = prefs.getString("desync_decoy_sni", DesyncOptions.DEFAULT_DECOY_SNI)
+            ?: DesyncOptions.DEFAULT_DECOY_SNI,
+    ).normalized()
+
+    fun setDesyncOptions(options: DesyncOptions) {
+        val safe = options.normalized()
+        prefs.edit()
+            .putInt("desync_split", safe.split)
+            .putInt("desync_delay_ms", safe.delayMs)
+            .putBoolean("desync_record_split", safe.recordSplit)
+            .putBoolean("desync_decoy_enabled", safe.decoyEnabled)
+            .putString("desync_decoy_sni", safe.decoySni)
+            .commit()
+    }
+
+    /** Маршрутизация: непойманный трафик в VPN (PC `foreign_default`). */
+    fun isForeignDefaultVpn(): Boolean = prefs.getBoolean("routing_foreign_default_vpn", true)
+    fun setForeignDefaultVpn(enabled: Boolean) {
+        prefs.edit().putBoolean("routing_foreign_default_vpn", enabled).commit()
+    }
+
+    /** Killswitch: при падении слотов не выпускать напрямую. */
+    fun isKillSwitch(): Boolean = prefs.getBoolean("routing_killswitch", false)
+    fun setKillSwitch(enabled: Boolean) {
+        prefs.edit().putBoolean("routing_killswitch", enabled).commit()
+    }
+
+    /** Ручной выбор маршрута для сервисной категории (`auto` — политика). */
+    fun getRouteOverride(service: String): String =
+        prefs.getString("route_override_$service", RouteSettings.AUTO) ?: RouteSettings.AUTO
+
+    fun setRouteOverride(service: String, value: String) {
+        prefs.edit().putString("route_override_$service", value).commit()
+    }
+
+    /** Умная маршрутизация: Opera как SECONDARY, локальные TLD — DIRECT. */
+    fun isSmartRoutingEnabled(): Boolean = prefs.getBoolean("routing_smart_enabled", false)
+    fun setSmartRoutingEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("routing_smart_enabled", enabled).commit()
+    }
     fun getAutoAppUpdate(): Boolean = prefs.getBoolean("auto_app_update", true)
     fun setAutoAppUpdate(enabled: Boolean) { prefs.edit().putBoolean("auto_app_update", enabled).commit() }
     fun getMainBackgroundMode(): String =
@@ -3518,8 +3569,15 @@ class ClientData(context: Context) {
         prefs.edit().putBoolean("show_system_apps", value).commit()
     }
 
-    /** Обход туннеля по доменным зонам и своим доменам. По умолчанию выключен. */
-    fun isDomainBypassEnabled(): Boolean = prefs.getBoolean("domain_bypass_enabled", false)
+    /**
+     * Обход туннеля по доменным зонам и своим доменам.
+     *
+     * В личном форке по умолчанию включён: PC-версия всегда пускает `.ru/.su`
+     * и локальные TLD напрямую, и Android должен вести себя так же на свежей
+     * установке. Если человек уже выключил мастер-переключатель, значение
+     * сохраняется и не перезаписывается.
+     */
+    fun isDomainBypassEnabled(): Boolean = prefs.getBoolean("domain_bypass_enabled", true)
     fun setDomainBypassEnabled(value: Boolean) {
         prefs.edit().putBoolean("domain_bypass_enabled", value).commit()
     }

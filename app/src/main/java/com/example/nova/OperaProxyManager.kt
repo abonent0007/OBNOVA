@@ -1,8 +1,6 @@
 package com.example.nova
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.Build
 import nova.Nova
 import java.io.BufferedReader
@@ -396,7 +394,16 @@ object OperaProxyManager {
                     ?: LEGACY_BIND_PORT
                 currentCountry = managedCountry
             }
-            val launchLogger: (String) -> Unit = { message -> logger(message) }
+            val launchLogger: (String) -> Unit = { message ->
+            // Отмена регистрации штатная: приложение останавливает prewarm,
+            // когда сеанс уже поднят. opera-proxy пишет на это CRITICAL, и в
+            // журнале это выглядело как сбой, хотя туннель не затронут.
+            if (message.contains("terminated signal received")) {
+                LogManager.d("OperaProxy (prewarm отменён): $message")
+            } else {
+                logger(message)
+            }
+        }
             fun abortIfRequested(stopManagedProxy: Boolean = true): Boolean {
                 if (shouldAbort?.invoke() != true) return false
                 if (stopManagedProxy) {

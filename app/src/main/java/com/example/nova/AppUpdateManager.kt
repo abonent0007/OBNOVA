@@ -1285,7 +1285,7 @@ object AppUpdateManager {
             val installIntent = buildInstallPendingIntent(context, 5004)
             val customView = buildReadyUpdateRemoteViews(context, readyVersion, installIntent)
             return builder
-                .setContentTitle("Nova")
+                .setContentTitle("OBNOVA")
                 .setContentText(NovaLanguage.tr(context, "Обновление $readyVersion готово к установке"))
                 .setStyle(NotificationCompat.DecoratedCustomViewStyle())
                 .setCustomContentView(customView)
@@ -1301,7 +1301,7 @@ object AppUpdateManager {
                 actionPendingIntent = buildTunnelActionPendingIntent(context, button),
             )
             return builder
-                .setContentTitle("Nova VPN")
+                .setContentTitle("OBNOVA VPN")
                 .setContentText(NovaLanguage.tr(context, subtitle))
                 .setStyle(NotificationCompat.DecoratedCustomViewStyle())
                 .setCustomContentView(row)
@@ -1310,7 +1310,7 @@ object AppUpdateManager {
         }
 
         return builder
-            .setContentTitle("Nova VPN")
+            .setContentTitle("OBNOVA VPN")
             .setContentText(NovaLanguage.tr(context, subtitle))
             .build()
     }

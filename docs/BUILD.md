@@ -22,19 +22,21 @@ cd Nova-Android
 
 | Вариант | Задача Gradle | Встроенное обновление |
 | --- | --- | --- |
-| `github` (по умолчанию) | `assembleGithubRelease` | работает: приложение само проверяет релизы и предлагает скачать |
+| `github` (по умолчанию) | `assembleGithubRelease` | **выключено в личном форке** (`UPDATER_ENABLED=false`) |
 | `fdroid` | `assembleFdroidRelease` | выключено: обновления выдаёт каталог F-Droid |
 
 Правила F-Droid запрещают приложению самому скачивать исполняемые файлы, поэтому
-для каталога собирается вариант `fdroid`. Код при этом общий: различие задаётся
-флагом `BuildConfig.UPDATER_ENABLED`, и на сборку `github` это не влияет.
+для каталога собирается вариант `fdroid`. Код общий; в личном форке флаг
+`BuildConfig.UPDATER_ENABLED` равен `false` у обоих вариантов, а пункты
+обновления скрыты. Загрузка профилей из облака (Proton/VLESS/WARP) к этому
+флагу отношения не имеет и остаётся стоковой.
 
 ## Что должно быть установлено
 
 | Инструмент | Версия | Зачем |
 | --- | --- | --- |
 | JDK | 17 | сборка Android-проекта |
-| Android SDK | Platform 34 | `compileSdk = 34`, `targetSdk = 34` |
+| Android SDK | Platform 35 | `compileSdk = 35`, `targetSdk = 34` |
 | Gradle | 9.3.1 | ставится сам через wrapper |
 
 Gradle, Android Gradle Plugin 9.1.0 и Kotlin 2.2.10 подтягиваются автоматически, ставить
@@ -52,6 +54,28 @@ Android Studio создаёт его сам при первом открытии
 
 `minSdk = 24` — Android 7.0. Более новые возможности вызываются под проверкой
 `Build.VERSION.SDK_INT`, поэтому одна сборка работает и на Android 7, и на Android 15.
+
+## Личный форк 1.34.1 (OBNOVA)
+
+- `versionName = "1.34.1"`, `versionCode = 165`.
+- Release собирается по ABI: `OBNOVA_1.34.1-arm64-v8a.apk` (35,1 МБ),
+  `OBNOVA_1.34.1-armeabi-v7a.apk` (33,2 МБ) и универсальный
+  `OBNOVA_1.34.1-universal.apk` (64,8 МБ). На телефон ставится один ABI-APK.
+- `BuildConfig.UPDATER_ENABLED = false` для `github` и `fdroid`; UI обновлений
+  скрыт. Код `AppUpdateManager` остаётся ради foreground-уведомлений VPN.
+- `relayKeyId` остался `nova-android-164` (upstream 1.33.1), а `versionCode`
+  теперь 165 — publishability-проверка D17 не проходит. Personal-release:
+  ```powershell
+  $env:NOVA_ALLOW_UNSIGNED_RELEASE = "1"      # нет WSS-секрета nova-app.eu
+  $env:NOVA_ALLOW_UNPUBLISHABLE_BUILD = "1"   # ключ релея 164 ≠ versionCode 165
+  .\gradlew.bat assembleGithubRelease
+  ```
+- `keystore.properties` и `nova-personal.jks` — только локально, в `.gitignore`.
+  Подпись личная: APK не установится поверх upstream-сборки без удаления старой.
+- AVD `Pixel_7_Pro` — x86_64, а релиз содержит `arm64-v8a`/`armeabi-v7a`.
+  ARM64 AVD на x86_64 хосте не запускается; для UI-проверки собирается
+  временная x86_64-сборка без tun2proxy/opera (см.
+  `docs/fork/VERIFICATION.md`).
 
 ## Подпись релиза
 

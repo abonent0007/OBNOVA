@@ -20,6 +20,51 @@ object DomainBypassRules {
      */
     const val CYRILLIC_TOKEN = "cyrillic"
 
+    /**
+     * Маркер «пользователь снял все зоны».
+     *
+     * Пустая строка означает «настройка ещё не трогалась» и даёт набор по
+     * умолчанию. Без отдельного маркера снять последнюю галочку было бы нельзя:
+     * пустое значение снова включало бы `.ru`.
+     */
+    const val NONE_TOKEN = "none"
+
+    /**
+     * Локальные зоны PC-форка, которых не было в исходном наборе Android.
+     *
+     * Кириллические и punycode-варианты хранятся вместе намеренно: экран и ядро
+     * нормализуют имена по-разному, и один из двух вариантов обязан совпасть.
+     */
+    val LOCAL_EXTRA_ZONES: Set<String> = setOf(
+        "москва", "xn--80adxhks",
+        "moscow",
+        "рус", "xn--p1acf",
+        "дети", "xn--d1acj3b",
+        "tatar",
+    )
+
+    /** Набор зон по умолчанию: локальная Россия и кириллические TLD. */
+    val DEFAULT_ZONES: Set<String> = setOf("ru", "su") + LOCAL_EXTRA_ZONES + CYRILLIC_TOKEN
+
+    /**
+     * Российские сервисы на глобальных TLD, которые всегда идут напрямую.
+     *
+     * Это перенос `list/u_direct.txt` PC-форка. Список намеренно короткий и
+     * закрытый: открытая эвристика превращалась бы в дыры в маршрутизации.
+     */
+    val BUILTIN_DIRECT_DOMAINS: Set<String> = setOf(
+        "vk.com",
+        "yandex.com",
+        "yandex.net",
+        "yastatic.net",
+        "userapi.com",
+        "vk.me",
+        "mycdn.me",
+        "rt.com",
+        "tass.com",
+        "sputniknews.com",
+    )
+
     /** Набор правил для проверки хоста. */
     data class Rules(
         val zones: Set<String>,
@@ -35,7 +80,7 @@ object DomainBypassRules {
     fun parseZones(raw: String): Set<String> =
         raw.split(',', ' ', '\n', '\r', '\t')
             .map { it.trim().lowercase().trimStart('.') }
-            .filter { it.isNotEmpty() }
+            .filter { it.isNotEmpty() && it != NONE_TOKEN }
             .toSet()
 
     /**
@@ -66,10 +111,23 @@ object DomainBypassRules {
     /** Собирает [Rules] из сырых строк. */
     fun rulesFrom(zonesRaw: String, domainsRaw: String, cyrillicZones: Boolean): Rules =
         Rules(
-            zones = parseZones(zonesRaw),
+            zones = parseZones(zonesRaw) - CYRILLIC_TOKEN,
             domains = parseDomains(domainsRaw),
             cyrillicZones = cyrillicZones,
         )
+
+    /**
+     * Зоны, которые реально применяет ядро.
+     *
+     * Пустая строка — «первый запуск»: отдаём набор PC-форка. Явное `none` —
+     * пользователь снял все галочки: не подставляем ничего.
+     */
+    fun effectiveZones(raw: String): Set<String> =
+        if (raw.isBlank()) DEFAULT_ZONES else parseZones(raw)
+
+    /** Свои домены плюс встроенный список российских сервисов на `.com`. */
+    fun effectiveDomains(raw: String): Set<String> =
+        BUILTIN_DIRECT_DOMAINS + parseDomains(raw)
 
     /**
      * Проверяет, должен ли хост [host] быть направлен в обход по заданным [rules].

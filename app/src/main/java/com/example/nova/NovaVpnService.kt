@@ -17,7 +17,6 @@ import android.os.ParcelFileDescriptor
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.example.operaproxy.ProxyVpnService as OperaNativeVpnService
 import nova.Nova // Import generated Go wrapper
@@ -836,6 +835,7 @@ class NovaVpnService : OperaNativeVpnService() {
          * задержку (на устройстве доходило до 51 секунды).
          */
         const val ACTION_VPN_PROCESS_DOOMED = "com.example.nova.VPN_PROCESS_DOOMED"
+        const val ACTION_RELOAD_ROUTER = "com.example.nova.RELOAD_ROUTER"
         const val ACTION_START_OPERA_ONLY = "START_OPERA_ONLY"
         const val ACTION_CONNECT_SMART = "CONNECT_SMART"
         const val ACTION_RESTORE_LAST_SESSION = "RESTORE_LAST_SESSION"
@@ -1165,6 +1165,8 @@ class NovaVpnService : OperaNativeVpnService() {
 
         const val BACKEND_WARP = "WARP"
         const val BACKEND_OPERA = "OPERA"
+        const val BACKEND_DESYNC = "DESYNC"
+        const val BACKEND_MULTI = "MULTI"
         const val BACKEND_VLESS = "VLESS"
         const val BACKEND_TOR = "TOR"
         const val BACKEND_DNS = "DNS"
@@ -1221,7 +1223,7 @@ class NovaVpnService : OperaNativeVpnService() {
          * `zieng2/wl` четверть рабочих узлов отвечала на первый запрос за 3,5–6,7 с
          * (Xray на ПК, 8 узлов параллельно) и отбраковывалась как мёртвая.
          */
-        private const val VLESS_CANDIDATE_PROBE_BUDGET_MS = 6_000L
+        private const val VLESS_CANDIDATE_PROBE_BUDGET_MS = 4_000L
 
         /**
          * Сколько ждём ответа узла в уже поднятой сессии.
@@ -1465,6 +1467,8 @@ class NovaVpnService : OperaNativeVpnService() {
         /** Метки транспорта для честного отображения в интерфейсе. */
         const val TRANSPORT_MASQUE = "MASQUE"
         const val TRANSPORT_VLESS = "VLESS"
+        const val TRANSPORT_DESYNC = "DESYNC"
+        const val TRANSPORT_MULTI = "MULTI"
         const val TRANSPORT_TOR = "TOR"
         const val TRANSPORT_DNS = "DNS"
 
@@ -1861,6 +1865,15 @@ class NovaVpnService : OperaNativeVpnService() {
             createNotification(button = notificationButtonForIntent(intent)),
         )
         foregroundNotificationActive = true
+
+        if (intent?.action == ACTION_RELOAD_ROUTER) {
+            LogManager.log("onStartCommand: перезагрузка маршрутов роутера.")
+            // Списки могли обновиться в основном процессе; кэш службы свой,
+            // поэтому сбрасываем его до пересборки конфигурации.
+            ListRepository.invalidate()
+            startSafeServiceThread("NovaRouterReload") { reloadRouterConfig() }
+            return START_STICKY
+        }
 
         if (intent?.action == ACTION_REFRESH_NOTIFICATION) {
             // Подробности могли только что выключить или включить в настройках —
@@ -3355,6 +3368,8 @@ class NovaVpnService : OperaNativeVpnService() {
         // движок переживает и процесс. Без этого смена транспорта оставляла
         // прежний туннель работать параллельно новому.
         stopDnsTunnelQuietly()
+        DesyncProxyManager.stop(LogManager::log)
+        RouterProcess.stop(LogManager::log)
         closeActiveInterface()
         markTransportStatePrepared(connectGenerationId)
         return isConnectGenerationCurrent(connectGenerationId)
@@ -3866,6 +3881,29 @@ class NovaVpnService : OperaNativeVpnService() {
         return normalized.contains("server replied with 502") ||
             normalized.contains("502 [reason: bad gateway]") ||
             normalized.contains("upstream proxy server: 500 internal server error")
+    }
+
+    /**
+     * Три отказа до разных адресов за 15 секунд — это не DPI по SNI, а
+     * блокировка адресов на уровне IP. ZAPRET такой обход не делает; сказать
+     * это вслух обязательно, иначе человек видит «подключено» и нерабочие сайты.
+     */
+    private fun noteDesyncDialFailure() {
+        val now = SystemClock.elapsedRealtime()
+        if (now - desyncLastDialFailureAtMs > 15_000L) desyncDialFailures = 0
+        desyncLastDialFailureAtMs = now
+        desyncDialFailures += 1
+        if (desyncDialFailures < 3 || now - desyncDialNoticeAtMs < 60_000L) return
+        desyncDialNoticeAtMs = now
+        LogManager.log(
+            "DESYNC: три отказа до адресов за 15 с — похоже на блокировку по IP, а не по SNI."
+        )
+        publishTransportNotice(
+            ClientData(this),
+            "Сеть блокирует адреса на уровне IP. ZAPRET помогает только от SNI-DPI — " +
+                "выберите WARP или VLESS.",
+            keepOnStop = true,
+        )
     }
 
     private fun noteTransportConnectivityLoss(source: String, message: String) {
@@ -4686,6 +4724,29 @@ class NovaVpnService : OperaNativeVpnService() {
         }
 
         // Tor — как VLESS: своя фаза, и общая ветка WARP ему не подходит вовсе.
+        if (regionPreference == ConnectionSelectorPolicy.CHIP_DESYNC) {
+            setCurrentBackend(BACKEND_DESYNC)
+            currentTransportLabel = TRANSPORT_DESYNC
+            broadcastState(STATE_CONNECTING)
+            startSafeServiceThread("NovaReapplyDesync") {
+                if (!waitForPreviousCleanupIfNeeded(connectGenerationId, "desync-reapply")) {
+                    return@startSafeServiceThread
+                }
+                if (!isConnectGenerationCurrent(connectGenerationId)) return@startSafeServiceThread
+                if (!ensureFreshTransportState(connectGenerationId, "desync-reapply")) {
+                    return@startSafeServiceThread
+                }
+                installSocketProtector()
+                if (runDesyncPhase(clientData, connectGenerationId)) return@startSafeServiceThread
+                if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
+                    return@startSafeServiceThread
+                }
+                LogManager.log("DESYNC не поднялся при переприменении настроек.")
+                broadcastState(STATE_STOPPED)
+            }
+            isRunning = true
+            return true
+        }
         if (regionPreference == ConnectionSelectorPolicy.CHIP_TOR) {
             setCurrentBackend(BACKEND_TOR)
             currentTransportLabel = TRANSPORT_TOR
@@ -5927,9 +5988,23 @@ class NovaVpnService : OperaNativeVpnService() {
         val operaAllowed = shouldAllowOperaTransport(regionPreference, clientData)
         try {
             if (!ensureFreshTransportState(connectGenerationId, "smart-connect")) return
+            if (RoutingStore(this).isSmartRoutingEnabled()) {
+                if (runMultiPhase(clientData, connectGenerationId)) return
+                if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return
+                LogManager.log("MULTI не поднялся — продолжаем обычным транспортом.")
+            }
             // Tor проверяется раньше всего остального: `shouldUseWarpTransport`
             // отвечает на него `false`, и без этой ветки выбранный TOR уезжал бы во
             // встроенную Opera — ровно та молчаливая подмена, которую запрещает I1.
+            if (regionPreference == ConnectionSelectorPolicy.CHIP_DESYNC) {
+                if (runDesyncPhase(clientData, connectGenerationId)) return
+                if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return
+                LogManager.log("DESYNC не поднялся — подменять его другим протоколом нельзя.")
+                isRunning = false
+                broadcastState(STATE_STOPPED)
+                stopSelf()
+                return
+            }
             if (regionPreference == ConnectionSelectorPolicy.CHIP_DNS) {
                 if (runDnsPhase(clientData, connectGenerationId)) return
                 if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return
@@ -6153,6 +6228,8 @@ class NovaVpnService : OperaNativeVpnService() {
             // «остановлено», а движок продолжал слать запросы по соте уже **мимо
             // выключенного VPN**. Для ветки dnstt то же самое внутри ядра.
             stopDnsTunnelQuietly()
+            DesyncProxyManager.stop(LogManager::log)
+            RouterProcess.stop(LogManager::log)
             LocalDnsProxyManager.stop(LogManager::log)
             LocalAppProxyManager.stop(this, LogManager::log)
             PriorityDns.reset()
@@ -6367,6 +6444,21 @@ class NovaVpnService : OperaNativeVpnService() {
             // конфигурацией WARP, и попадает сразу сюда. Проверено на устройстве:
             // с выбранным TOR подключение уходило в обычный WARP, а в журнале
             // оставалась одна строка «MASQUE пропущен: выбран TOR».
+            if (!isUserStopped && regionPreference == ConnectionSelectorPolicy.CHIP_DESYNC) {
+                if (runDesyncPhase(clientData, connectGenerationId)) return
+                if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return
+                closeActiveInterface()
+                LogManager.log("DESYNC не поднялся — подменять его другим протоколом нельзя.")
+                isRunning = false
+                broadcastState(STATE_STOPPED)
+                stopSelf()
+                return
+            }
+            if (!isUserStopped && RoutingStore(this).isSmartRoutingEnabled()) {
+                if (runMultiPhase(clientData, connectGenerationId)) return
+                if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return
+                LogManager.log("MULTI не поднялся — продолжаем обычным транспортом.")
+            }
             if (!isUserStopped && regionPreference == ConnectionSelectorPolicy.CHIP_DNS) {
                 if (runDnsPhase(clientData, connectGenerationId)) return
                 if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return
@@ -7909,7 +8001,17 @@ class NovaVpnService : OperaNativeVpnService() {
                 LogManager.log("[tun2proxy] $message")
             }
             if (isTransportConnectivityFailureLog(message)) {
-                noteTransportConnectivityLoss("tun2proxy", message)
+                // Для DESYNC отказ SOCKS — это отказ до конкретного адреса
+                // (например, заблокированный IP), а не потеря туннеля. Считать
+                // его потерей транспорта нельзя: иначе один недоступный сервер
+                // роняет весь сеанс.
+                val perDestinationRefusal = currentBackendLabel == BACKEND_DESYNC &&
+                    message.lowercase().contains("socks connection failed")
+                if (perDestinationRefusal) {
+                    noteDesyncDialFailure()
+                } else {
+                    noteTransportConnectivityLoss("tun2proxy", message)
+                }
             }
             if (isOperaUpstreamBadGatewayLog(message)) {
                 noteOperaUpstreamBadGateway(message)
@@ -8377,12 +8479,17 @@ class NovaVpnService : OperaNativeVpnService() {
      */
     private fun applyCoreDomainBypassPolicy(clientData: ClientData, backendLabel: String) {
         val enabled = clientData.isDomainBypassEnabled()
-        val zoneTokens = DomainBypassRules.parseZones(clientData.getDomainBypassZonesRaw())
+        // effectiveZones подставляет набор PC-форка, пока настройка ещё пустая.
+        // Пустое значение здесь означало бы «ни одной зоны», и свежая установка
+        // молча ходила бы через туннель.
+        val zoneTokens = DomainBypassRules.effectiveZones(clientData.getDomainBypassZonesRaw())
         // «cyrillic» — не зона, а флаг: в ядре под него отдельный параметр, и,
         // оставшись в списке зон, он превратился бы в поиск TLD с таким именем.
         val cyrillic = DomainBypassRules.CYRILLIC_TOKEN in zoneTokens
         val zonesCsv = (zoneTokens - DomainBypassRules.CYRILLIC_TOKEN).joinToString(",")
-        val domains = DomainBypassRules.parseDomains(clientData.getDomainBypassCustomRaw())
+        // Встроенные российские сервисы на .com добавляются к пользовательскому
+        // списку здесь, а не в UI: это политика форка, а не редактируемый ввод.
+        val domains = DomainBypassRules.effectiveDomains(clientData.getDomainBypassCustomRaw())
         val domainsCsv = domains.joinToString(",")
 
         val transportSupported = !isOperaBackendLabel(backendLabel) &&
@@ -8407,7 +8514,7 @@ class NovaVpnService : OperaNativeVpnService() {
                 if (enabled) {
                     LogManager.log(
                         "Обход по доменам передан ядру: зоны=[$zonesCsv], кириллица=$cyrillic, " +
-                            "своих доменов=${domains.size}, транспорт=$backendLabel"
+                            "доменов=${domains.size} (включая встроенные), транспорт=$backendLabel"
                     )
                     if (!coreDnsInterceptEnabled && (zonesCsv.isNotEmpty() || cyrillic)) {
                         LogManager.log(
@@ -9196,7 +9303,7 @@ class NovaVpnService : OperaNativeVpnService() {
                     reportVlessProfileRejected(clientData, config, "ядро не приняло конфигурацию: $startError")
                     continue
                 }
-                if (!awaitVlessProxyReady(socksPort, connectGenerationId)) {
+                if (!awaitVlessProxyReady(socksPort, connectGenerationId, deep = true)) {
                     if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return true
                     XrayBridge.stop()
                     // Пробу оборвал сам пользователь кнопкой — узел ответить не успел,
@@ -9337,7 +9444,11 @@ class NovaVpnService : OperaNativeVpnService() {
      * после подъёма интерфейса, и каждая мёртвая запись стоила полного цикла
      * establish/teardown; теперь мёртвый узел не трогает системный VPN вовсе.
      */
-    private fun awaitVlessProxyReady(socksPort: Int, connectGenerationId: Int): Boolean {
+    private fun awaitVlessProxyReady(
+        socksPort: Int,
+        connectGenerationId: Int,
+        deep: Boolean = false,
+    ): Boolean {
         val deadline = SystemClock.elapsedRealtime() + VLESS_CANDIDATE_PROBE_BUDGET_MS
         while (!isUserStopped &&
             isConnectGenerationCurrent(connectGenerationId) &&
@@ -9351,12 +9462,56 @@ class NovaVpnService : OperaNativeVpnService() {
             // узле полный оборот занимает под два, и жёсткий потолок отбраковывал бы
             // живые записи ровно на границе. Не поднявшийся инбаунд отказывает мгновенно,
             // так что на повторную попытку время всё равно остаётся.
-            if (hasLocalSocksConnectivity(socksPort, remainingMs.toInt())) return true
+            if (hasLocalSocksConnectivity(socksPort, remainingMs.toInt())) {
+                // Для выбора профиля мало HTTP: публичные узлы отдают страницу по 80,
+                // но молча роняют TLS на 443 — снаружи это «приложение активно, а
+                // YouTube не играет». Глубинная проба поднимает настоящий TLS до
+                // example.com и отбрасывает такой узел до подъёма TUN.
+                if (!deep || hasLocalSocksHttps(
+                        socksPort,
+                        ExternalSources.NEUTRAL_HTTPS_PROBE_HOST,
+                        remainingMs.toInt(),
+                    )
+                ) {
+                    return true
+                }
+            }
             // Inbound может ещё не успеть встать на порт: тогда проба возвращается
             // мгновенно, и без этой паузы цикл сжёг бы бюджет вхолостую.
             Thread.sleep(150L)
         }
         return false
+    }
+
+    /**
+     * Проверяет, проходит ли через SOCKS-инбаунд полный TLS-обмен.
+     *
+     * Одного HTTP-ответа недостаточно: узел может отдавать 80 и не пропускать 443
+     * (замер 2026-11-02: `188.116.27.6` отдавал `api.ipify.org` по HTTP и молча
+     * ронял любой HTTPS). Сертификат проверяется штатно — подмена тоже отсеется.
+     */
+    private fun hasLocalSocksHttps(socksPort: Int, host: String, timeoutMs: Int): Boolean {
+        return try {
+            openSocksTunnel(socksPort, host, 443, timeoutMs)?.use { raw ->
+                val factory = javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory
+                val tls = factory.createSocket(raw, host, 443, true) as javax.net.ssl.SSLSocket
+                tls.soTimeout = timeoutMs
+                tls.startHandshake()
+                val output = tls.outputStream
+                output.write(
+                    (
+                        "HEAD / HTTP/1.1\r\n" +
+                            "Host: $host\r\n" +
+                            "Connection: close\r\n\r\n"
+                        ).toByteArray(Charsets.US_ASCII)
+                )
+                output.flush()
+                val statusLine = tls.inputStream.bufferedReader().readLine().orEmpty()
+                parseHttpStatusCode(statusLine) in 200..399
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /** Поднимает TUN и tun2proxy поверх уже работающего SOCKS5 на петле. */
@@ -9495,8 +9650,11 @@ class NovaVpnService : OperaNativeVpnService() {
      * одинаково честна и когда приложение внутри VPN, и когда снаружи.
      */
     private fun hasLocalSocksConnectivity(socksPort: Int, timeoutMs: Int): Boolean {
-        // Литеральный адрес Cloudflare: DNS через прокси для пробы не нужен.
-        val host = CloudflareTrace.PROBE_HOST
+        // Нейтральный адрес: не Cloudflare. Свободные узлы из публичных подписок
+        // часто режут 1.1.1.1 целиком, и проба объявляла живой узел мёртвым —
+        // ровно та же ловушка, что была с кодом 301 у Cloudflare. example.com
+        // отдаёт страницу с любого исправного выхода.
+        val host = ExternalSources.NEUTRAL_HTTPS_PROBE_HOST
         return try {
             openSocksTunnel(socksPort, host, 80, timeoutMs)?.use { socket ->
                 val output = socket.getOutputStream()
@@ -9694,6 +9852,32 @@ class NovaVpnService : OperaNativeVpnService() {
      * Второй фазе делать нечего: первая уже поднимает ровно тот же сеанс.
      */
     private val dnsPhaseActive = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val desyncPhaseActive = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val multiPhaseActive = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    @Volatile
+    private var multiPrimaryPort = 0
+
+    @Volatile
+    private var multiSpoofPort = 0
+
+    @Volatile
+    private var multiOperaPort = 0
+
+    @Volatile
+    private var multiVlessActive = false
+
+    @Volatile
+    private var desyncPhaseGeneration = -1
+
+    @Volatile
+    private var desyncDialFailures = 0
+
+    @Volatile
+    private var desyncLastDialFailureAtMs = 0L
+
+    @Volatile
+    private var desyncDialNoticeAtMs = 0L
 
     /**
      * Резолверы текущей сети — голыми адресами.
@@ -9739,6 +9923,415 @@ class NovaVpnService : OperaNativeVpnService() {
      * Возвращает `true`, когда заниматься больше нечем — туннель поднят либо нас
      * отменили снаружи, — и `false`, когда поднять не удалось.
      */
+    /**
+     * Поднимает VLESS-ядро как SOCKS5 без собственного TUN — PRIMARY для MULTI.
+     *
+     * Пробует до 8 профилей в пределах 20 секунд; первый живой остаётся
+     * работать. Возвращает порт SOCKS5 или 0, если живого профиля нет.
+     */
+    private fun startVlessSocksForMulti(clientData: ClientData, connectGenerationId: Int): Int {
+        val profiles = clientData.getVlessProfileLinks()
+            .mapNotNull { link -> VlessConfig.parse(link)?.let { link to it } }
+        if (profiles.isEmpty()) return 0
+        if (!XrayBridge.ensureLoaded()) {
+            LogManager.log("MULTI: Xray не загрузился — PRIMARY останется DESYNC.")
+            return 0
+        }
+        if (!OperaNativeVpnService.isNativeRuntimeAvailable(this)) return 0
+        val port = findEphemeralLoopbackPort() ?: return 0
+        XrayBridge.setProtector(this)
+        var cursor = clientData.getVlessRotationStartIndex().coerceIn(0, profiles.lastIndex)
+        val deadline = SystemClock.elapsedRealtime() + 45_000L
+        var tried = 0
+        val rejected = mutableListOf<String>()
+        while (tried < profiles.size && tried < 12 && SystemClock.elapsedRealtime() < deadline) {
+            if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return 0
+            val (link, config) = profiles[cursor]
+            cursor = (cursor + 1) % profiles.size
+            tried++
+            val startError = XrayBridge.start(VlessXrayConfig.build(config, port))
+            if (startError.isNotBlank()) {
+                rejected += link
+                LogManager.log("MULTI: VLESS ${config.displayName} не запустился: ${startError.take(120)}")
+                XrayBridge.stop()
+                continue
+            }
+            if (awaitVlessProxyReady(port, connectGenerationId, deep = true)) {
+                clientData.setVlessConfigLink(link)
+                LogManager.log(
+                    "MULTI: VLESS PRIMARY поднят (${config.displayName}, 127.0.0.1:$port)."
+                )
+                return port
+            }
+            rejected += link
+            LogManager.log("MULTI: VLESS ${config.displayName} — проба не прошла.")
+            XrayBridge.stop()
+        }
+        XrayBridge.stop()
+        // Отвергнутые уходят вниз списка: следующее подключение начнёт с тех,
+        // кого ещё не проверяли, и перебор не будет биться в те же мёртвые узлы.
+        if (rejected.isNotEmpty()) {
+            clientData.demoteVlessProfileLinks(rejected)
+        }
+        LogManager.log("MULTI: живого VLESS-профиля нет — PRIMARY будет DESYNC.")
+        return 0
+    }
+
+    /**
+     * MULTI: умная маршрутизация через nova-router.
+     *
+     * Пока два слота: SECONDARY — Opera (HTTP CONNECT), DIRECT — напрямую.
+     * Локальные TLD уходят в DIRECT, остальное — в Opera с откатом в DIRECT.
+     * PRIMARY (WARP/VLESS) подключим, когда их ядра научатся отдавать SOCKS
+     * без собственного TUN.
+     */
+    private fun runMultiPhase(clientData: ClientData, connectGenerationId: Int): Boolean {
+        if (!multiPhaseActive.compareAndSet(false, true)) {
+            LogManager.log("MULTI: фаза уже идёт — второй заход не заводим.")
+            return true
+        }
+        try {
+            if (!RouterProcess.isAvailable(this)) {
+                LogManager.log("MULTI: нет libnova-router.so для ABI ${Build.SUPPORTED_ABIS.joinToString()}.")
+                publishTransportNotice(clientData, "MULTI недоступен на этом устройстве.", keepOnStop = true)
+                return false
+            }
+            setCurrentBackend(BACKEND_MULTI)
+            currentTransportLabel = TRANSPORT_MULTI
+            broadcastState(STATE_CONNECTING)
+            installSocketProtector()
+
+            // PRIMARY — локальный DESYNC: он не зависит от чужой регистрации и
+            // работает всегда, когда есть сеть.
+            val desyncPort = DesyncProxyManager.start(
+                this,
+                LogManager::log,
+                preferredPort = DesyncProxyManager.DEFAULT_PORT,
+                options = clientData.getDesyncOptions(),
+            )
+            if (desyncPort == 0) {
+                LogManager.log("MULTI: PRIMARY (DESYNC) не поднялся.")
+                return false
+            }
+
+            // SECONDARY — Opera, если она вообще доступна и успела зарегистрироваться.
+            var operaPort = 0
+            val routingStore = RoutingStore(this)
+            val operaRetryAfter = routingStore.operaRetryAfterMs()
+            val nowMs = System.currentTimeMillis()
+            if (nowMs < operaRetryAfter) {
+                LogManager.log(
+                    "MULTI: Opera недавно не поднялась — SECONDARY пропускаем ещё " +
+                        "${(operaRetryAfter - nowMs) / 1000} с."
+                )
+            } else if (OperaProxyManager.isTransportSupportedOnDevice(this)) {
+                val ready = OperaProxyManager.ensureReady(
+                    this,
+                    LogManager::log,
+                    purposeLabel = "умной маршрутизации",
+                    readyTimeoutMs = 6_000L,
+                    maxLaunchPlans = 3,
+                    shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
+                )
+                if (ready == OperaProxyManager.ReadyState.FAILED) {
+                    routingStore.setOperaRetryAfterMs(System.currentTimeMillis() + 10 * 60_000L)
+                    LogManager.log("MULTI: Opera не поднялась — SECONDARY отключён на 10 минут.")
+                } else {
+                    routingStore.setOperaRetryAfterMs(0L)
+                    operaPort = OperaProxyManager.getLoopbackProxyPort(this)
+                }
+            } else {
+                LogManager.log("MULTI: Opera runtime недоступен — SECONDARY отключён.")
+            }
+            if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
+                DesyncProxyManager.stop(LogManager::log)
+                OperaProxyManager.stopManaged(LogManager::log)
+                return true
+            }
+
+            val vlessPort = startVlessSocksForMulti(clientData, connectGenerationId)
+            multiVlessActive = vlessPort > 0
+            val primaryPort = if (vlessPort > 0) vlessPort else desyncPort
+            val spoofPort = if (vlessPort > 0) desyncPort else 0
+            multiPrimaryPort = primaryPort
+            multiSpoofPort = spoofPort
+            multiOperaPort = operaPort
+            val config = buildMultiRouterConfig(primaryPort, operaPort, spoofPort)
+            val routerPort = RouterProcess.start(this, config, LogManager::log)
+            if (routerPort == 0) {
+                DesyncProxyManager.stop(LogManager::log)
+                OperaProxyManager.stopManaged(LogManager::log)
+                return false
+            }
+            if (!startProxyTunnel(clientData, routerPort, BACKEND_MULTI, "NovaMultiVPN", "NovaMultiTunThread")) {
+                RouterProcess.stop(LogManager::log)
+                DesyncProxyManager.stop(LogManager::log)
+                OperaProxyManager.stopManaged(LogManager::log)
+                return false
+            }
+            if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
+                RouterProcess.stop(LogManager::log)
+                DesyncProxyManager.stop(LogManager::log)
+                OperaProxyManager.stopManaged(LogManager::log)
+                return true
+            }
+            markSuccessfulTunnelProbe()
+            broadcastState(STATE_CONNECTED)
+            LogManager.log(
+                "MULTI активен: router 127.0.0.1:$routerPort → PRIMARY$primaryPort" +
+                    (if (spoofPort != 0) " / spoof$spoofPort" else "") +
+                    (if (operaPort != 0) " / Opera$operaPort" else "") +
+                    " / DIRECT, локальные TLD — напрямую."
+            )
+
+            val tunThread = operaTunThread
+            var desyncDownTicks = 0
+            while (!isUserStopped && isConnectGenerationCurrent(connectGenerationId)) {
+                if (tunThread != null && !tunThread.isAlive) {
+                    LogManager.log("MULTI: tun2proxy завершился — поднимаем сеанс заново.")
+                    return false
+                }
+                if (!RouterProcess.isRunning()) {
+                    LogManager.log("MULTI: роутер не отвечает — поднимаем сеанс заново.")
+                    return false
+                }
+                if (multiVlessActive && !XrayBridge.isRunning()) {
+                    LogManager.log("MULTI: VLESS-ядро завершилось — поднимаем сеанс заново.")
+                    return false
+                }
+                if (DesyncProxyManager.isRunning()) {
+                    desyncDownTicks = 0
+                } else {
+                    desyncDownTicks += 1
+                    if (desyncDownTicks >= 2) {
+                        LogManager.log("MULTI: DESYNC не отвечает — поднимаем сеанс заново.")
+                        return false
+                    }
+                }
+                Thread.sleep(1_500L)
+            }
+            return true
+        } finally {
+            if (!isConnectGenerationCurrent(connectGenerationId)) {
+                RouterProcess.stop(LogManager::log)
+                DesyncProxyManager.stop(LogManager::log)
+                OperaProxyManager.stopManaged(LogManager::log)
+                if (multiVlessActive) {
+                    XrayBridge.stop()
+                    multiVlessActive = false
+                }
+            }
+            multiPhaseActive.set(false)
+        }
+    }
+
+    /**
+     * Обновляет underlying networks у TUN без пересборки интерфейса.
+     *
+     * Нужно локальным слотам (MULTI/DESYNC) после смены сети: ядро иначе
+     * продолжает считать VPN привязанным к старой сети и режет новые сокеты.
+     */
+    private fun refreshUnderlyingNetworksForLocalSlots() {
+        val connectivityManager = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        val network = selectUnderlyingNetwork(connectivityManager)
+        runCatching {
+            setUnderlyingNetworks(network?.let { arrayOf(it) })
+        }.onFailure {
+            LogManager.log("Не удалось обновить underlying networks: ${it.message}")
+        }
+        observedUnderlyingNetworkId = network?.toString()
+        observedUnderlyingNetworkSignature = buildUnderlyingNetworkSignature(connectivityManager, network)
+        observedUnderlyingUnavailable = network == null
+        LogManager.log(
+            "Underlying network обновлён без пересборки TUN: " +
+                (network?.let { describeNetwork(connectivityManager, it) } ?: "нет сети") + "."
+        )
+    }
+
+    /**
+     * Конфиг роутера из списков, локальных TLD и ручных маршрутов.
+     * Собирается и при старте MULTI, и при перезагрузке маршрутов на живом TUN.
+     */
+    private fun buildMultiRouterConfig(
+        primaryPort: Int,
+        operaPort: Int,
+        spoofPort: Int,
+    ): String {
+        val lists = ListRepository.load(this)
+        val routing = RoutingStore(this)
+        val overrides = RouteSettings.SERVICES.associate { service ->
+            service.key to RouteSettings.parseOverride(routing.getRouteOverride(service.key))
+        }
+        return RouterConfigFactory.build(
+            input = RouterConfigFactory.Input(
+                localTlds = lists.localTlds(),
+                exclude = lists.excludeDomains(),
+                main = lists.mainDomains(),
+                second = lists.secondDomains(),
+                ai = lists.aiDomains(),
+                youtube = lists.youtubeDomains(),
+                telegram = lists.telegramDomains(),
+                whatsapp = lists.whatsappDomains(),
+                discord = lists.discordDomains(),
+                overrides = overrides,
+                killSwitch = routing.isKillSwitch(),
+            ),
+            primaryPort = primaryPort,
+            operaPort = operaPort,
+            spoofPort = spoofPort,
+        )
+    }
+
+    /**
+     * Перезагрузка маршрутов без пересборки TUN.
+     *
+     * Роутер останавливается и поднимается на том же порту с новым конфигом;
+     * tun2proxy продолжает смотреть на порт и переподключается для новых
+     * соединений. Старые соединения доживают на прежних правилах.
+     */
+    private fun reloadRouterConfig() {
+        if (currentBackendLabel != BACKEND_MULTI) return
+        val primaryPort = multiPrimaryPort
+        if (primaryPort == 0 || !RouterProcess.isRunning()) return
+        val oldPort = RouterProcess.port()
+        val config = buildMultiRouterConfig(primaryPort, multiOperaPort, multiSpoofPort)
+        val port = RouterProcess.start(
+            this,
+            config,
+            LogManager::log,
+            preferredPort = oldPort,
+        )
+        LogManager.log(
+            if (port == oldPort) "ROUTER: маршруты перезагружены на порту $port."
+            else "ROUTER: маршруты перезагружены, порт сменился $oldPort → $port."
+        )
+    }
+
+    /**
+     * DESYNC: локальный SOCKS5 с обходом DPI, затем tun2proxy.
+     *
+     * Отдельная фаза, как DNS и Tor: движок живёт своим процессом, а TUN
+     * собирается общим `startProxyTunnel`. UDP через прокси не проходит —
+     * SOCKS5-сервер отвечает отказом на UDP ASSOCIATE, поэтому QUIC в этом
+     * режиме не поднимается и браузер уходит на TCP, где и работает split.
+     */
+    private fun runDesyncPhase(clientData: ClientData, connectGenerationId: Int): Boolean {
+        if (!desyncPhaseActive.compareAndSet(false, true)) {
+            // Фаза того же поколения — её и держим. Фаза прошлого поколения
+            // обязана умереть: иначе новый сеанс молча получит «уже идёт» и
+            // останется без туннеля (наблюдалось на realme при смене сети).
+            if (desyncPhaseGeneration == connectGenerationId) {
+                LogManager.log("DESYNC: фаза этого поколения уже идёт — второй заход не заводим.")
+                return true
+            }
+            val deadline = SystemClock.elapsedRealtime() + 4_000L
+            while (desyncPhaseActive.get() && SystemClock.elapsedRealtime() < deadline) {
+                Thread.sleep(100L)
+            }
+            if (!desyncPhaseActive.compareAndSet(false, true)) {
+                LogManager.log("DESYNC: прежняя фаза не завершилась за 4 с — новый сеанс не поднимаем.")
+                return false
+            }
+        }
+        desyncPhaseGeneration = connectGenerationId
+        try {
+            // Прежний tun2proxy остановлен, и :vpn уже обречён на exit(-1):
+            // поднимать сеанс здесь бессмысленно, новый процесс сделает это сам.
+            if (handOffIfVpnProcessDoomed("desync", connectGenerationId)) return true
+            if (!DesyncProxyManager.isAvailable(this)) {
+                LogManager.log(
+                    "DESYNC недоступен: нет $DesyncProxyManager.BINARY для ABI " +
+                        android.os.Build.SUPPORTED_ABIS.joinToString()
+                )
+                publishTransportNotice(clientData, "DESYNC недоступен на этом устройстве.", keepOnStop = true)
+                return false
+            }
+            if (
+                currentBackendLabel == BACKEND_DESYNC &&
+                operaFallbackActive &&
+                operaTunThread?.isAlive == true &&
+                DesyncProxyManager.isRunning()
+            ) {
+                LogManager.log("DESYNC уже поднят — второй туннель не создаём.")
+                return holdDesyncSession(connectGenerationId)
+            }
+            setCurrentBackend(BACKEND_DESYNC)
+            currentTransportLabel = TRANSPORT_DESYNC
+            broadcastState(STATE_CONNECTING)
+            // Без protect() сокеты tun2proxy уходят в собственный TUN и
+            // замыкаются сами на себя: движок поднимается, а tun2proxy
+            // сразу завершается с кодом -1.
+            installSocketProtector()
+
+            val socksPort = DesyncProxyManager.start(
+                this,
+                LogManager::log,
+                preferredPort = DesyncProxyManager.DEFAULT_PORT,
+                options = clientData.getDesyncOptions(),
+            )
+            if (socksPort == 0) return false
+            if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
+                DesyncProxyManager.stop(LogManager::log)
+                return true
+            }
+            if (!startProxyTunnel(clientData, socksPort, BACKEND_DESYNC, "NovaDesyncVPN", "NovaDesyncTunThread")) {
+                LogManager.log("DESYNC: прокси поднят, но VPN-интерфейс поверх него не встал.")
+                DesyncProxyManager.stop(LogManager::log)
+                return false
+            }
+            if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
+                DesyncProxyManager.stop(LogManager::log)
+                return true
+            }
+            markSuccessfulTunnelProbe()
+            broadcastState(STATE_CONNECTED)
+            LogManager.log(
+                "DESYNC активен: SOCKS5 на 127.0.0.1:$socksPort, " +
+                    "TCP split + TLS record split + decoy."
+            )
+
+            // Держим фазу живой, как VLESS и DNS. Без этого цикл возвращал
+            // true сразу после CONNECTED, и каждый следующий start-intent
+            // заводил новый движок поверх прежнего: движок и tun2proxy
+            // перезапускались по кругу, а сеанс выглядел «подключился и отвалился».
+            return holdDesyncSession(connectGenerationId)
+        } finally {
+            desyncPhaseActive.set(false)
+        }
+    }
+
+    /**
+     * Держит DESYNC-сеанс, пока он нужен. Возвращает `false`, когда движок или
+     * tun2proxy умерли и сеанс надо собирать заново.
+     */
+    private fun holdDesyncSession(connectGenerationId: Int): Boolean {
+        val tunThread = operaTunThread
+        var downTicks = 0
+        while (!isUserStopped && isConnectGenerationCurrent(connectGenerationId)) {
+            if (tunThread != null && !tunThread.isAlive) {
+                LogManager.log("DESYNC: tun2proxy завершился — поднимаем сеанс заново.")
+                return false
+            }
+            if (DesyncProxyManager.isRunning()) {
+                downTicks = 0
+            } else {
+                downTicks += 1
+                // Наблюдатель перезапускает движок примерно за 0,7 с;
+                // одна пустая проверка — ещё не смерть.
+                if (downTicks >= 2) {
+                    LogManager.log("DESYNC: движок не отвечает — поднимаем сеанс заново.")
+                    return false
+                }
+            }
+            Thread.sleep(1_500L)
+        }
+        if (!isConnectGenerationCurrent(connectGenerationId)) {
+            // Транспорт сменили, пока фаза держала сеанс: движок больше не нужен.
+            DesyncProxyManager.stop(LogManager::log)
+        }
+        return true
+    }
+
     private fun runDnsPhase(clientData: ClientData, connectGenerationId: Int): Boolean {
         if (!dnsPhaseActive.compareAndSet(false, true)) {
             LogManager.log("DNS: фаза уже идёт в этом процессе — второй заход не заводим.")
@@ -11646,7 +12239,7 @@ class NovaVpnService : OperaNativeVpnService() {
                         existingJson,
                         accessToken,
                         deviceId,
-                        "Nova Android"
+                        "OBNOVA Android"
                     ).orEmpty().takeIf { it.isNotBlank() }
                 }
                 future.get(timeoutMs, TimeUnit.MILLISECONDS)
@@ -15752,6 +16345,37 @@ class NovaVpnService : OperaNativeVpnService() {
                         return@startSafeServiceThread
                     }
                 }
+                if (currentBackendLabel == BACKEND_MULTI) {
+                    // MULTI тоже локальный: DESYNC и router не привязаны к
+                    // интерфейсу, а пересборка TUN зовёт tun2proxy_stop и
+                    // обрекает :vpn. Новые соединения уйдут через новую сеть.
+                    LogManager.log(
+                        "Смена сети при MULTI: слоты локальные, туннель не пересобираем."
+                    )
+                    refreshUnderlyingNetworksForLocalSlots()
+                    // Сторож уже перевёл состояние в CONNECTING, но пересборки
+                    // не будет: возвращаем экран в CONNECTED, иначе он висит
+                    // «подключаемся» над живым туннелем.
+                    if (currentState == STATE_CONNECTING && isRunning) {
+                        broadcastState(STATE_CONNECTED)
+                    }
+                    return@startSafeServiceThread
+                }
+                if (regionPreference == ConnectionSelectorPolicy.CHIP_DESYNC) {
+                    // DESYNC — локальный SOCKS5: он не привязан к конкретному
+                    // сетевому интерфейсу, новые соединения сами уйдут через
+                    // новую сеть. Пересборка TUN здесь только вредит: остановка
+                    // tun2proxy обрекает :vpn и роняет рабочий сеанс.
+                    LogManager.log(
+                        "Смена сети при DESYNC: движок локальный, туннель не пересобираем — " +
+                            "новые соединения уйдут через новую сеть."
+                    )
+                    refreshUnderlyingNetworksForLocalSlots()
+                    if (currentState == STATE_CONNECTING && isRunning) {
+                        broadcastState(STATE_CONNECTED)
+                    }
+                    return@startSafeServiceThread
+                }
                 val connectGenerationId = beginConnectGeneration(stopExisting = true)
                 if (tun2proxyForceStopAtMs != 0L) {
                     // Разборка звала tun2proxy_stop: через две секунды библиотека
@@ -16397,7 +17021,7 @@ class NovaVpnService : OperaNativeVpnService() {
     
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Nova VPN", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CHANNEL_ID, "OBNOVA VPN", NotificationManager.IMPORTANCE_LOW)
             getSystemService(NotificationManager::class.java)?.createNotificationChannel(channel)
         }
     }
@@ -25613,12 +26237,12 @@ class NovaVpnService : OperaNativeVpnService() {
 
         val rawCustom = clientData.getDomainBypassCustomRaw()
         val rawZones = clientData.getDomainBypassZonesRaw()
-        val domains = DomainBypassRules.parseDomains(rawCustom).toList()
+        val domains = DomainBypassRules.effectiveDomains(rawCustom).toList()
 
         // Зоны сюда не попадают и попасть не могут: вырез маршрута выражается
         // адресами, а списка всех адресов зоны не существует. Их применяет ядро —
         // [applyCoreDomainBypassPolicy], учась адресам из перехваченных DNS-ответов.
-        val zones = DomainBypassRules.parseZones(rawZones)
+        val zones = DomainBypassRules.effectiveZones(rawZones)
         if (zones.isNotEmpty()) {
             // «cyrillic» — флаг, а не зона: в ядре под него отдельный параметр
             // (см. applyCoreDomainBypassPolicy). Оставленный в перечислении, он

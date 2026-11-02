@@ -1,0 +1,119 @@
+package com.example.nova
+
+/**
+ * Собирает конфигурацию `nova-router` из списков, ручных маршрутов и живых
+ * слотов. Отдельный чистый объект: его можно проверить тестом без службы.
+ */
+object RouterConfigFactory {
+
+    data class Input(
+        val localTlds: Set<String> = emptySet(),
+        val exclude: List<String> = emptyList(),
+        val main: List<String> = emptyList(),
+        val second: List<String> = emptyList(),
+        val ai: List<String> = emptyList(),
+        val youtube: List<String> = emptyList(),
+        val telegram: List<String> = emptyList(),
+        val whatsapp: List<String> = emptyList(),
+        val discord: List<String> = emptyList(),
+        val overrides: Map<String, RouteClass?> = emptyMap(),
+        /** Killswitch: без DIRECT-хвоста, если слоты не ответили. */
+        val killSwitch: Boolean = false,
+    )
+
+    /**
+     * @param primaryPort основной слот (VLESS, если есть живой профиль, иначе
+     *        DESYNC).
+     * @param operaPort вторичный слот Opera; 0 — нет.
+     * @param spoofPort DESYNC как запасной слот, когда основным стал VLESS;
+     *        0 — не нужен.
+     */
+    fun build(
+        input: Input,
+        primaryPort: Int,
+        operaPort: Int = 0,
+        spoofPort: Int = 0,
+    ): String {
+        require(primaryPort in 1..65535) { "primaryPort вне диапазона: $primaryPort" }
+        val opera = operaPort in 1..65535
+        val spoof = spoofPort in 1..65535
+        val killSwitch = input.killSwitch
+        val rules = mutableListOf<RouterConfig.RuleSpec>()
+
+        // Порядок как в PAC: exclude → локальные TLD → доменные списки.
+        if (input.exclude.isNotEmpty()) {
+            rules += RouterConfig.RuleSpec(input.exclude, listOf("direct"), "exclude")
+        }
+        if (input.localTlds.isNotEmpty()) {
+            rules += RouterConfig.RuleSpec(input.localTlds.toList(), listOf("direct"), "local-tld")
+        }
+        add(rules, input.main, order("ru", input.overrides, opera, spoof, killSwitch), "ru")
+        add(rules, input.second, order("eu", input.overrides, opera, spoof, killSwitch), "eu")
+        add(rules, input.ai, order("ai", input.overrides, opera, spoof, killSwitch), "ai")
+        add(rules, input.youtube, order("youtube", input.overrides, opera, spoof, killSwitch), "youtube")
+        add(rules, input.telegram, order("telegram", input.overrides, opera, spoof, killSwitch), "telegram")
+        add(rules, input.whatsapp, order("whatsapp", input.overrides, opera, spoof, killSwitch), "whatsapp")
+        add(rules, input.discord, order("discord", input.overrides, opera, spoof, killSwitch), "discord")
+
+        val slots = mutableMapOf(
+            "primary" to RouterConfig.SlotSpec("socks5", "127.0.0.1:$primaryPort"),
+            "direct" to RouterConfig.SlotSpec("direct"),
+        )
+        if (spoof) {
+            slots["spoof"] = RouterConfig.SlotSpec("socks5", "127.0.0.1:$spoofPort")
+        }
+        if (opera) {
+            slots["secondary"] = RouterConfig.SlotSpec("http", "127.0.0.1:$operaPort")
+        }
+
+        return RouterConfig.build(
+            slots = slots,
+            rules = rules,
+            defaultOrder = order("other", input.overrides, opera, spoof, killSwitch),
+        )
+    }
+
+    fun order(
+        service: String,
+        overrides: Map<String, RouteClass?>,
+        opera: Boolean,
+        spoof: Boolean = false,
+        killSwitch: Boolean = false,
+    ): List<String> {
+        val tail = buildList {
+            if (spoof) add("spoof")
+            if (!killSwitch) add("direct")
+        }
+        val ru = listOf("primary") + tail
+        val eu = (if (opera) listOf("secondary") else emptyList()) + ru
+        // Telegram в PC-политике закреплён за relay/PRIMARY и не должен уходить
+        // в DIRECT: иначе при отказе слота он молча пойдёт мимо туннеля.
+        val pinned = buildList {
+            add("primary")
+            if (spoof) add("spoof")
+        }
+        return when (overrides[service]) {
+            RouteClass.DIRECT -> listOf("direct")
+            RouteClass.BLOCK -> emptyList()
+            RouteClass.RU -> ru
+            RouteClass.EU, RouteClass.YOUTUBE, RouteClass.AI -> eu
+            RouteClass.TELEGRAM -> pinned
+            RouteClass.WHATSAPP, RouteClass.DISCORD -> ru
+            null -> when (service) {
+                "eu", "youtube", "ai" -> eu
+                "telegram" -> pinned
+                else -> ru
+            }
+        }
+    }
+
+    private fun add(
+        rules: MutableList<RouterConfig.RuleSpec>,
+        domains: List<String>,
+        order: List<String>,
+        name: String,
+    ) {
+        if (domains.isEmpty()) return
+        rules += RouterConfig.RuleSpec(domains, order, name)
+    }
+}

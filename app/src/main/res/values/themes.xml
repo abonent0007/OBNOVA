@@ -150,6 +150,27 @@
     </style>
 
     <!--
+        Кнопка канала в dock-режиме главного экрана.
+
+        В покое это точка; подпись рисует сам DockRadioButton над точкой, когда
+        палец/курсор приближается. Ширина фиксирована, чтобы появление подписи
+        не двигало соседние точки. 44dp × 56dp — компромисс: семь точек
+        помещаются в ряд на типичной 360dp-ширине, а «MASQUE»/«PROTON» влезают
+        в подпись без обрезки.
+    -->
+    <style name="NovaDockChip" parent="NovaMainRegionChip">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:layout_marginEnd">1dp</item>
+        <item name="android:layout_marginBottom">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">0dp</item>
+        <item name="android:paddingEnd">0dp</item>
+        <item name="android:background">@null</item>
+        <item name="android:textSize">9sp</item>
+    </style>
+
+    <!--
         Кнопка подрегиона в строке под селектором: «Регион: EU US» для Opera и
         список стран для Proton. Высота та же, что у основной кнопки — владелец
         попросил одинаковые; отличается только шириной, потому что подписи короче.

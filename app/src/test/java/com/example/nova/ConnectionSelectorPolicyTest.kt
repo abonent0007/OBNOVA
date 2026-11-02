@@ -31,6 +31,12 @@ class ConnectionSelectorPolicyTest {
         )
     }
 
+    /** ZAPRET больше не отдельная кнопка: DESYNC встроен в MULTI. */
+    @Test
+    fun `zapret is not a chip anymore`() {
+        assertFalse(ConnectionSelectorPolicy.ORDER.contains("desync"))
+    }
+
     /**
      * Три полосы — это данные, а не разметка.
      *

@@ -103,10 +103,11 @@ object DiagnosticSnapshot {
         val snapshot = runCatching { clientData.getTunnelUiSnapshot() }.getOrNull()
         val directSnapshot = runCatching { clientData.getDirectUiSnapshot() }.getOrNull()
         val lines = buildList {
-            add("Nova diagnostic log")
+            add("OBNOVA diagnostic log")
             add("generated_at=$utc, device_utc_offset=${utcOffset()}")
-            add("app_version=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.FLAVOR})")
+            add("app=${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}, ${BuildConfig.FLAVOR})")
             add("android=${Build.VERSION.RELEASE ?: "unknown"} sdk=${Build.VERSION.SDK_INT}, device=${Build.MANUFACTURER} ${Build.MODEL}, abi=${Build.SUPPORTED_ABIS.firstOrNull() ?: "?"}")
+            add("xray=${safe { if (XrayBridge.ensureLoaded()) XrayBridge.version() else "unavailable" }}")
             add("service_state=${safe { clientData.getServiceState().ifBlank { "unknown" } }}")
             add("backend=${safe { clientData.getServiceBackend().ifBlank { "unknown" } }}")
             add("exit_preference=${safe { clientData.getExitRegionPreference() }}")

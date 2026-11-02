@@ -88,7 +88,7 @@ class DiagnosticsActivity : Activity() {
         }
         column.addView(
             TextView(this).apply {
-                text = "NOVA — ДИАГНОСТИКА  " + BuildConfig.VERSION_NAME
+                text = "OBNOVA — ДИАГНОСТИКА  " + BuildConfig.VERSION_NAME
                 setTextColor(Color.parseColor("#7CFF7C"))
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
                 typeface = Typeface.MONOSPACE

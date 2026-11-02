@@ -3,6 +3,13 @@
     native <methods>;
 }
 
+# gomobile-классы вызываются из Go/JNI по именам; R8 не должен их переименовывать.
+-keep class nova.** { *; }
+-keep class go.** { *; }
+
+# Xray-мост и его native-методы ищутся JNI по стабильному имени класса.
+-keep class com.example.nova.XrayBridge { *; }
+
 -keep class com.example.operaproxy.ProxyVpnService { *; }
 
 # tor-android: нативный tor обращается к полям и методам `TorService` по именам

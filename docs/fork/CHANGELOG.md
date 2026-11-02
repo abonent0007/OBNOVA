@@ -1,0 +1,574 @@
+# Журнал изменений личного форка Nova Android
+
+> Формат: дата → что изменено → где → чем проверено. Все пути от корня
+> `C:\Users\User\Documents\Nova-Android-Fork`.
+
+## 2026-11-02 — pipeline: динамические данные и логическая непрерывность
+
+### Что изменено
+
+- **Инвентаризация источников**: новый `ExternalSources.kt` — единственная
+  точка со всеми внешними адресами; полная таблица — `docs/fork/EXTERNAL-DATA.md`.
+- **`ListSync` больше не знает имён файлов**: набор берётся из `manifest.json`
+  (`ListManifest`), проверяется на `list/…txt` без `..` и `u_`. Новый
+  `list/local_tlds.txt` доедет без выпуска версии.
+- **Атомарное обновление списков**: файлы скачиваются в `.staging`, сверяются
+  по sha256 и заменяют прежние только все вместе. Один сбойный файл больше не
+  оставляет смесь старых и новых правил. Манифест и каждый файл проверяются на
+  каждом зеркале отдельно: устаревший jsdelivr не блокирует обновление, если
+  raw.githubusercontent уже отдал правильную версию.
+- **Кэш списков межпроцессный**: `ListCacheSignature` (размер, mtime и
+  `meta.txt`) заставляет службу `:vpn` перечитать списки после обновления из
+  основного процесса; `ACTION_RELOAD_ROUTER` дополнительно сбрасывает кэш.
+- **Локальные TLD — данные**: `assets/lists/local_tlds.txt` + `TldList`;
+  `RoutingListsSnapshot` отдаёт их политике, `RoutingPolicy.decide` и
+  `RouterConfigFactory` используют снимок, а не только константу.
+- **Проверка сервисов** берёт цели из списков (`ServiceProbe.targetsFor`) и
+  сначала проверяет, что порт роутера открыт (порт читается из `status.json`,
+  а не жёстко 1373); иначе показывает понятное «MULTI не активен» вместо
+  четырёх таймаутов.
+- **Одна таблица подписей маршрутов**: `RouteSettings.chainHint` заменила
+  вторую копию в `RoutesActivity`; Telegram честно `PRIMARY` без DIRECT.
+- **`RouterConfigFactory`**: `primaryPort` валидируется; Telegram закреплён
+  (`primary` + `spoof`), без DIRECT-хвоста.
+- **`nova-router`**: `validate()` отвергает порядок, ссылающийся на
+  несуществующий слот; пустой порядок остаётся допустимым (BLOCK).
+- **`RoutingStore`**: разбор XML вынесен в `RoutingPrefsParser` и покрыт
+  тестами; `commit()` оставлен осознанно (запись до следующего подключения).
+- **Журнал стал доказательным**: после синхронизации пишется
+  `LISTS: … обновлено файлов: 12 …`, после проверки — одна строка `PROBE:`
+  с `OK/FAIL` по каждому сервису. Это видно в `adb logcat` без разбора UI.
+
+### Удалённые заглушки
+
+- Зашитый список девяти файлов в `ListSync`.
+- Вторая копия таблицы `defaultHint` в `RoutesActivity`.
+- Подпись `RELAY` для Telegram в UI.
+- Безусловная загрузка `ip/cloudflare.txt` вне манифеста.
+- Зашитые цели проверки сервисов (теперь список + запасные хосты).
+
+### Восстановленные логические звенья
+
+- После «Обновить списки» служба действительно видит новые файлы, а не свой
+  старый кэш.
+- Пустой/битый локальный список больше не затирает встроенный: срабатывает
+  `ListRepository.*From(local, asset)`.
+- Проверка сервисов не выдаёт «timeout» там, где просто не запущен MULTI.
+- Telegram не уходит в DIRECT при отказе слота.
+- Опечатка в имени слота в конфиге роутера теперь ошибка загрузки, а не
+  молчаливый пропуск.
+
+### Проверено
+
+- `go test ./...` в `nova-router` и `nova-desync` — ok.
+- `testGithubDebugUnitTest` — **606 тестов, 0 failures, 9 skipped** (было 583;
+  добавлены `ListManifestTest`, `ListCacheSignatureTest`,
+  `RoutingPrefsParserTest`, `TldListTest`, `ServiceProbeTargetsTest`,
+  `ListRepositoryFallbackTest`, тесты цепочек и валидации Go).
+- `tools/check_imports.py` — 69 изменённых Kotlin-файлов, 0 неиспользуемых
+  импортов; `--external` — у всех сетевых/файловых вызовов есть
+  `try`/`runCatching`.
+- `lintGithubDebug` — 0 ошибок в изменённых файлах; общие 37 ошибок остаются
+  в старом `AppUpdateManager`/legacy-коде (NewApi, receiver flags) и к этому
+  pipeline не относятся.
+
+## 2026-11-02 — прямой слот, VLESS-проверка и честный транспорт
+
+- **Прямой слот `nova-router` не работал по имени**: `dial tcp ya.ru:443` падал
+  за 4–5 мс, хотя `77.88.55.88:443` отвечал 406. Причина — Go-бинарь на Android
+  не имеет системного `resolv.conf`, а `net.Dial` по имени молча отказывал.
+  Добавлен `nova-router/resolver.go`: публичный DNS по TCP
+  (`1.1.1.1 → 8.8.8.8 → 9.9.9.9`), кэш на 5 минут, IPv4 вперёд. Проверено на
+  устройстве: `ya.ru` 302 за 0,27 с, `mail.ru` 302 за 0,30 с, `2ip.ru` 404 за
+  0,44 с (раньше — `000` за 0,005 с). Это же чинит локальные TLD и `exclude`
+  у обычных приложений, которые ходят по имени.
+- `RouterProcess` теперь запускает роутер с `-v`, а строки «нет слота» пишет в
+  журнал уровня WARN с подавлением повторов на 5 с — отказ маршрута больше не
+  выглядит молчанием. Плюс роутер собирается NDK-тулчейном
+  (`GOOS=android`, `CGO_ENABLED=1`), иначе процесс падал с
+  `error=2` из-за glibc-интерпретатора; для armv7 собраны и упакованы
+  `libnova-router.so` и `libnova-desync.so` (на живом armv7-девайсе не
+  проверялись — тестового устройства нет).
+- **VLESS-профиль проверяется по HTTPS, а не только по HTTP**: узел
+  `188.116.27.6` отдавал `api.ipify.org` по 80 и молча ронял TLS на 443.
+  `awaitVlessProxyReady(..., deep = true)` поднимает настоящий TLS до
+  `example.com`; такой узел отбраковывается до подъёма TUN. Перебор расширен
+  до 12 профилей / 45 с, отвергнутые уходят вниз списка
+  (`demoteVlessProfileLinks`), поэтому следующее подключение начинает с
+  непроверенных.
+- Публичная подписка VLESS из стокового PC-форка
+  (`profiles/subscriptions.json`, `iboxz/free-v2ray-collector`) загружается
+  кнопкой **«Загрузить публичную подписку»** в «Маршрутах». На устройстве
+  импортировано **249 профилей**. Свободные узлы нестабильны: из проверенных
+  двенадцати ни один не прошёл HTTPS-пробу, поэтому MULTI честно откатывается
+  на DESYNC, а не висит «подключено» на мёртвом узле.
+- **Кнопка «Проверить RU / US / YouTube / Telegram»** в «Маршрутах»: четыре
+  настоящих TLS-запроса через `127.0.0.1:1373`. На MULTI результат:
+  `RU (ya.ru) — OK 302 336 мс`, `US (cnn.com) — OK 302 897 мс`,
+  `YouTube — Read timed out`, `Telegram — Read timed out`.
+- На том же устройстве **MASQUE и WARP проходят эти же проверки**: YouTube
+  играет видео, Telegram держит соединение (`tgnet connected to
+  149.154.167.41:443`), CNN и российские сайты открываются. Разница — задержка:
+  40–72 мс у MASQUE, 211 мс у WARP. Это рабочий обход блокировки для данного
+  оператора; MULTI его не заменяет.
+- Бейдж главного экрана больше не врёт: при активном MULTI он показывает
+  `MULTI: <страна>`, а не выбранный чип `WARP/MASQUE`. Подпись Telegram в
+  «Маршрутах» исправлена с `RELAY` на `PRIMARY` — слота relay в конфигурации
+  нет, и обещать его нельзя.
+- `RoutingStore` читает `smart_routing` (и остальные ключи) из XML на диске, а
+  не из кэша SharedPreferences процесса `:vpn`. Переключатель «умная
+  маршрутизация» теперь действует со следующего подключения **без
+  force-stop**; проверено: выключили в «Маршрутах» → отключили/включили VPN →
+  бейдж `MASQUE: RU`, процессов router/desync нет.
+
+## 2026-11-01 — 1.34.1 / versionCode 165 — OBNOVA
+
+- Приложение переименовано в **OBNOVA**: `app_name`, описание, `Start/Stop
+  OBNOVA VPN`, канал и заголовок уведомления «OBNOVA VPN», превью в настройках
+  уведомлений, стартовая строка журнала, список WARP-конфигураций, экран
+  диагностики и метка буфера обмена, подписи `ParityScreenActivity` и плитки
+  Quick Settings, а также MASQUE device name «OBNOVA Android». Технические
+  имена (package `com.brent.nova`, классы, каналы, ключи) не менялись.
+- `versionName 1.34.0 → 1.34.1`, `versionCode 164 → 165`.
+- APK теперь называется `OBNOVA_1.34.1.apk`.
+- Release собирается **по ABI**: `OBNOVA_1.34.1-arm64-v8a.apk` (35,1 МБ),
+  `OBNOVA_1.34.1-armeabi-v7a.apk` (33,2 МБ) и универсальный
+  `OBNOVA_1.34.1-universal.apk` (64,8 МБ). Для телефона ставится один
+  ABI-APK — экономия ~46% против универсального.
+- Ключ релея остался стоковым `nova-android-164`, поэтому publishability-gate
+  не проходит по версии; personal-release собирается с
+  `NOVA_ALLOW_UNPUBLISHABLE_BUILD=1`. Для публикуемой сборки ключ нужно
+  получить из upstream под 165.
+
+## 2026-11-01 — parity v2: политика маршрутов и каркас меню
+
+- Новый `RoutingPolicy.kt`: порядок правил PC-форка (`user_direct → user_ru/eu →
+  exclude → локальные TLD → режим приложения → AI → EU → YouTube → RU →
+  discord/telegram/whatsapp → Cloudflare-IP → foreign_default`). Чистый Kotlin,
+  без Android API.
+- Новый `SlotResolver.kt`: класс маршрута → цепочка слотов (PRIMARY/SECONDARY/
+  RELAY/DIRECT) с учётом страны выхода, Tor и killswitch — аналог строки PAC.
+- Новые `DomainList.kt` и `RoutingListsSnapshot.kt`: формат списков PC
+  (`#`-комментарии, границы доменных меток) и неизменяемый снимок для политики.
+- Новый `nova-router/` (Go): SOCKS5-диспетчер между tun2proxy и слотами —
+  правила по домену, цепочки `socks5/http/direct`, первый живой слот, тесты
+  конфигурации, fallback и HTTP CONNECT. Бинарь `libnova-router.so` (3,6 МБ,
+  arm64) упакован в `jniLibs`, процессом управляет `RouterProcess.kt`.
+- `RouterConfig.kt` собирает JSON-конфигурацию для роутера из Kotlin-политики
+  (детерминированный порядок, экранирование) — тесты на точный JSON.
+- `RouteSettings.kt` + `RoutesActivity`: экран «Маршруты» с восемью сервисными
+  категориями, ручным выбором слота, переключателями `foreign_default` и
+  killswitch; значения хранятся в `ClientData` и переживают перезапуск.
+- `SlotsActivity`: экран «Слоты» с карточками PRIMARY/SECONDARY/RELAY/DIRECT;
+  показывает состояние службы, backend, endpoint Opera, режим split-tunnel.
+- `MULTI`: первый реальный путь через `nova-router` — PRIMARY = DESYNC
+  (локальный SOCKS5), SECONDARY = Opera (HTTP CONNECT, подключается, если
+  доступна), DIRECT — напрямую, локальные TLD в DIRECT. При недоступной Opera
+  сеанс не падает и работает без SECONDARY.
+- `MULTI`: если в подписке есть живой VLESS-профиль, он поднимается как
+  **PRIMARY** (SOCKS5 без TUN), а DESYNC остаётся запасным слотом `spoof`;
+  без профилей PRIMARY — DESYNC, как раньше. VLESS проверяется до 8 профилей
+  за 20 с, первый живой остаётся; при смене транспорта ядро останавливается.
+- `nova-router` получил **UDP ASSOCIATE**: tun2proxy больше не получает
+  `CommandNotSupported` для DNS/UDP; датаграммы уходят через выбранный слот,
+  UDP/443 (QUIC) отбрасывается, чтобы трафик шёл по TCP. Тест — UDP-эхо через
+  релей.
+- Killswitch теперь реально влияет на конфиг роутера: при включённом
+  переключателе цепочки не получают DIRECT-хвост (явный DIRECT у сервиса
+  сохраняется), поэтому при падении слотов соединение отклоняется, а не уходит
+  напрямую.
+- Шум в журнале: отмена prewarm-регистрации Opera (`terminated signal received`)
+  больше не пишется как событие/CRITICAL, а уходит в debug — сеанс она не
+  затрагивает.
+- «Слоты»: кнопка «Проверить слоты» — реальный SOCKS5-запрос через
+  `nova-router` к `1.1.1.1:443` с фолбэком по имени; статус показывает мс или
+  причину отказа. Порт берётся из `status.json`, потому что `RouterProcess`
+  живёт в процессе `:vpn`, а экран — в основном.
+- Новый `ListSync` + кнопка **«Обновить списки»** в «Маршрутах»: тянет
+  стоковый фид `confeden/nova_updates/nova_pc` (`manifest.json` + sha256) через
+  raw.githubusercontent, jsdelivr и raw.githack, проверяет хеши и кладёт списки
+  в `filesDir/routing_lists`; `ListRepository` предпочитает их встроенным
+  asset-копиям, после успеха конфиг роутера перезагружается на живом сеансе.
+  На устройстве: «Обновлено 02.11.2026 10:33 · обновлено файлов: 9».
+- В карточке «Списки маршрутов» добавлена кнопка **«Обновить подписку»**, если
+  в ClientData сохранена VLESS-подписка: она вызывает
+  `VlessSubscriptionManager.refresh(force=true)` и показывает
+  `+добавлено / −удалено / всего` (или причину отказа). Отдельный экран
+  «WARP конфигурации» с подпиской остаётся как был.
+- `nova-router` теперь считает и трафик по правилам: у каждого правила есть
+  `name` (`ru`, `eu`, `youtube`, `telegram`, `exclude`, `local-tld`, …), счётчик
+  попаданий пишется в `status.json` (`routes`). `StrategiesActivity` показывает
+  блок «ТРАФИК ПО ПРАВИЛАМ»; Go-тест проверяет запись и разбор `routes`.
+- MULTI/DESYNC при смене сети возвращают состояние `CONNECTED`, если туннель
+  жив: раньше сторож ставил `CONNECTING`, пересборки не было, и экран висел
+  «подключаемся» над рабочим туннелем.
+- Известное ограничение: запрос по **имени** через DESYNC в MULTI падал
+  (резолвер внутри движка отдавал недостижимый адрес), по IP — работал.
+- Исправлено: `nova-desync` разрешает имена собственным резолвером через
+  публичный DNS по TCP (1.1.1.1 → 8.8.8.8 → 9.9.9.9) с откатом на системный;
+  TCP-путь уже проверен на той же сети. После правки проверка по имени
+  проходит: `OK · 199 мс · www.gstatic.com:443`, а в трафике MULTI нет ни
+  одного `SOCKS connection failed`/`CommandNotSupported`.
+- `RouterConfigFactory` собирает конфиг из списков PC (exclude, main, second,
+  ai, youtube, telegram, whatsapp, discord), локальных TLD и ручных маршрутов;
+  `BLOCK` даёт пустой порядок слотов.
+- `RouterConfigFactory` получил слот `spoof` и порядок `primary → spoof →
+  direct`; Opera остаётся `secondary`.
+- Проверка MULTI после добавления VLESS-PRIMARY: при 0 профилей PRIMARY
+  остаётся DESYNC, роутер поднимается с 2 слотами и 9 правилами; Opera
+  пропускается по 10-минутному backoff, ошибок нет.
+- `nova-router` пишет `status.json`: попытки/успехи/ошибки и EWMA задержки по
+  каждому слоту; `RouterStatus` читает его, экран «Слоты» показывает живые мс и
+  счётчик успехов вместо статичного текста.
+- Экран «Маршруты»: добавлена карточка «Приложения» — режим split-tunnel и число
+  выбранных приложений со ссылкой на выбор. На Android per-app решается TUN-ом
+  (`addAllowedApplication`), а не SOCKS-политикой, поэтому список не дублируется.
+- Изменение маршрута на живом MULTI-сеансе перезагружает только конфиг роутера
+  (`ACTION_RELOAD_ROUTER`), TUN и tun2proxy не пересобираются.
+- MULTI, как и DESYNC, больше не реагирует на смену сети пересборкой TUN:
+  локальные слоты не привязаны к интерфейсу, а `tun2proxy_stop` обрекал `:vpn`.
+- UI-консолидация: кнопка ZAPRET убрана с главного экрана и из настроек —
+  DESYNC теперь внутренний PRIMARY у MULTI. Боковое меню убрано; гамбургер
+  снова открывает старые настройки, а «Маршруты и приложения», «Слоты»,
+  «Стратегии», «Диагностика» добавлены строками в раздел «Маршрутизация».
+- Карточка «Приложения» в «Маршрутах» открывает настройки сразу на разделе
+  split-tunnel (`EXTRA_SCROLL_TO=split_apps`) и даёт быстрый выбор режима:
+  «Все приложения» / «Только выбранные» (с подсказкой, что применится после
+  переподключения VPN).
+- `RoutesActivity` переведён на `SwitchCompat` (рекомендация AppCompat, убраны
+  lint-предупреждения `UseSwitchCompatOrMaterialCode`); поведение тумблеров не
+  изменилось.
+- Opera после неудачи не пробуется 10 минут (`opera_retry_after` в RoutingStore):
+  иначе каждое подключение MULTI тратило 6 секунд на заведомо мёртвую попытку.
+- `DiagnosticsReportActivity`: реальный снимок через `DiagnosticSnapshot.buildReport`
+  (23 КБ текста на устройстве), кнопка «Копировать»; строка «Диагностика» в
+  настройках открывает его вместо заглушки. Отчёт начинается с
+  `OBNOVA diagnostic log` и содержит `app=1.34.1 (165, …)` и `xray=26.10.21`.
+- `StrategiesActivity`: аналитика из `status.json` — текущий сеанс, рейтинг
+  кандидатов по доле успехов и EWMA, список слотов; обновление раз в 3 с.
+  Томпсон/CUSUM отложены до появления истории измерений.
+- Смена сети у MULTI/DESYNC обновляет `setUnderlyingNetworks` без пересборки
+  TUN — ядро перестаёт считать VPN привязанным к старой сети.
+- «Слоты» обновляют статистику сами каждые 3 секунды, пока экран открыт.
+- Аудит логов устройства нашёл `dlopen failed: libnovaxray.so not found`:
+  VLESS-ядро не было собрано в этом checkout. `libnovaxray.so` и
+  `libnovaxrayjni.so` собраны для arm64-v8a и armeabi-v7a (NDK 27.2,
+  `c-shared`, `-checklinkname=0`, page size 16K), упакованы в `jniLibs`;
+  APK вырос до 65,4 МБ. В логе `Ядро Xray: 26.7.28`.
+- Вендоренный Xray обновлён **26.7.28 → 26.10.21** (security-релиз: удалены
+  скомпрометированные корневые CA, сборка на Go 1.27.3). `nova-xray/go.mod`
+  обновлён (`go mod tidy`), ядро пересобрано под обе ABI; лог устройства после
+  установки — `Ядро Xray: 26.10.21`, APK 64,8 МБ.
+- Аудит логов WARP-сеанса: ошибок, ANR и crash нет; Opera prewarm успешно
+  регистрируется только при живом туннеле (API-релей недоступен из MULTI с
+  DESYNC) — это подтверждает, что SECONDARY ждёт VLESS-PRIMARY.
+- `RoutingStore`: настройки маршрутизации вынесены в отдельный prefs-файл
+  `nova_routing`. Причина: `ClientData` пишется из `:vpn`, а SharedPreferences
+  не многопроцессный — флаг «умной маршрутизации» терялся после force-stop.
+- `ListRepository` + `Ipv4Range`: списки PC в `assets/lists`, CIDR Cloudflare.
+- Тесты: `RoutingPolicyTest` (14), `SlotResolverTest` (8), `DomainListTest` (4);
+  `testGithubDebugUnitTest` и `assembleGithubDebug` — BUILD SUCCESSFUL.
+- Новый `ParityScreenActivity` и экран-заглушка для «Маршрутов», «Слотов»,
+  «Стратегий», «Диагностики» и «Журналов».
+- Главный экран: гамбургер теперь открывает боковое меню (панель 300dp поверх
+  контента), а не сразу настройки; «Настройки» — пункт меню.
+
+## 2026-10-23 — 1.34.0 / versionCode 164
+
+### Идентичность и обновления
+
+- `app/build.gradle.kts`: `versionName 1.33 → 1.34.0`,
+  `versionCode 163 → 164`.
+- `app/build.gradle.kts`: `UPDATER_ENABLED` для flavor `github` переключён
+  `true → false`; `fdroid` уже был `false`. Теперь официальный апдейтер выключен
+  в обеих сборках.
+- `SettingsActivity.kt`: при выключенном апдейтере скрываются не только
+  переключатель и кнопка проверки, но и заголовок «ОБНОВЛЕНИЯ» и ссылка
+  «Скачать последнюю версию».
+- `SettingsActivity.kt`: внешняя ссылка в нижнем футере заменена с
+  `https://t.me/nova_txt` на `https://t.me/abonent0007` (и `tg://resolve`
+  domain `abonent0007`).
+- `MainActivity.kt`: `refreshInstallUpdateButton()` первым делом прячет плашку
+  обновления; в форке она не появляется и не опрашивает `DownloadManager`.
+- Сетевые входы апдейтера уже имеют guards `isUpdaterEnabled` (проверено в
+  `AppUpdateManager.syncSchedule`, `enqueueImmediateCheck`, `performUpdateCheck`,
+  `performManualUpdateCheck`, `installReadyUpdate`, `resumePendingInstallIfAllowed`).
+  Класс не удалён: он содержит helper'ы foreground-уведомления VPN.
+- `app/build.gradle.kts`: relay key синхронизирован с текущим upstream
+  `1.33.1` — `nova-android-164` вместо `nova-android-163`. Это важно для
+  Opera/Proton/Cloudflare: старый ключ 163 мог быть погашен сервером, из-за
+  чего регистрация Opera через relay не проходила. versionCode уже 164, так
+  что ключ и версия теперь совпадают.
+- DNS-AI: в Android-исходниках это автоматический `PriorityDns`
+  (`dns.dns-ai.ru`), а не отдельная кнопка главного экрана. В baseline и
+  upstream 1.33.1 такой кнопки нет; при запросе на неё нужно уточнить
+  поведение (DNS-туннель, DoH-резолвер или ярлык настроек).
+
+### Локальные TLD и direct-домены
+
+- `DomainBypassRules.kt`: добавлены `LOCAL_EXTRA_ZONES`
+  (`.москва`/punycode, `.moscow`, `.рус`/punycode, `.дети`/punycode, `.tatar`),
+  `DEFAULT_ZONES`, `BUILTIN_DIRECT_DOMAINS` (10 российских сервисов на `.com` из
+  PC `list/u_direct.txt`), `NONE_TOKEN`, `effectiveZones()`, `effectiveDomains()`.
+- `ClientData.kt`: `isDomainBypassEnabled()` по умолчанию `true` для свежей
+  установки; явно выключенное пользователем значение сохраняется.
+- `DomainBypassActivity.kt` + `activity_domain_bypass.xml`: новый чекбокс
+  «Локальные TLD…»; первый запуск отмечает его; сводка учитывает встроенные
+  домены; при снятии всех галочек сохраняется `none`, а не пустая строка.
+- `NovaVpnService.kt`: `applyCoreDomainBypassPolicy()` и
+  `domainBypassAddresses()` используют `effectiveZones`/`effectiveDomains`,
+  поэтому свежая установка реально получает локальные зоны и встроенные домены.
+  Ограничение Android (WARP/MASQUE, TCP 80/443) остаётся и описано в логе.
+
+### DNS TTL-кэш
+
+- Новый `DnsResponseCache.kt`: разбор DNS-ответа, кэш по qname/qtype/qclass/
+  recursion + отпечаток опций запроса (EDNS/DO), минимальный TTL answer-записей,
+  negative fallback 60 с, отказ от TC и TTL=0, лимит 3600 с, LRU-подобное
+  вытеснение, подстановка transaction ID при выдаче.
+- `LocalDnsProxyManager.kt`: кэш проверяется до failover upstream, заполняется
+  после успешного ответа, очищается при смене upstream/остановке.
+- `DnsResponseCacheTest.kt`: TTL, переписывание ID, истечение, TC, TTL=0.
+
+### Ротация профилей
+
+- Новый `ProfileHealthRotation.kt`: пороги PC-форка — 45 с между сэмплами,
+  90 с устаивания, 3 деградации, cooldown 15 мин, 2 смены/час, EWMA baseline,
+  фактор 1.8, защита от ручного действия; только режим `auto`.
+- `MainActivity.kt`: после успешного замера ping вызывается
+  `maybeRotateProfile()`; при деградации нажимается существующая кнопка
+  «следующий профиль» (она уже знает порядок и безопасно перезапускает сеанс).
+  Ручной клик сбрасывает политику; автоматический клик не считается ручным.
+  В auto разрешены только `MASQUE` и `AWG Proton`, как в PC-форке; WARP/Opera/
+  Tor/DNS не трогаются.
+- `ProfileHealthRotationTest.kt`: деградация, явный режим, cooldown, ручное
+  действие, сброс при отключении.
+
+### Matrix и фон
+
+- `NovaTheme.kt`: `DEFAULT_KEY = "matrix"`.
+- Новый `MatrixRainView.kt`: Canvas, 30 fps, fade-след, 7–18 глифов в колонке,
+  статичный кадр при слабом устройстве/`animator scale = 0`, остановка при
+  `onDetached`/невидимом окне, без WebView.
+- Исправлен тикер: вместо `postInvalidateOnAnimation()` (только перерисовка)
+  снова ставится `ticker` через `postOnAnimation`; дождь реально движется,
+  проверено двумя скриншотами на AVD.
+- `activity_main.xml`: добавлен `MatrixRainView` (`matrix_rain`) под контентом.
+- `MainActivity.kt`: при теме Matrix дождь заменяет созвездие; при остальных
+  темах работает прежний `NovaNetworkBackgroundView`; акцент передаётся в оба.
+  При смене темы без пересоздания Activity фон синхронизируется в
+  `applyThemeAccent()`.
+
+### Главный экран
+
+- `activity_main.xml`: строка IP/узла и график ping перенесены в верхнюю часть
+  экрана; центральный блок (статус, микро-лог, кнопка, селектор) опущен
+  (`btnConnect` vertical bias 0.62).
+- «Настройки»/язык остаются внизу и привязаны к строке версии, а не к строке
+  адресов.
+- Для горизонтали в `MainActivity.applyOrientationLayout()` сохранена прежняя
+  нижняя компоновка адресов/графика, чтобы не пересекаться со статусом и
+  кнопкой в средней колонке.
+- `MainActivity`: добавлен `applySystemBarInsets()` — верхний отступ строки
+  IP/узла учитывает status bar/вырез, нижний отступ версии — navigation bar
+  (gesture bar). «Настройки» привязаны к версии и поднимаются вместе с ней;
+  селектор пересчитывает высоту кнопок. Проверено bounds на AVD 1440×3120:
+  IP `[84,256]`, version до `2945`, nav bar начинается с `2952`.
+
+### Dock выбора узлов
+
+- `activity_main.xml`: каналы главного экрана — одна полоса SVG-иконок
+  (`DockRadioButton`) с дорожкой-ползунком; подписи появляются над иконкой при
+  приближении пальца/курсора. Панель каналов — отдельная стеклянная плитка.
+- Под выбранным узлом — отдельная плитка функций (`ll_exit_sub_region`:
+  регион Opera/Proton, вход Tor, подсказка DoT); `tv_exit_last` — отдельная
+  плитка статуса.
+- `DockRadioButton.kt`: SVG-иконка из `app:dockIcon` (fallback — прежняя точка),
+  акцентная tint-раскраска, анимация магнификации; текстовой подписи на кнопке
+  нет — она проявляется над иконкой при наведении. Источник выбранного
+  состояния — `RadioGroup`, поэтому активен ровно один узел. Preview при drag
+  анимируется отдельно (`previewProgress`): иконка растёт, подпись растёт из неё
+  (масштаб 0.15→1.0 вместе с прозрачностью), покинутая иконка плавно сжимается.
+- `FlowRadioGroup.kt`: dockMode, ACTION_MOVE/HOVER, дорожка-ползунок, сброс через
+  140 мс. Увеличивается **только ближайшая к пальцу иконка**; соседние остаются
+  в покое. Под пальцем рисуется линза (radial glow) и две расходящиеся волны.
+- Перетаскивание по дорожке: под пальцем показывается preview-выбор (иконка
+  раскрывается до подписи, прежняя плавно сжимается), а `RadioGroup`
+  получает окончательный `check()` только на `ACTION_UP` — на каком узле
+  отпустили палец, тот и выбран. Во время drag `HorizontalScrollView` не
+  перехватывает движение.
+- `MainActivity`: dock включается только для главного экрана; `applyRegionChipHeights`
+  не сжимает иконки; акцент темы передаётся в `DockRadioButton`/дорожку.
+
+### Иконки и верхнее уведомление
+
+- С главного экрана убраны emoji: «⚙️ Настройки» заменена на SVG-гамбургер
+  (`ic_menu_hamburger`) в правом верхнем углу (32dp, стеклянная круглая кнопка
+  `bg_icon_button`); «🌍 RU» — на SVG-глобус (`ic_globe`) в `drawableStart`
+  кнопки языка. Навигация настроек осталась прежней.
+- Узлы dock получили отдельные SVG: `ic_node_auto/warp/masque/opera/proton/tor/dns`;
+  у Opera на x86-сборке иконка остаётся приглушённой, как и сама кнопка.
+- `tv_top_notice` — верхняя плашка выбора/переключения (`showTopNotice`): текст
+  «Выбрано: …», «Переключаем VPN на …», «Готовим профили Proton…» и ошибка
+  переключения больше не уходят в системный Toast у нижней кромки. Плашка
+  появляется под статус-баром, не перекрывает IP-строку и скрывается через 1.8 с.
+
+### Release/R8
+
+- `gradle.properties`: убран явный `android.r8.optimizedResourceShrinking=false`
+  (дефолт `true`); `strictFullModeForKeepRules` пока `false` — включать только
+  после проверки keep-правил.
+- `app/proguard-rules.pro`: keep для `nova.**`, `go.**`, `XrayBridge`; прежние
+  правила Tor/Opera/NovaViewInflater сохранены.
+- Release собран с личным `nova-personal.jks` (в `.gitignore`) и
+  `NOVA_ALLOW_UNPUBLISHABLE_BUILD=1`; APK подписан v2/v3, versionCode 164.
+- Debug 57,837,411 байт → release 42,100,389 байт (−27,2%); `classes.dex`
+  сжат (3,258,496 → 1,607,291 байт). Отдельного `enableDexCompress` нет.
+
+### Фон и устойчивость VPN (после первого билда)
+
+- `AndroidManifest.xml`: у `NovaVpnService` явно указан
+  `android:stopWithTask="false"` (значение по умолчанию, но теперь намерение
+  зафиксировано) и добавлена мета-дата
+  `android.net.VpnService.SUPPORTS_ALWAYS_ON = true`. Это включает Nova в
+  системный список «Постоянный VPN»; без мета-даты поддержка считается
+  включённой, но с ней поведение явное.
+- Новый `AlwaysOnVpn.kt`: чтение `always_on_vpn_app`/`always_on_vpn_lockdown`
+  из `Settings.Secure` (в `runCatching`) и открытие
+  `Settings.ACTION_VPN_SETTINGS`. Публичного API для always-on у `VpnService`
+  нет, поэтому единственный доступный источник — защищённые настройки.
+- `SettingsActivity` + `activity_settings.xml`: строка «Постоянный VPN» с
+  тумблером-индикатором; нажатие открывает системный экран VPN, состояние
+  перечитывается в `onResume`.
+- `MainActivity.restoreDeadSessionOnOpen()`: если при возврате в приложение
+  служба `:vpn` не найдена, но `auto_reconnect` включён и сохранена
+  `restartSession`, сеанс поднимается автоматически через
+  `ACTION_RESTORE_LAST_SESSION`. Раньше `reconcileSystemVpnStateIfNeeded()`
+  выходил по `?: return`, потому что после kill процесса VPN-интерфейс исчезает
+  вместе с ним, и экран оставался в STOPPED — отсюда ручное «Подключить».
+- `MainActivity.maybeShowBackgroundGuide()`: одноразовая плашка после первого
+  успешного подключения — «Разрешить работу без ограничений батареи»,
+  «Разрешить автозапуск (вендор)», «Включить постоянный VPN». Флаг
+  `background_guide_shown` в `ClientData`; если всё уже настроено, плашка не
+  показывается и флаг ставится молча.
+- `systemExempted` как тип FGS **не включали**: по официальной документации он
+  разрешён VPN-приложению только при already-on VPN в настройках системы, иначе
+  `ForegroundServiceTypeNotAllowedException`; выигрыш — только снятие лимитов
+  запуска FGS, от OEM-киллера не спасает. `specialUse` оставлен.
+- Аудит двух ИИ (gpt-oss 120B, Claude Haiku 4.5) и Luna показал, что типовые
+  советы (`stopWithTask` «критично», `directBootAware=true`,
+  `extractNativeLibs=false`, `largeHeap`, manifest-`CONNECTIVITY_CHANGE`) —
+  мифы или вредны для этого приложения; правки не вносились.
+
+### DESYNC: движок обхода DPI (Android)
+
+- Новый каталог `nova-desync/` (Go, отдельный модуль): локальный SOCKS5, который
+  для порта 443 режет первый TLS-рекорд на несколько записей и TCP-сегментов с
+  паузами, а также отправляет decoy-ClientHello с подменённым SNI на отдельном
+  соединении. Остальные порты — passthrough.
+- Тесты: разбор ClientHello, пересчёт длин, замена SNI, деление рекорда,
+  отказ на мусоре — `go test ./...` зелёный, `go vet` чистый.
+- Живая проверка на Windows: `curl` через прокси к `https://example.com` —
+  200 для базы, split 3, record-split и decoy.
+- Найдено ограничение: паддинг настоящего ClientHello ломает transcript
+  (`SEC_E_MESSAGE_ALTERED`), поэтому паддинг оставлен только для decoy.
+- Сборка: `arm64` — 2,6 МБ (`-trimpath -ldflags=-s -w`, CGO выключен).
+  32-битный `arm` пока не собран: для `android/arm` нужен cgo и полный NDK,
+  локальный NDK 30 без toolchains.
+- В APK упакован `libnova-desync.so` через `app/src/main/jniLibs/arm64-v8a/`
+  (2,6 МБ); в `packaging.jniLibs` добавлен `keepDebugSymbols`, хеш файла в APK
+  совпадает с исходным — strip не тронул.
+- `DesyncProxyManager.kt`: запуск из `nativeLibraryDir`, `LD_LIBRARY_PATH`,
+  ожидание готовности по порту, наблюдатель с тремя перезапусками, снятие
+  осиротевшего процесса через `/proc`. Decoy оставлен включённым по требованию
+  владельца (три модели считают его слабым, но решение владельца сильнее).
+- Backend: `BACKEND_DESYNC`/`TRANSPORT_DESYNC`, `runDesyncPhase` (движок →
+  `startProxyTunnel` → `CONNECTED`), ветки в `startSmartConnection`,
+  переприменении настроек и основном цикле, остановка движка в общем cleanup.
+  `compileGithubDebugKotlin` — BUILD SUCCESSFUL.
+- Аудит трёх моделей (Google AI, Luna, Claude Haiku) дал обязательные пункты:
+  supervisor (сделан), IPv6, per-app, Doze/батарея, переключатель QUIC.
+  Decoy оставлен по решению владельца.
+- Найдено живым прогоном на realme RMX3370: `Settings.Secure` там закрыт для
+  приложения, `always_on_vpn_app` читался как null, и тумблер «Постоянный VPN»
+  показывал выключенное состояние при включённой настройке. `AlwaysOnVpn.readState`
+  теперь возвращает `null` для «неизвестно», а `updateAlwaysOnRow` в этом случае
+  прячет тумблер и оставляет строку действием.
+- UI: восьмая кнопка **ZAPRET** (`rb_exit_desync`, значение `desync`) в dock и
+  в селекторе настроек, иконка `ic_node_desync`. `ConnectionSelectorPolicy`:
+  ORDER/LABELS/ROWS (3+2+3)/BUTTON_IDS; в `RegionTransportPolicy.KNOWN_REGIONS`
+  добавлен `desync`; тест политики обновлён (8 кнопок) и дополнен проверкой
+  ZAPRET.
+- `testGithubDebugUnitTest assembleGithubDebug` — BUILD SUCCESSFUL; release
+  `Nova_1.34.0.apk` 41,1 МБ установлен на realme RMX3370 (см. VERIFICATION).
+- Стабильность ZAPRET (найдено живым прогоном): отказ SOCKS конкретному
+  адресу больше не считается потерей транспорта; смена сети не пересобирает
+  TUN для DESYNC; `runDesyncPhase` держит фазу и не плодит второй движок.
+  После правок — 90+ секунд без обрыва (см. VERIFICATION).
+- Корень цикла `-1`: в DESYNC не вызывался `installSocketProtector()`, сокеты
+  tun2proxy замыкались в собственный TUN. Добавлен; Go-движок получил
+  `recover()` на соединение и тест на повреждённые ClientHello. Фаза теперь
+  различает поколения и не блокирует новый сеанс.
+- DNS/UDP: добавлен SOCKS5 UDP ASSOCIATE (DNS работает без `CommandNotSupported`),
+  UDP/443 отбрасывается; повторный выбор ZAPRET переиспользует живой туннель,
+  обречённый `:vpn` передаёт работу новому процессу.
+- Ещё нет: отдельного раздела настроек DESYNC — параметры уже живут в
+  `ClientData` (`desync_split`, `desync_delay_ms`, `desync_record_split`,
+  `desync_decoy_enabled`, `desync_decoy_sni`), но UI для них не сделан. QUIC не
+  поднимается потому, что SOCKS5-сервер отвергает UDP ASSOCIATE.
+
+### Статический анализ и устранение хардкода (2026-10-28)
+
+- Инвентаризация DESYNC: из `DesyncProxyManager` убраны зашитые `split=3`,
+  `delay=12ms`, `record-split`, decoy `www.microsoft.com` — всё вынесено в
+  `DesyncOptions` и `ClientData.getDesyncOptions()` (prefs, нормализация границ
+  1..8 / 0..200 мс, валидация decoy-хоста с откатом на дефолт).
+- Восстановлено логическое звено совместимости: `Process.isAlive`,
+  `waitFor(timeout)` и `destroyForcibly` существуют с API 26, а `minSdk 24`.
+  Добавлены `aliveCompat`/`waitExitCompat`/`destroyForciblyCompat`; на Android 7
+  остановка движка больше не падает с `NoSuchMethodError`.
+- Fallback-цепочка: недоступный бинарь → понятный отказ узла; битый decoy →
+  дефолтный хост; сбой decoy/паддинга → обычный поток; движок не открыл порт →
+  `start()` возвращает 0, служба не объявляет CONNECTED; падение движка →
+  до трёх перезапусков, затем лимит.
+- Тесты: новый `DesyncOptionsTest` (6 кейсов: дефолты, границы, разбор URL,
+  битые хосты, аргументы движка, выключенный decoy). `testGithubDebugUnitTest` —
+  зелёный.
+- `go test ./...` и `go vet ./...` — чисто; `lintGithubDebug` по файлам DESYNC
+  новых замечаний не даёт (в репозитории остаются 42 старых ошибки, не связанных
+  с этой работой). Скан импортов новых Kotlin-файлов — неиспользуемых нет.
+- Не делалось: массовый рефакторинг `nova.pyw`-подобных гигантов, замена
+  внешних источников данных (у DESYNC их нет) и UI-раздел настроек — параметры
+  пока меняются только через `ClientData`.
+
+### Документация
+
+- `docs/plans/2026-10-23-nova-android-fork-parity.md` — полный план.
+- `docs/architecture/ARCHITECTURE.md` — карта архитектуры.
+- `docs/fork/AGENT-HANDOFF.md` — инструкция следующему агенту.
+- `docs/fork/CHANGELOG.md` — этот журнал.
+- `docs/fork/RELEASE_AUDIT.md` — хардкоды/заглушки/R8/подпись.
+- `docs/fork/VERIFICATION.md` — фактические прогоны.
+
+## AGI-консультация
+
+- Совет (Duck + Claude Haiku) по коду: подтвердил направление, но часть
+  замечаний оказалась неточной для этого кода:
+  - кэш хранит **весь** ответ, включая CNAME-цепочку, а не только A;
+  - ID переписывается в уже готовом пакете, compression pointers не зависят от
+    ID и остаются валидными;
+  - `android.enableDexCompress` в AGP 9.x не подтверждён — не используем.
+- Полезные замечания, внесённые в код:
+  - в ключ кэша добавлен отпечаток EDNS/DO (иначе DNSSEC-запрос мог получить
+    не-DNSSEC ответ);
+  - `MatrixRainView` проверяет `isShown`, не создаёт `Paint` в каждом кадре,
+    имеет static fallback;
+  - `ProfileHealthRotation` не трогает явно выбранный режим.
+- Остающиеся риски: Android-ядро обходит только WARP/MASQUE TCP 80/443.
+  Relay key обновлён до `nova-android-164` (совпадает с versionCode 164);
+  cloud profiles не затронуты.
+
+## Проверки
+
+- Baseline до правок: `gradlew test` — **BUILD SUCCESSFUL**.
+- После правок: см. `docs/fork/VERIFICATION.md` (обновляется по мере прогонов).

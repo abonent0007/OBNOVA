@@ -33,8 +33,11 @@ object NovaTheme {
     private const val PREFS = "nova_appearance"
     private const val KEY = "settings_theme"
 
-    /** Ключ по умолчанию — ближайшая к прежнему виду приложения. */
-    const val DEFAULT_KEY = "aurora"
+    /**
+     * Личный форк по умолчанию открывается в Matrix: это заявленное оформление
+     * форка. Остальные темы остаются доступны в настройках.
+     */
+    const val DEFAULT_KEY = "matrix"
 
     /**
      * Начертание всего интерфейса.

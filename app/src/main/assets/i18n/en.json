@@ -445,7 +445,7 @@
  "удалено {0} {1}": "removed {0} {1}",
  "добавление резолвера": "adding resolver",
  "правка резолвера": "editing resolver",
- "https://dns.example.com/dns-query или tls://dns.example.com": "https://dns.example.com/dns-query or tls://dns.example.com",
+ "https://dns.google/dns-query или tls://dns.google": "https://dns.google/dns-query or tls://dns.google",
  "Новый резолвер": "New resolver",
  "Изменить резолвер": "Edit resolver",
  "Сохранить": "Save",

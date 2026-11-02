@@ -92,6 +92,12 @@ import kotlinx.coroutines.withContext
 
 class SettingsActivity : AppCompatActivity() {
 
+    companion object {
+        /** Прокрутить настройки к разделу приложений (из карточки «Приложения»). */
+        const val EXTRA_SCROLL_TO = "extra_scroll_to"
+        const val SCROLL_SPLIT_APPS = "split_apps"
+    }
+
 
 
     private lateinit var clientData: ClientData
@@ -413,9 +419,35 @@ class SettingsActivity : AppCompatActivity() {
 
         val swAutostart = findViewById<Switch>(R.id.sw_autostart)
 
+        val rowAlwaysOn = findViewById<LinearLayout>(R.id.row_always_on)
+
+        val swAlwaysOn = findViewById<Switch>(R.id.sw_always_on)
+
+        rowAlwaysOn.setOnClickListener { AlwaysOnVpn.openSettings(this) }
+
         val rowBackgroundVendor = findViewById<TextView>(R.id.row_background_vendor)
 
         scrollContent = findViewById(R.id.scroll_content)
+
+        findViewById<View>(R.id.row_parity_routes)?.setOnClickListener {
+            startActivity(Intent(this, RoutesActivity::class.java))
+        }
+        findViewById<View>(R.id.row_parity_slots)?.setOnClickListener {
+            startActivity(Intent(this, SlotsActivity::class.java))
+        }
+        findViewById<View>(R.id.row_parity_strategy)?.setOnClickListener {
+            startActivity(Intent(this, StrategiesActivity::class.java))
+        }
+        findViewById<View>(R.id.row_parity_diagnostics)?.setOnClickListener {
+            startActivity(Intent(this, DiagnosticsReportActivity::class.java))
+        }
+
+        if (intent?.getStringExtra(EXTRA_SCROLL_TO) == SCROLL_SPLIT_APPS) {
+            val target = findViewById<View>(R.id.hdr_group_apps_vpn)
+            if (target != null) {
+                scrollContent.post { scrollContent.smoothScrollTo(0, target.top) }
+            }
+        }
 
         val rgMode = findViewById<RadioGroup>(R.id.rg_mode)
 
@@ -465,6 +497,11 @@ class SettingsActivity : AppCompatActivity() {
         if (!AppUpdateManager.isUpdaterEnabled) {
             findViewById<View>(R.id.row_auto_update)?.visibility = View.GONE
             findViewById<View>(R.id.row_manual_update_block)?.visibility = View.GONE
+            // Заголовок и ссылка на официальный релиз тоже относятся к
+            // апдейтеру: без строк они остались бы пустой секцией и кнопкой,
+            // ведущей на чужой канал обновлений.
+            findViewById<View>(R.id.hdr_group_updates)?.visibility = View.GONE
+            rowShareRelease?.visibility = View.GONE
         }
 
         rbMaskAuto = RadioButton(this).apply { id = View.generateViewId() }
@@ -550,6 +587,8 @@ class SettingsActivity : AppCompatActivity() {
         checkBatteryOptimization(swBackground)
 
         updateAutoStartRow(rowAutostart, swAutostart)
+
+        updateAlwaysOnRow(swAlwaysOn)
 
         updateVendorBackgroundRow(rowBackgroundVendor)
 
@@ -1635,11 +1674,15 @@ class SettingsActivity : AppCompatActivity() {
 
         val swAutostart = findViewById<Switch>(R.id.sw_autostart)
 
+        val swAlwaysOn = findViewById<Switch>(R.id.sw_always_on)
+
         val rowBackgroundVendor = findViewById<TextView>(R.id.row_background_vendor)
 
         checkBatteryOptimization(swBackground)
 
         updateAutoStartRow(rowAutostart, swAutostart)
+
+        updateAlwaysOnRow(swAlwaysOn)
 
         updateVendorBackgroundRow(rowBackgroundVendor)
 
@@ -2444,6 +2487,35 @@ class SettingsActivity : AppCompatActivity() {
 
 
 
+    /**
+     * Тумблер Always-on только отражает системную настройку.
+     *
+     * Включить её из приложения нельзя — Android разрешает это лишь на своём
+     * экране VPN (или через Device Owner). Поэтому строка открывает системный
+     * экран, а состояние перечитывается в onResume.
+     */
+    private fun updateAlwaysOnRow(switch: Switch) {
+
+        suppressAutostartSwitchCallback = true
+
+        val state = AlwaysOnVpn.readState(this)
+
+        // Неизвестное состояние не показываем тумблером: на прошивках, где
+        // Settings.Secure закрыт, он выглядел бы выключенным при включённом
+        // always-on. Строка остаётся действием «открыть системный экран».
+        switch.visibility = if (state == null) View.GONE else View.VISIBLE
+
+        if (state != null) {
+            switch.isChecked = state
+            setupSwitchColor(switch, state)
+        }
+
+        switch.isEnabled = true
+
+        suppressAutostartSwitchCallback = false
+
+    }
+
     private fun updateAutoStartRow(row: LinearLayout, switch: Switch) {
 
         val isAvailable = VendorBackgroundSettingsHelper.canOpenAutoStart(this)
@@ -2651,9 +2723,9 @@ class SettingsActivity : AppCompatActivity() {
 
         lastTelegramOpenAtMs = now
 
-        val telegramIntent = Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=nova_txt"))
+        val telegramIntent = Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=abonent0007"))
 
-        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/nova_txt"))
+        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/abonent0007"))
 
         try {
 

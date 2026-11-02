@@ -1,6 +1,5 @@
 package com.example.nova
 
-import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.net.DatagramPacket
@@ -41,6 +40,7 @@ object LocalDnsProxyManager {
 
     private val running = AtomicBoolean(false)
     private val failedUntilByUpstream = ConcurrentHashMap<String, Long>()
+    private val responseCache = DnsResponseCache()
 
     private const val UPSTREAM_FAILURE_COOLDOWN_MS = 20_000L
     private const val PLAIN_DNS_TIMEOUT_MS = 5_000
@@ -76,6 +76,8 @@ object LocalDnsProxyManager {
             return true
         }
 
+        // Другой upstream — другие ответы; старый TTL-кэш к ним не относится.
+        responseCache.clear()
         stop(logger)
         running.set(true)
 
@@ -145,6 +147,7 @@ object LocalDnsProxyManager {
         }
         currentUpstreams = emptyList()
         currentLabel = ""
+        responseCache.clear()
     }
 
     fun isRunning(): Boolean = running.get() && serverSocket?.isClosed == false
@@ -183,6 +186,11 @@ object LocalDnsProxyManager {
         datagramProtector: (DatagramSocket) -> Boolean,
         streamProtector: (Socket) -> Boolean,
     ): ByteArray? {
+        // Ответ из кэша отдаём с ID текущего запроса: системный резолвер
+        // сопоставляет ответ с вопросом именно по нему.
+        responseCache.get(payload)?.let { cached ->
+            return DnsResponseCache.withTransactionId(cached, payload)
+        }
         val now = System.currentTimeMillis()
         val orderedUpstreams = upstreams
             .filterNot { (failedUntilByUpstream[it.raw] ?: 0L) > now } +
@@ -195,6 +203,7 @@ object LocalDnsProxyManager {
             }
             if (response != null) {
                 failedUntilByUpstream.remove(upstream.raw)
+                responseCache.put(payload, response)
                 return response
             }
             failedUntilByUpstream[upstream.raw] = System.currentTimeMillis() + UPSTREAM_FAILURE_COOLDOWN_MS

@@ -102,7 +102,7 @@ class ConfigsAdapter(
             // удаление и ручной порядок к ним не применимы.
             val generated = item.endpointSource == WarpGeneratedStore.ENDPOINT_SOURCE
             tvTitle.text = when {
-                generated -> "NOVA • $displayMode @ ${item.host}:${item.port}"
+                generated -> "OBNOVA • $displayMode @ ${item.host}:${item.port}"
                 item.manual -> "MANUAL"
                 // У VLESS имя из ссылки (`#имя`, `tag` sing-box) лежит в
                 // endpointSource (ClientData.getVlessProfilesAsConfigs): по нему

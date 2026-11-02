@@ -70,6 +70,9 @@ object ConnectionSelectorPolicy {
     /** Значение кнопки Tor. */
     const val CHIP_TOR: String = "tor"
 
+    /** Значение кнопки DESYNC — обход DPI локальным прокси без root. */
+    const val CHIP_DESYNC: String = "desync"
+
     /**
      * Значение кнопки DNS — туннель поверх обычных DNS-запросов.
      *
