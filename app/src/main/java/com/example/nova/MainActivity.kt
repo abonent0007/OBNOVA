@@ -1766,29 +1766,33 @@ class MainActivity : AppCompatActivity() {
             ivBackgroundArt.setDiveEnabled(mainBackgroundMode() == MainBackgroundPolicy.MODE_IMAGE)
         }
         val filter = android.content.IntentFilter(NovaVpnService.ACTION_VPN_STATE)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-             registerReceiver(vpnStateReceiver, filter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-             registerReceiver(vpnStateReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            vpnStateReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         val doomedFilter = android.content.IntentFilter(NovaVpnService.ACTION_VPN_PROCESS_DOOMED)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-             registerReceiver(vpnProcessDoomedReceiver, doomedFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-             registerReceiver(vpnProcessDoomedReceiver, doomedFilter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            vpnProcessDoomedReceiver,
+            doomedFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         val discoveryFilter = android.content.IntentFilter(NovaVpnService.ACTION_WARP_CONFIG_DISCOVERY)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-             registerReceiver(warpDiscoveryReceiver, discoveryFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-             registerReceiver(warpDiscoveryReceiver, discoveryFilter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            warpDiscoveryReceiver,
+            discoveryFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         val updateFilter = android.content.IntentFilter(AppUpdateManager.ACTION_UPDATE_STATE_CHANGED)
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-             registerReceiver(updateStateReceiver, updateFilter, android.content.Context.RECEIVER_NOT_EXPORTED)
-        } else {
-             registerReceiver(updateStateReceiver, updateFilter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            updateStateReceiver,
+            updateFilter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
     }
     
     override fun onStop() {
@@ -6574,6 +6578,7 @@ class MainActivity : AppCompatActivity() {
         runCatching {
             sendBroadcast(
                 Intent(NovaVpnService.ACTION_VPN_STATE).apply {
+                    setPackage(packageName)
                     putExtra(NovaVpnService.EXTRA_STATE, state)
                     putExtra(NovaVpnService.EXTRA_TILE_REFRESH_ONLY, true)
                 }

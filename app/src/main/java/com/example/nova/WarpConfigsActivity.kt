@@ -6,11 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.app.Activity
 import android.app.ActivityManager
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.net.Uri
 import android.net.VpnService
-import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
@@ -44,7 +42,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.util.Locale
 import java.io.File
-import java.util.Base64
+import android.util.Base64
 import java.util.zip.ZipInputStream
 import java.util.zip.InflaterInputStream
 import androidx.lifecycle.lifecycleScope
@@ -544,11 +542,12 @@ class WarpConfigsActivity : AppCompatActivity() {
         super.onStart()
         seedCurrentSuccessIfNeeded()
         val filter = android.content.IntentFilter(NovaVpnService.ACTION_WARP_CONFIG_DISCOVERY)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(discoveryReceiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(discoveryReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            discoveryReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         refreshDiscoveryStateFromStorage(forceRender = true)
         snapshotHandler.removeCallbacks(snapshotPoller)
         snapshotHandler.post(snapshotPoller)
@@ -2012,7 +2011,7 @@ class WarpConfigsActivity : AppCompatActivity() {
                 append('=')
             }
         }
-        val packed = Base64.getDecoder().decode(normalized)
+        val packed = Base64.decode(normalized, Base64.DEFAULT)
         if (packed.size <= 5) return null
         val compressed = packed.copyOfRange(4, packed.size)
         val jsonText = InflaterInputStream(ByteArrayInputStream(compressed)).bufferedReader().use { it.readText() }

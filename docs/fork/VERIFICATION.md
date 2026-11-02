@@ -3,6 +3,41 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
+## 2026-11-02 — lint: 0 errors
+
+```text
+.\gradlew.bat lintGithubDebug
+BUILD SUCCESSFUL
+0 errors, 883 warnings
+```
+
+Исправлено: 8 receiver flags, 1 implicit broadcast, 21 NewApi, 3 MissingPermission
+(точечный suppress после `canNotify()`), 3 WrongCall (`super.onDraw`), 1 UseAppTint.
+Глобальный baseline не добавлялся.
+
+```text
+.\gradlew.bat testGithubDebugUnitTest assembleGithubRelease
+BUILD SUCCESSFUL in 1m 1s
+tests=606 failures=0 skipped=9
+```
+
+Устройство (Android 13): установлен arm64-APK, WARP подключён, цикл
+«Отключить/Подключить» прошёл без `SecurityException`/FATAL; crash-буфер пуст.
+Проверка screen-off/on: приложение не упало, VPN остался жив; устройство после
+этого осталось на secure lock screen (разблокировка — вручную).
+API 24/25 и Android 14 на живом устройстве не проверялись: доступен только
+аппарат с API 33; для API 24/25 добавлены guards/`ProcessCompat`, для API 34 —
+флаги ресиверов.
+
+Проверка кода:
+- `ProcessCompat` — новый файл, используется в `DnsTunnelProcess` и
+  `OperaProxyManager`.
+- `WarpConfigsActivity`: `java.util.Base64` → `android.util.Base64`.
+- `FrostOverlayView`: `clipOutPath` с fallback на `Region.Op.DIFFERENCE`.
+- `NovaVpnService`: `LinkProperties.mtu` только с API 29.
+- `MainActivity`, `NovaTileService`, `NovaVpnService`, `SettingsActivity`,
+  `WarpConfigsActivity`: `ContextCompat.registerReceiver`.
+
 ## 2026-11-02 — pipeline: динамические источники и логика
 
 ### Статический анализ

@@ -2130,19 +2130,14 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         try {
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-
-                registerReceiver(packageChangesReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-
-            } else {
-
-                registerReceiver(packageChangesReceiver, filter)
-
-            }
-
+            ContextCompat.registerReceiver(
+                this,
+                packageChangesReceiver,
+                filter,
+                // PACKAGE_ADDED/REMOVED — системные события.
+                ContextCompat.RECEIVER_EXPORTED,
+            )
         } catch (_: Exception) {
-
         }
 
     }
@@ -2170,19 +2165,13 @@ class SettingsActivity : AppCompatActivity() {
         val filter = IntentFilter(NovaVpnService.ACTION_VPN_STATE)
 
         try {
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-
-                registerReceiver(vpnStateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-
-            } else {
-
-                registerReceiver(vpnStateReceiver, filter)
-
-            }
-
+            ContextCompat.registerReceiver(
+                this,
+                vpnStateReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
             vpnStateReceiverRegistered = true
-
         } catch (_: Exception) {
 
         }

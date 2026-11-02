@@ -1664,32 +1664,38 @@ class NovaVpnService : OperaNativeVpnService() {
         ClientData(this).resetLearnedStateAfterUpdate()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val filter = android.content.IntentFilter("com.example.nova.STOP_VPN")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(stopReceiver, filter, RECEIVER_NOT_EXPORTED)
-            } else {
-                registerReceiver(stopReceiver, filter)
-            }
+            ContextCompat.registerReceiver(
+                this,
+                stopReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
         }
         val wakeFilter = android.content.IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_USER_PRESENT)
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(deviceWakeReceiver, wakeFilter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(deviceWakeReceiver, wakeFilter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            deviceWakeReceiver,
+            wakeFilter,
+            // Системные protected-широковещательные события: NOT_EXPORTED
+            // оставил бы их за бортом на части прошивок.
+            ContextCompat.RECEIVER_EXPORTED,
+        )
         val tetherFilter = android.content.IntentFilter().apply {
             addAction("android.net.conn.TETHER_STATE_CHANGED")
             addAction("android.net.wifi.WIFI_AP_STATE_CHANGED")
         }
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                registerReceiver(tetherStateReceiver, tetherFilter, RECEIVER_NOT_EXPORTED)
-            } else {
-                registerReceiver(tetherStateReceiver, tetherFilter)
-            }
+            ContextCompat.registerReceiver(
+                this,
+                tetherStateReceiver,
+                tetherFilter,
+                // TETHER_STATE_CHANGED приходит от системы.
+                ContextCompat.RECEIVER_EXPORTED,
+            )
         } catch (error: Exception) {
             LogManager.log("Не удалось подписаться на события раздачи: ${error.message}")
         }
@@ -12445,9 +12451,13 @@ class NovaVpnService : OperaNativeVpnService() {
         clientData: ClientData,
     ): Int {
         val requested = clientData.getTunnelMtu()
-        val linkMtu = runCatching {
-            connectivityManager?.getLinkProperties(underlyingNetwork)?.mtu ?: 0
-        }.getOrDefault(0)
+        val linkMtu = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            runCatching {
+                connectivityManager?.getLinkProperties(underlyingNetwork)?.mtu ?: 0
+            }.getOrDefault(0)
+        } else {
+            0
+        }
         if (linkMtu <= 0 || requested + WARP_WIRE_OVERHEAD_IPV4 <= linkMtu) return requested
         val ceiling = (linkMtu - WARP_WIRE_OVERHEAD_IPV4).coerceAtLeast(TUNNEL_MTU_MIN)
         LogManager.log(

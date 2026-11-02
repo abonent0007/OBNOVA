@@ -1,5 +1,6 @@
 package com.example.nova
 
+import android.annotation.SuppressLint
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Bitmap
@@ -194,6 +195,7 @@ class BackdropRevealImageView @JvmOverloads constructor(
         canvas.restoreToCount(checkpoint)
     }
 
+    @SuppressLint("WrongCall") // super.onDraw внутри своей иерархии — не вызов чужого View.
     private fun drawContent(canvas: Canvas) {
         val base = (drawable as? BitmapDrawable)?.bitmap
         // Картинка-заглушка 1×1 (чёрный фон без фактуры) погружаться не может.

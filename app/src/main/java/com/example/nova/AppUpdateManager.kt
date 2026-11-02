@@ -1,5 +1,6 @@
 package com.example.nova
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.DownloadManager
 import android.app.NotificationChannel
@@ -1095,6 +1096,7 @@ object AppUpdateManager {
         return true
     }
 
+    @SuppressLint("MissingPermission") // canNotify() проверяет POST_NOTIFICATIONS на API 33+.
     private fun showAvailableNotification(context: Context, metadata: ApkUpdateMetadata) {
         if (!ensureNotificationChannel(context) || !canNotify(context)) return
         val openAppIntent = buildOpenAppPendingIntent(context, 5006)
@@ -1148,6 +1150,7 @@ object AppUpdateManager {
         NotificationManagerCompat.from(context).notify(NOTIFICATION_AVAILABLE_ID, notification)
     }
 
+    @SuppressLint("MissingPermission") // canNotify() проверяет POST_NOTIFICATIONS на API 33+.
     private fun showInstallReadyNotification(context: Context, version: String) {
         if (!ensureNotificationChannel(context) || !canNotify(context)) return
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_AVAILABLE_ID)
@@ -1212,6 +1215,7 @@ object AppUpdateManager {
         )
     }
 
+    @SuppressLint("MissingPermission") // canNotify() проверяет POST_NOTIFICATIONS на API 33+.
     private fun showUpdatedNotification(context: Context, version: String) {
         if (!ensureUpdatedChannel(context) || !canNotify(context)) return
         val openAppIntent = buildOpenAppPendingIntent(context, 5008)

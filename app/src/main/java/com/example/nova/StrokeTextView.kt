@@ -1,5 +1,6 @@
 package com.example.nova
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
@@ -123,6 +124,7 @@ class StrokeTextView @JvmOverloads constructor(
         }
     }
 
+    @SuppressLint("WrongCall") // super.onDraw внутри своей иерархии — не вызов чужого View.
     private fun drawLayers(canvas: Canvas) {
         if (pillEnabled) {
             if (pillOvalGlow) {

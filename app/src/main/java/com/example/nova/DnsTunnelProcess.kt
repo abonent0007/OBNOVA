@@ -69,7 +69,7 @@ object DnsTunnelProcess {
     private var sessionUp = false
 
     /** Идёт ли сейчас наш движок. */
-    fun isRunning(): Boolean = process.get()?.let { it.isAlive } ?: false
+    fun isRunning(): Boolean = process.get()?.let { ProcessCompat.isAlive(it) } ?: false
 
     /**
      * Работает ли туннель прямо сейчас.
@@ -184,14 +184,14 @@ object DnsTunnelProcess {
                 stop(logger)
                 return 0
             }
-            if (!started.isAlive) break
+            if (!ProcessCompat.isAlive(started)) break
         }
 
         val resolved = listenPort.get()
         if (resolved != 0) return resolved
 
         val reason = failure.get().ifEmpty {
-            if (started.isAlive) "движок не дошёл до готовности за ${READY_TIMEOUT_MS / 1000} с"
+            if (ProcessCompat.isAlive(started)) "движок не дошёл до готовности за ${READY_TIMEOUT_MS / 1000} с"
             else "движок завершился, не открыв порт"
         }
         logger("DNS: туннель не поднялся — $reason.")
@@ -203,12 +203,12 @@ object DnsTunnelProcess {
     fun stop(logger: (String) -> Unit) {
         sessionUp = false
         val running = process.getAndSet(null) ?: return
-        if (!running.isAlive) return
+        if (!ProcessCompat.isAlive(running)) return
         try {
             running.destroy()
-            if (!running.waitFor(1500, TimeUnit.MILLISECONDS)) {
-                running.destroyForcibly()
-                running.waitFor(1500, TimeUnit.MILLISECONDS)
+            if (!ProcessCompat.waitFor(running, 1_500L)) {
+                ProcessCompat.destroyForcibly(running)
+                ProcessCompat.waitFor(running, 1_500L)
             }
         } catch (error: Exception) {
             logger("DNS: остановка движка не удалась: ${error.message}")

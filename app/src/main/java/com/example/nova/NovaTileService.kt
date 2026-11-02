@@ -9,6 +9,7 @@ import android.os.Build
 import android.content.Intent
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import androidx.core.content.ContextCompat
 
 class NovaTileService : TileService() {
     private var tileReceiverRegistered = false
@@ -269,11 +270,12 @@ class NovaTileService : TileService() {
     private fun ensureReceiverRegistered() {
         if (tileReceiverRegistered) return
         val filter = IntentFilter(NovaVpnService.ACTION_VPN_STATE)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(vpnStateReceiver, filter, RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(vpnStateReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            vpnStateReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         tileReceiverRegistered = true
     }
 

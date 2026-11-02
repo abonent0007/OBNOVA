@@ -13,7 +13,6 @@ import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
 import java.security.SecureRandom
-import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import java.util.Locale
@@ -417,7 +416,7 @@ object OperaProxyManager {
             }
             val persistedCountry = clientData.getOperaProxyCountry()
             if (
-                existingProcess?.isAlive == true &&
+                existingProcess?.let { ProcessCompat.isAlive(it) } == true &&
                 isLocalProxyOpen(bindPort) &&
                 currentCountry.equals(requestedCountry, ignoreCase = true)
             ) {
@@ -437,14 +436,14 @@ object OperaProxyManager {
                 }
             }
             if (
-                existingProcess?.isAlive == true &&
+                existingProcess?.let { ProcessCompat.isAlive(it) } == true &&
                 currentCountry != null &&
                 !currentCountry.equals(requestedCountry, ignoreCase = true)
             ) {
                 launchLogger("Меняем регион встроенного Opera proxy: $currentCountry -> $requestedCountry")
                 stopManaged(launchLogger)
             }
-            if (existingProcess?.isAlive == true && !isLocalProxyOpen(bindPort)) {
+            if (existingProcess?.let { ProcessCompat.isAlive(it) } == true && !isLocalProxyOpen(bindPort)) {
                 stopManaged(launchLogger)
             }
             if (isLocalProxyOpen(bindPort)) {
@@ -1049,7 +1048,7 @@ object OperaProxyManager {
                         break
                     }
 
-                    val exited = !process.isAlive
+                    val exited = !ProcessCompat.isAlive(process)
                     if (exited) {
                         runCatching { logThread?.join(600L) }
                     }
@@ -1214,9 +1213,9 @@ object OperaProxyManager {
         if (process != null) {
             try {
                 process.destroy()
-                if (!process.waitFor(1500, TimeUnit.MILLISECONDS)) {
-                    process.destroyForcibly()
-                    process.waitFor(1500, TimeUnit.MILLISECONDS)
+                if (!ProcessCompat.waitFor(process, 1_500L)) {
+                    ProcessCompat.destroyForcibly(process)
+                    ProcessCompat.waitFor(process, 1_500L)
                 }
             } catch (_: Exception) {
             } finally {
@@ -1453,9 +1452,9 @@ object OperaProxyManager {
                         }
                     }
 
-                    val finished = runCatching { process.waitFor(12_000L, TimeUnit.MILLISECONDS) }.getOrDefault(false)
+                    val finished = runCatching { ProcessCompat.waitFor(process, 12_000L) }.getOrDefault(false)
                     if (!finished) {
-                        process.destroyForcibly()
+                        ProcessCompat.destroyForcibly(process)
                         logger("Opera endpoint discovery превысил таймаут, процесс остановлен.")
                     }
                     runCatching { readerThread.join(800L) }
@@ -1666,7 +1665,7 @@ object OperaProxyManager {
             if (isLocalProxyOpen(bindPort)) {
                 return true
             }
-            if (!process.isAlive) {
+            if (!ProcessCompat.isAlive(process)) {
                 val exitCode = runCatching { process.exitValue() }.getOrNull()
                 logger(
                     "Встроенный Opera proxy завершился до готовности" +

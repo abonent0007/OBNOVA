@@ -653,7 +653,12 @@ class FrostOverlayView @JvmOverloads constructor(
             val clipped = clearPath.isEmpty.not()
             if (clipped) {
                 canvas.save()
-                canvas.clipOutPath(clearPath)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    canvas.clipOutPath(clearPath)
+                } else {
+                    @Suppress("DEPRECATION")
+                    canvas.clipPath(clearPath, android.graphics.Region.Op.DIFFERENCE)
+                }
             }
             drawStatic(canvas, front, feather)
             if (clipped) canvas.restore()

@@ -3,6 +3,29 @@
 > Формат: дата → что изменено → где → чем проверено. Все пути от корня
 > `C:\Users\User\Documents\Nova-Android-Fork`.
 
+## 2026-11-02 — lint: 0 errors без baseline
+
+- **8 `UnspecifiedRegisterReceiverFlag`** закрыты через
+  `ContextCompat.registerReceiver`: внутренние события (`VPN_STATE`,
+  `STOP_VPN`, `WARP_CONFIG_DISCOVERY`, `UPDATE_STATE_CHANGED`) — с
+  `RECEIVER_NOT_EXPORTED`; системные (`SCREEN_ON/OFF`, `TETHER_STATE_CHANGED`,
+  `PACKAGE_ADDED/REMOVED`) — с `RECEIVER_EXPORTED`, иначе на части прошивок
+  они не доходят.
+- **`UnsafeImplicitIntentLaunch`**: `VPN_STATE` broadcast теперь с
+  `setPackage(packageName)`.
+- **21 `NewApi`** закрыты совместимыми обёртками:
+  `ProcessCompat` (`isAlive`, `waitFor`, `destroyForcibly` для API 24–25),
+  guard для `Canvas.clipOutPath` (API 26), `LinkProperties.mtu` (API 29),
+  `android.util.Base64` вместо `java.util.Base64` (API 26).
+- **3 `MissingPermission`**: `canNotify()` уже проверяет
+  `POST_NOTIFICATIONS`; на трёх вызовах `notify` добавлен точечный
+  `@SuppressLint("MissingPermission")` с комментарием. Глобального baseline нет.
+- **3 `WrongCall`**: это `super.onDraw` внутри своей иерархии, а не вызов
+  чужого View; подавлено локально на `drawLayers`/`drawContent`.
+- **1 `UseAppTint`**: `android:tint` → `app:tint`.
+- Итог: `lintGithubDebug` — **0 errors**, 883 warnings; тесты — **606/0/9**,
+  release собирается.
+
 ## 2026-11-02 — pipeline: динамические данные и логическая непрерывность
 
 ### Что изменено

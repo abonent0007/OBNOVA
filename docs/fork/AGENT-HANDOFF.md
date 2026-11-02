@@ -22,7 +22,8 @@
   сеанс, если процесс `:vpn` был убит и `restartSession` сохранён. После первого
   CONNECTED один раз показывается плашка про батарею/автозапуск/always-on.
 - Сборка/тесты: см. `docs/fork/VERIFICATION.md`; не считать «готово» без
-  свежего прогона. Unit tests — 606/0 failed (9 skipped).
+  свежего прогона. Unit tests — 606/0 failed (9 skipped). `lintGithubDebug` —
+  0 errors (глобального baseline нет).
 - Внешние источники и запасные пути описаны в `docs/fork/EXTERNAL-DATA.md`;
   список файлов маршрутов берётся из манифеста, а не из кода.
 - **MULTI и блокировки:** на этом операторе MULTI (DESYNC + свободный VLESS) не
