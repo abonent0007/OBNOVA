@@ -83,6 +83,7 @@ object OperaProxyManager {
 
     private const val BIND_HOST = "127.0.0.1"
     private const val LEGACY_BIND_PORT = 1085
+    const val BOOTSTRAP_PROXY_PORT = 1371
     private const val INTERNAL_PORT_RANGE_START = 20080
     private const val INTERNAL_PORT_RANGE_END = 40999
     private const val DEFAULT_COUNTRY = "EU"
@@ -352,6 +353,17 @@ object OperaProxyManager {
             ?: clientData.getOperaInternalProxyPort().takeIf { it in 1024..65535 }
             ?: LEGACY_BIND_PORT
     }
+
+    /**
+     * Уже слушающий Opera proxy — например, поднятый вручную через AWG SOCKS
+     * bootstrap. В этом случае 10-минутный backoff не должен его скрывать:
+     * процесс жив, порт открыт, слот можно использовать.
+     */
+    fun isLocalProxyListening(context: Context): Boolean =
+        isLocalProxyOpen(getLoopbackProxyPort(context))
+
+    /** Проверка конкретного loopback-порта: ручной bootstrap Opera на 1371. */
+    fun isLocalProxyListeningOn(port: Int): Boolean = isLocalProxyOpen(port)
 
     fun getLoopbackProxyAddress(context: Context): InetSocketAddress {
         return InetSocketAddress(BIND_HOST, getLoopbackProxyPort(context))

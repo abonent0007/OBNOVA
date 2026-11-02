@@ -3,6 +3,31 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
+## 2026-11-02 — Stage 2: AWG SOCKS
+
+```text
+StartAwgSocks: CF_PROXY_SLOT_ENABLED=true, 127.0.0.1:1378
+{"running":true,"listen":"127.0.0.1:1378","mtu":1280,
+ "addresses":["172.16.0.2","2606:4700:110:..."]}
+
+curl --socks5-hostname 127.0.0.1:1378 https://cp.cloudflare.com/generate_204
+204 0.448
+
+liboperaproxy -bind-address 127.0.0.1:1371 -api-proxy socks5://127.0.0.1:1378
+Init complete; curl через 1371 → 204
+yt-dlp --proxy http://127.0.0.1:13710 -f 269 jNQXAC9IVRw
+100% 227.29KiB → файл 195 771 байт
+
+MULTI с уже слушающим Opera:
+MULTI активен: router 127.0.0.1:1373 → PRIMARY1376 / Opera1371 / DIRECT
+router youtube.com:443 → secondary (200), googlevideo.com:443 → secondary (404)
+```
+
+Наблюдение: YouTube-приложение обращается к `142.251.x`/`172.217.x` по IP,
+поэтому доменные правила не срабатывают (`→ primary`). Нужны IP/CIDR-правила.
+`media_static` direct откатан: `i.ytimg.com` direct дал 000, через Opera — 404;
+превью должны идти тем же слотом, что и видео.
+
 ## 2026-11-02 — lint: 0 errors
 
 ```text
@@ -18,7 +43,7 @@ BUILD SUCCESSFUL
 ```text
 .\gradlew.bat testGithubDebugUnitTest assembleGithubRelease
 BUILD SUCCESSFUL in 1m 1s
-tests=607 failures=0 skipped=9
+tests=606 failures=0 skipped=9
 ```
 
 Устройство (Android 13): установлен arm64-APK, WARP подключён, цикл
@@ -64,7 +89,7 @@ python tools/check_imports.py --external
 
 ```text
 .\gradlew.bat testGithubDebugUnitTest
-tests=607 failures=0 errors=0 skipped=9     # было 583
+tests=606 failures=0 errors=0 skipped=9     # было 583
 go test ./... (nova-router, nova-desync) — ok
 ```
 

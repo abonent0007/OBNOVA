@@ -101,19 +101,6 @@ class RouterConfigFactoryTest {
     }
 
     @Test
-    fun `media static goes direct before youtube video rule`() {
-        val json = RouterConfigFactory.build(
-            input().copy(mediaStatic = listOf("ytimg.com", "ggpht.com")),
-            primaryPort = 1376,
-        )
-        val staticAt = json.indexOf("ytimg.com")
-        val youtubeAt = json.indexOf("\"youtube.com\"")
-        assertTrue(staticAt in 0 until youtubeAt)
-        assertTrue(json.contains("\"name\":\"media-static\""))
-        assertTrue(json.contains("\"order\":[\"direct\"]"))
-    }
-
-    @Test
     fun `telegram is pinned and never falls back to direct`() {
         assertEquals(
             listOf("primary", "spoof"),

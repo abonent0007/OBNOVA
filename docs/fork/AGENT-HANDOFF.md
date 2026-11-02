@@ -38,6 +38,12 @@
 - Бейдж главного экрана показывает фактический транспорт (`MULTI: RU`,
   `MASQUE: RU`, `VLESS: …`); `smart_routing` читается из XML на диске, поэтому
   тумблер действует со следующего подключения без force-stop.
+- **Stage 2 (AWG SOCKS)** реализован за флагом `-PnovaCfProxySlot=true`
+  (`CF_PROXY_SLOT_ENABLED`): `startAwgSocks` поднимает изолированный
+  userspace-AWG на `127.0.0.1:1378`; проверено `204` к Cloudflare. Opera
+  bootstrap через `-api-proxy socks5://127.0.0.1:1378` открывает `1371`,
+  `yt-dlp` скачал видеочанк. YouTube-приложение ходит по IP-литералам и
+  доменными правилами не ловится — следующий шаг IP/CIDR-правила.
 - Эмулятор `Pixel_7_Pro` — x86_64, APK — только ARM. ARM64 AVD на x86_64 хосте
   не запускается (`FATAL: CPU Architecture arm64 is not supported`); для
   живого прогона нужен USB ARM-девайс.

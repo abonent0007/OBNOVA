@@ -3,6 +3,30 @@
 > Формат: дата → что изменено → где → чем проверено. Все пути от корня
 > `C:\Users\User\Documents\Nova-Android-Fork`.
 
+## 2026-11-02 — Stage 2: AWG SOCKS-мост
+
+- Новый `nova-core/engine/awg_socks.go`: отдельный userspace-экземпляр
+  AmneziaWG (`amneziawg-go/v3` + `wgnetstack`), адрес из профиля (fallback
+  `10.204.0.1`), MTU 1280, `NewSmartBind()` и локальный SOCKS5 CONNECT на
+  `127.0.0.1:1378`. Глобальные `activeDevice`/`stateMu` не используются.
+- `mobile.go`: `StartAwgSocks(config, listen, enabled)`, `StopAwgSocks`,
+  `AwgSocksStatus`; флаг `CF_PROXY_SLOT_ENABLED` включается
+  `-PnovaCfProxySlot=true`, по умолчанию выключен.
+- AAR пересобран (`nova-core-api24-stripped.aar`, `libgojni.so` для arm64 и
+  armv7); источник профиля — актуальный `WarpVerifiedConfig` из ClientData,
+  fallback — bundled seed. UI-кнопка Stage 2 скрыта за флагом.
+- **Проверено:** `curl --socks5-hostname 127.0.0.1:1378
+  https://cp.cloudflare.com/generate_204` → **204**; ручной
+  `liboperaproxy.so -api-proxy socks5://127.0.0.1:1378` открыл `127.0.0.1:1371`
+  (204); `yt-dlp` через этот Opera-прокси скачал реальный видеочанк
+  `jNQXAC9IVRw` (195 771 байт).
+- **Ограничение:** YouTube-приложение ходит по IP-литералам, поэтому
+  доменные правила `nova-router` его не ловят (`ROUTER: 142.251.x → primary`).
+  Следующий шаг — IP/CIDR-правила для `googlevideo`/Google ASN.
+- `media_static`-разделение откатано: на этой сети `i.ytimg.com` через DIRECT
+  даёт таймаут, через Opera — 404/данные; превью остаются на слоте YouTube.
+- Тесты: **606/0/9**, lint 0 errors, release собирается.
+
 ## 2026-11-02 — lint: 0 errors без baseline
 
 - **8 `UnspecifiedRegisterReceiverFlag`** закрыты через
@@ -61,11 +85,6 @@
 - **Журнал стал доказательным**: после синхронизации пишется
   `LISTS: … обновлено файлов: 12 …`, после проверки — одна строка `PROBE:`
   с `OK/FAIL` по каждому сервису. Это видно в `adb logcat` без разбора UI.
-- **Per-service media matrix**: `media_static.txt` (`ytimg.com`, `ggpht.com`,
-  `googleusercontent.com`) уходит в DIRECT отдельным правилом **до** правила
-  `youtube`; видеопоток `googlevideo.com` остаётся на слоте. Так превью и
-  аватары не занимают канал, который нужен видео. Покрыто
-  `RouterConfigFactoryTest`.
 
 ### Удалённые заглушки
 
@@ -89,7 +108,7 @@
 ### Проверено
 
 - `go test ./...` в `nova-router` и `nova-desync` — ok.
-- `testGithubDebugUnitTest` — **607 тестов, 0 failures, 9 skipped** (было 583;
+- `testGithubDebugUnitTest` — **606 тестов, 0 failures, 9 skipped** (было 583;
   добавлены `ListManifestTest`, `ListCacheSignatureTest`,
   `RoutingPrefsParserTest`, `TldListTest`, `ServiceProbeTargetsTest`,
   `ListRepositoryFallbackTest`, тесты цепочек и валидации Go).

@@ -5,6 +5,8 @@ import (
 	cryptorand "crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	mathrand "math/rand"
@@ -297,6 +299,63 @@ func StartMasqueVPNWithSNI(fd int, identityJSON string, endpointHost string, end
 func StopVPN() {
 	novaengine.StopWireGuard()
 	novaengine.StopMasque()
+}
+
+var (
+	awgSocksMu       sync.Mutex
+	awgSocksInstance *novaengine.AwgSocksInstance
+)
+
+// StartAwgSocks запускает отдельный userspace-слот AmneziaWG + SOCKS5.
+//
+// enabled — BuildConfig.CF_PROXY_SLOT_ENABLED. Слот не создаёт TUN и не
+// трогает activeDevice: это второй, независимый экземпляр устройства.
+func StartAwgSocks(awgConfig string, listenAddr string, enabled bool) (string, error) {
+	awgSocksMu.Lock()
+	defer awgSocksMu.Unlock()
+	if awgSocksInstance != nil {
+		return awgSocksStatusLocked(), errors.New("AWG SOCKS уже запущен")
+	}
+	instance, err := novaengine.StartAwgSocks(awgConfig, listenAddr, enabled)
+	if err != nil {
+		return `{"running":false}`, err
+	}
+	awgSocksInstance = instance
+	return awgSocksStatusLocked(), nil
+}
+
+// StopAwgSocks останавливает только AWG-слот; активный VPN не затрагивается.
+func StopAwgSocks() {
+	awgSocksMu.Lock()
+	defer awgSocksMu.Unlock()
+	if awgSocksInstance != nil {
+		awgSocksInstance.Close()
+		awgSocksInstance = nil
+	}
+}
+
+// AwgSocksStatus возвращает JSON для диагностики и экрана слотов.
+func AwgSocksStatus() string {
+	awgSocksMu.Lock()
+	defer awgSocksMu.Unlock()
+	return awgSocksStatusLocked()
+}
+
+func awgSocksStatusLocked() string {
+	if awgSocksInstance == nil {
+		return `{"running":false}`
+	}
+	payload := map[string]any{
+		"running":   true,
+		"listen":    awgSocksInstance.ListenAddr(),
+		"addresses": awgSocksInstance.Addresses(),
+		"mtu":       novaengine.AwgSocksMTU,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return `{"running":true}`
+	}
+	return string(data)
 }
 
 // ForceHandshake asks the live WireGuard tunnel to start a handshake now.

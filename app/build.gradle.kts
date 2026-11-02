@@ -149,6 +149,12 @@ android {
         minSdk = 24 // Android 7.0; более новые API вызываются под проверкой SDK_INT
         targetSdk = 34
         buildConfigField("boolean", "DIAGNOSTICS", novaDiagnostics.toString())
+        // Stage 2: userspace AWG/MASQUE SOCKS-слот. По умолчанию выключен,
+        // текущий MULTI не меняется; включается через -PnovaCfProxySlot=true.
+        val cfProxySlotEnabled = providers.gradleProperty("novaCfProxySlot")
+            .orNull
+            ?.toBoolean() ?: false
+        buildConfigField("boolean", "CF_PROXY_SLOT_ENABLED", cfProxySlotEnabled.toString())
         manifestPlaceholders["novaDiagnosticsEnabled"] = novaDiagnostics.toString()
         // Главный экран выключается только в диагностической сборке — чтобы в
         // лаунчере остался один значок и человек не открыл падающий экран.

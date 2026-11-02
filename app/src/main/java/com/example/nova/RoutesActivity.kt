@@ -272,6 +272,50 @@ class RoutesActivity : AppCompatActivity() {
             }, "NovaServiceProbe").apply { isDaemon = true }.start()
         }
         card.addView(probeButton)
+
+        if (BuildConfig.CF_PROXY_SLOT_ENABLED) {
+            val awgStatus = TextView(this).apply {
+                text = "AWG SOCKS: " + AwgSocksBridge.status()
+                setTextColor(0xFF7FA98C.toInt())
+                textSize = 11f
+                setPadding(0, dp(10), 0, 0)
+            }
+            card.addView(awgStatus)
+            val awgButton = TextView(this).apply {
+                text = "Запустить AWG SOCKS (127.0.0.1:1378)"
+                textSize = 13f
+                setTextColor(0xFF50C878.toInt())
+                setPadding(0, dp(6), 0, 0)
+                isClickable = true
+                isFocusable = true
+            }
+            awgButton.setOnClickListener {
+                if (!awgButton.isEnabled) return@setOnClickListener
+                awgButton.isEnabled = false
+                awgStatus.text = "AWG SOCKS: запуск…"
+                Thread({
+                    val result = AwgSocksBridge.startFromBundled(this)
+                    runOnUiThread {
+                        awgStatus.text = "AWG SOCKS: $result"
+                        LogManager.log("AWG-SOCKS: $result")
+                        awgButton.isEnabled = true
+                    }
+                }, "NovaAwgSocks").apply { isDaemon = true }.start()
+            }
+            card.addView(awgButton)
+            val awgStop = TextView(this).apply {
+                text = "Остановить AWG SOCKS"
+                textSize = 12f
+                setTextColor(0xFF7FA98C.toInt())
+                setPadding(0, dp(4), 0, 0)
+                isClickable = true
+                isFocusable = true
+            }
+            awgStop.setOnClickListener {
+                awgStatus.text = "AWG SOCKS: " + AwgSocksBridge.stop()
+            }
+            card.addView(awgStop)
+        }
         return card
     }
 

@@ -10025,7 +10025,20 @@ class NovaVpnService : OperaNativeVpnService() {
             val routingStore = RoutingStore(this)
             val operaRetryAfter = routingStore.operaRetryAfterMs()
             val nowMs = System.currentTimeMillis()
-            if (nowMs < operaRetryAfter) {
+            if (OperaProxyManager.isLocalProxyListeningOn(OperaProxyManager.BOOTSTRAP_PROXY_PORT)) {
+                // Opera поднята вручную с -api-proxy socks5://127.0.0.1:1378:
+                // именно этот сценарий разблокирует YouTube-egress через Opera.
+                operaPort = OperaProxyManager.BOOTSTRAP_PROXY_PORT
+                routingStore.setOperaRetryAfterMs(0L)
+                LogManager.log("MULTI: Opera уже слушает 127.0.0.1:$operaPort — SECONDARY подключён.")
+            } else if (OperaProxyManager.isLocalProxyListening(this)) {
+                // Opera уже поднята снаружи (например, bootstrap через AWG
+                // SOCKS 1378). Backoff относится к неудачным запускам, а не
+                // к живому процессу, который уже слушает 1371.
+                operaPort = OperaProxyManager.getLoopbackProxyPort(this)
+                routingStore.setOperaRetryAfterMs(0L)
+                LogManager.log("MULTI: Opera уже слушает 127.0.0.1:$operaPort — SECONDARY подключён.")
+            } else if (nowMs < operaRetryAfter) {
                 LogManager.log(
                     "MULTI: Opera недавно не поднялась — SECONDARY пропускаем ещё " +
                         "${(operaRetryAfter - nowMs) / 1000} с."
@@ -10176,7 +10189,6 @@ class NovaVpnService : OperaNativeVpnService() {
                 second = lists.secondDomains(),
                 ai = lists.aiDomains(),
                 youtube = lists.youtubeDomains(),
-                mediaStatic = lists.mediaStaticDomains(),
                 telegram = lists.telegramDomains(),
                 whatsapp = lists.whatsappDomains(),
                 discord = lists.discordDomains(),
