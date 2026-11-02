@@ -61,6 +61,11 @@
 - **Журнал стал доказательным**: после синхронизации пишется
   `LISTS: … обновлено файлов: 12 …`, после проверки — одна строка `PROBE:`
   с `OK/FAIL` по каждому сервису. Это видно в `adb logcat` без разбора UI.
+- **Per-service media matrix**: `media_static.txt` (`ytimg.com`, `ggpht.com`,
+  `googleusercontent.com`) уходит в DIRECT отдельным правилом **до** правила
+  `youtube`; видеопоток `googlevideo.com` остаётся на слоте. Так превью и
+  аватары не занимают канал, который нужен видео. Покрыто
+  `RouterConfigFactoryTest`.
 
 ### Удалённые заглушки
 
@@ -84,7 +89,7 @@
 ### Проверено
 
 - `go test ./...` в `nova-router` и `nova-desync` — ok.
-- `testGithubDebugUnitTest` — **606 тестов, 0 failures, 9 skipped** (было 583;
+- `testGithubDebugUnitTest` — **607 тестов, 0 failures, 9 skipped** (было 583;
   добавлены `ListManifestTest`, `ListCacheSignatureTest`,
   `RoutingPrefsParserTest`, `TldListTest`, `ServiceProbeTargetsTest`,
   `ListRepositoryFallbackTest`, тесты цепочек и валидации Go).

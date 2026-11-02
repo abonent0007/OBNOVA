@@ -18,7 +18,7 @@ BUILD SUCCESSFUL
 ```text
 .\gradlew.bat testGithubDebugUnitTest assembleGithubRelease
 BUILD SUCCESSFUL in 1m 1s
-tests=606 failures=0 skipped=9
+tests=607 failures=0 skipped=9
 ```
 
 Устройство (Android 13): установлен arm64-APK, WARP подключён, цикл
@@ -64,7 +64,7 @@ python tools/check_imports.py --external
 
 ```text
 .\gradlew.bat testGithubDebugUnitTest
-tests=606 failures=0 errors=0 skipped=9     # было 583
+tests=607 failures=0 errors=0 skipped=9     # было 583
 go test ./... (nova-router, nova-desync) — ok
 ```
 

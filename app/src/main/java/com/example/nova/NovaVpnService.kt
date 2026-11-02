@@ -10176,6 +10176,7 @@ class NovaVpnService : OperaNativeVpnService() {
                 second = lists.secondDomains(),
                 ai = lists.aiDomains(),
                 youtube = lists.youtubeDomains(),
+                mediaStatic = lists.mediaStaticDomains(),
                 telegram = lists.telegramDomains(),
                 whatsapp = lists.whatsappDomains(),
                 discord = lists.discordDomains(),

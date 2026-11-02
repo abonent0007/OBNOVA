@@ -1,0 +1,7 @@
+# Статика YouTube, которой не нужен туннель для видео:
+# превью, аватары и обложки. Видеопоток (googlevideo.com) сюда не входит.
+ytimg.com
+ggpht.com
+googleusercontent.com
+yt3.ggpht.com
+yt4.ggpht.com

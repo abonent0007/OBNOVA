@@ -42,6 +42,7 @@ object ListRepository {
                 main = domains(app, "main.txt"),
                 ai = domains(app, "ai.txt"),
                 youtube = domains(app, "youtube.txt"),
+                mediaStatic = domains(app, "media_static.txt"),
                 telegram = domains(app, "telegram.txt"),
                 whatsapp = domains(app, "whatsapp.txt"),
                 discord = domains(app, "discord.txt"),

@@ -13,6 +13,8 @@ object RouterConfigFactory {
         val second: List<String> = emptyList(),
         val ai: List<String> = emptyList(),
         val youtube: List<String> = emptyList(),
+        /** Превью/аватары YouTube: direct, видео — отдельно. */
+        val mediaStatic: List<String> = emptyList(),
         val telegram: List<String> = emptyList(),
         val whatsapp: List<String> = emptyList(),
         val discord: List<String> = emptyList(),
@@ -50,6 +52,11 @@ object RouterConfigFactory {
         add(rules, input.main, order("ru", input.overrides, opera, spoof, killSwitch), "ru")
         add(rules, input.second, order("eu", input.overrides, opera, spoof, killSwitch), "eu")
         add(rules, input.ai, order("ai", input.overrides, opera, spoof, killSwitch), "ai")
+        if (input.mediaStatic.isNotEmpty()) {
+            // Статика YouTube (превью, аватары) не должна занимать слот,
+            // который нужен видеопотоку. Идёт раньше правила youtube.
+            rules += RouterConfig.RuleSpec(input.mediaStatic, listOf("direct"), "media-static")
+        }
         add(rules, input.youtube, order("youtube", input.overrides, opera, spoof, killSwitch), "youtube")
         add(rules, input.telegram, order("telegram", input.overrides, opera, spoof, killSwitch), "telegram")
         add(rules, input.whatsapp, order("whatsapp", input.overrides, opera, spoof, killSwitch), "whatsapp")
