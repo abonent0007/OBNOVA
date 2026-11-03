@@ -30,7 +30,7 @@ set -euo pipefail
 
 REPO="${OPERA_PROXY_REPO:-https://github.com/Alexey71/opera-proxy}"
 # Тег закреплён и совпадает с версией Nova PC.
-TAG="${OPERA_PROXY_TAG:-v1.30.0}"
+TAG="${OPERA_PROXY_TAG:-v1.31.0}"
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Папка — под тег: старый клон с другим remote иначе молча собрал бы старую версию.

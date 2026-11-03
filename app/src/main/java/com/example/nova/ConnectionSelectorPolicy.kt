@@ -293,7 +293,11 @@ object ConnectionSelectorPolicy {
      * приходит из ленты: лента публикует **адреса** по регионам, а не сами
      * регионы. Здесь он ровно для подписи, значения те же `eu`/`us`.
      */
-    val OPERA_SUB_REGIONS: List<Pair<String, String>> = listOf("eu" to "EU", "us" to "US")
+    val OPERA_SUB_REGIONS: List<Pair<String, String>> = listOf(
+        "eu" to "EU",
+        "us" to "US",
+        "as" to "AS",
+    )
 
     /** Что подставить, если пользователь ещё не выбирал регион Opera. */
     const val DEFAULT_OPERA_SUB_REGION: String = "eu"

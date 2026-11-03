@@ -53,7 +53,7 @@ func ProbeMasqueHandshake(identityJSON string, endpointHost string, endpointPort
 	if connectSNI == "" {
 		connectSNI = masqueConnectSNI
 	}
-	tlsConfig, err := usqueapi.PrepareTlsConfig(privKey, peerPubKey, cert, connectSNI)
+	tlsConfig, err := usqueapi.PrepareTlsConfig(privKey, peerPubKey, cert, connectSNI, false)
 	if err != nil {
 		return fmt.Sprintf("tls config: %v", err)
 	}

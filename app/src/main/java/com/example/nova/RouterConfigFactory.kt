@@ -77,8 +77,8 @@ object RouterConfigFactory {
         add(rules, APIS_DOMAINS, order("apis", input.overrides, opera, spoof, killSwitch), "apis")
         if (cfProxy || opera) {
             // MTProto-прокси Telegram: Opera первой — её CONNECT на IP:300
-            // проходит (проверено 200), а WARP-мост сейчас не несёт трафик.
-            // cfproxy оставлен вторым, primary — последним.
+            // стабильно даёт ~700 мс, тогда как WARP-egress из DME до Hetzner
+            // отдаёт 3.5 с. cfproxy — резерв.
             val mtprotoProxyOrder = buildList {
                 if (opera) add("secondary")
                 if (cfProxy) add("cfproxy")
@@ -103,14 +103,14 @@ object RouterConfigFactory {
         }
         if (input.telegramIps.isNotEmpty()) {
             val baseTelegramOrder = order("telegram", input.overrides, opera, spoof, killSwitch)
-            // Первым идёт WSS-реле: оно несёт MTProto до DC через Cloudflare,
-            // а оператор видит обычный HTTPS к Cloudflare. Opera и cfproxy —
-            // запас, если реле не ответило. При ручном override не вмешиваемся.
+            // MASQUE-слот первым: QUIC/443 проходит там, где UDP WireGuard
+            // и прямое TCP к DC режутся. WSS-реле — второй, Opera — третий.
+            // При ручном override не вмешиваемся.
             val telegramIpOrder = if (input.overrides["telegram"] == null) {
                 buildList {
+                    if (cfProxy) add("cfproxy")
                     if (input.telegramRelayUrl.isNotBlank()) add("ws")
                     if (opera) add("secondary")
-                    if (cfProxy) add("cfproxy")
                     add("primary")
                 }
             } else {

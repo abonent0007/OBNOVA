@@ -302,8 +302,10 @@ func StopVPN() {
 }
 
 var (
-	awgSocksMu       sync.Mutex
-	awgSocksInstance *novaengine.AwgSocksInstance
+	awgSocksMu          sync.Mutex
+	awgSocksInstance    *novaengine.AwgSocksInstance
+	masqueSocksMu       sync.Mutex
+	masqueSocksInstance *novaengine.MasqueSocksInstance
 )
 
 // StartAwgSocks запускает отдельный userspace-слот AmneziaWG + SOCKS5.
@@ -350,6 +352,72 @@ func awgSocksStatusLocked() string {
 		"listen":    awgSocksInstance.ListenAddr(),
 		"addresses": awgSocksInstance.Addresses(),
 		"mtu":       novaengine.AwgSocksMTU,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return `{"running":true}`
+	}
+	return string(data)
+}
+
+// StartMasqueSocks поднимает отдельный userspace MASQUE + SOCKS5 на loopback.
+//
+// Нужен для MULTI: на сетях, где UDP WireGuard режется, MASQUE на 443 проходит,
+// и его можно отдать роутеру как локальный SOCKS без второго системного TUN.
+func StartMasqueSocks(
+	identityJSON string,
+	endpointHost string,
+	endpointPort int,
+	sni string,
+	listenAddr string,
+	enabled bool,
+) (string, error) {
+	masqueSocksMu.Lock()
+	defer masqueSocksMu.Unlock()
+	if masqueSocksInstance != nil {
+		return masqueSocksStatusLocked(), errors.New("MASQUE SOCKS уже запущен")
+	}
+	instance, err := novaengine.StartMasqueSocks(
+		identityJSON,
+		endpointHost,
+		endpointPort,
+		sni,
+		listenAddr,
+		enabled,
+	)
+	if err != nil {
+		return `{"running":false}`, err
+	}
+	masqueSocksInstance = instance
+	return masqueSocksStatusLocked(), nil
+}
+
+// StopMasqueSocks останавливает только MASQUE-слот.
+func StopMasqueSocks() {
+	masqueSocksMu.Lock()
+	defer masqueSocksMu.Unlock()
+	if masqueSocksInstance != nil {
+		masqueSocksInstance.Close()
+		masqueSocksInstance = nil
+	}
+}
+
+// MasqueSocksStatus возвращает JSON для логов и проверки состояния.
+func MasqueSocksStatus() string {
+	masqueSocksMu.Lock()
+	defer masqueSocksMu.Unlock()
+	return masqueSocksStatusLocked()
+}
+
+func masqueSocksStatusLocked() string {
+	if masqueSocksInstance == nil {
+		return `{"running":false}`
+	}
+	payload := map[string]any{
+		"running":   true,
+		"listen":    masqueSocksInstance.ListenAddr(),
+		"addresses": masqueSocksInstance.Addresses(),
+		"mtu":       novaengine.MasqueSocksMTU,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

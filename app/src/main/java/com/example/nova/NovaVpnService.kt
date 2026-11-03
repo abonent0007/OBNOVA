@@ -9871,6 +9871,9 @@ class NovaVpnService : OperaNativeVpnService() {
     private var multiOperaPort = 0
 
     @Volatile
+    private var multiCfProxyPort = 0
+
+    @Volatile
     private var multiVlessActive = false
 
     @Volatile
@@ -10030,15 +10033,19 @@ class NovaVpnService : OperaNativeVpnService() {
             val routingStore = RoutingStore(this)
             val operaRetryAfter = routingStore.operaRetryAfterMs()
             val nowMs = System.currentTimeMillis()
+            var cfProxyPort = 0
             if (BuildConfig.CF_PROXY_SLOT_ENABLED) {
-                val bridgeReady = AwgSocksBridge.startAndWait(this)
-                LogManager.log(
-                    if (bridgeReady) {
-                        "MULTI: AWG SOCKS ${AwgSocksBridge.LISTEN_ADDRESS} готов — слот cfproxy для Telegram."
-                    } else {
-                        "MULTI: AWG SOCKS не поднялся — Telegram останется без cfproxy."
-                    }
-                )
+                // Сначала MASQUE/443: на этой сети UDP WireGuard режется, а
+                // QUIC проходит. AWG оставлен запасным для сетей без QUIC.
+                if (MasqueSocksBridge.startAndWait(this)) {
+                    cfProxyPort = MasqueSocksBridge.LISTEN_PORT
+                    LogManager.log("MULTI: cfproxy = MASQUE SOCKS ${MasqueSocksBridge.LISTEN_ADDRESS}.")
+                } else if (AwgSocksBridge.startAndWait(this)) {
+                    cfProxyPort = AwgSocksBridge.LISTEN_PORT
+                    LogManager.log("MULTI: cfproxy = AWG SOCKS ${AwgSocksBridge.LISTEN_ADDRESS}.")
+                } else {
+                    LogManager.log("MULTI: cfproxy не поднялся — Telegram пойдёт через резервные слоты.")
+                }
             }
             if (OperaProxyManager.isLocalProxyListeningOn(OperaProxyManager.BOOTSTRAP_PROXY_PORT)) {
                 // Opera поднята вручную с -api-proxy socks5://127.0.0.1:1378:
@@ -10064,16 +10071,22 @@ class NovaVpnService : OperaNativeVpnService() {
                     // путь другой, и он не должен блокировать попытку.
                     LogManager.log("MULTI: старый backoff Opera игнорируем — Stage 2 поднимает её через мост.")
                 }
-                val ready = OperaProxyManager.ensureReady(
-                    this,
-                    LogManager::log,
-                    purposeLabel = "умной маршрутизации",
-                    readyTimeoutMs = 20_000L,
-                    maxLaunchPlans = 40,
-                    bootstrapApiProxy = "socks5h://127.0.0.1:$desyncPort",
-                    bootstrapDialProxy = "socks5h://127.0.0.1:$desyncPort",
-                    shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
-                )
+                var ready = OperaProxyManager.ReadyState.FAILED
+                // EU первым, AS — резерв: азиатский узел в ленте жив, когда EU/AM не отвечают.
+                for (country in listOf("EU", "AS")) {
+                    ready = OperaProxyManager.ensureReady(
+                        this,
+                        LogManager::log,
+                        purposeLabel = "умной маршрутизации",
+                        country = country,
+                        readyTimeoutMs = 20_000L,
+                        maxLaunchPlans = 40,
+                        bootstrapApiProxy = "socks5h://127.0.0.1:$desyncPort",
+                        bootstrapDialProxy = "socks5h://127.0.0.1:$desyncPort",
+                        shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
+                    )
+                    if (ready != OperaProxyManager.ReadyState.FAILED) break
+                }
                 if (ready == OperaProxyManager.ReadyState.FAILED) {
                     routingStore.setOperaRetryAfterMs(System.currentTimeMillis() + 10 * 60_000L)
                     LogManager.log("MULTI: Opera не поднялась — SECONDARY отключён на 10 минут.")
@@ -10098,11 +10111,12 @@ class NovaVpnService : OperaNativeVpnService() {
             multiPrimaryPort = primaryPort
             multiSpoofPort = spoofPort
             multiOperaPort = operaPort
+            multiCfProxyPort = cfProxyPort
             val config = buildMultiRouterConfig(
                 primaryPort,
                 operaPort,
                 spoofPort,
-                cfProxyPort = if (BuildConfig.CF_PROXY_SLOT_ENABLED) 1378 else 0,
+                cfProxyPort = cfProxyPort,
             )
             val routerPort = RouterProcess.start(this, config, LogManager::log)
             if (routerPort == 0) {
@@ -10214,8 +10228,14 @@ class NovaVpnService : OperaNativeVpnService() {
      * Гасит Stage 2 мост. Вызывается после остановки Opera: порядок обратный
      * запуску, иначе Opera теряет `-api-proxy` на живом соединении.
      */
+    /**
+     * Гасит оба cfproxy-моста: сначала MASQUE, затем AWG. Вызывается после
+     * остановки Opera — порядок обратный запуску.
+     */
     private fun stopAwgBridgeIfEnabled() {
-        if (BuildConfig.CF_PROXY_SLOT_ENABLED) AwgSocksBridge.stop()
+        if (!BuildConfig.CF_PROXY_SLOT_ENABLED) return
+        MasqueSocksBridge.stop()
+        AwgSocksBridge.stop()
     }
 
     /**
@@ -10274,7 +10294,7 @@ class NovaVpnService : OperaNativeVpnService() {
             primaryPort,
             multiOperaPort,
             multiSpoofPort,
-            cfProxyPort = if (BuildConfig.CF_PROXY_SLOT_ENABLED) 1378 else 0,
+            cfProxyPort = multiCfProxyPort,
         )
         val port = RouterProcess.start(
             this,
@@ -26056,11 +26076,14 @@ class NovaVpnService : OperaNativeVpnService() {
     }
 
     private fun getOperaFallbackSequence(regionPreference: String): List<Pair<String, String>> {
+        // AS — резерв после EU и до AM: в ленте 03.11.2026 добавлен азиатский
+        // узел (77.111.245.12:443), тогда как AM часто не отвечает.
         return when (regionPreference) {
-            "eu" -> listOf("EU" to "EU")
-            "us" -> listOf("AM" to "US")
+            "eu" -> listOf("EU" to "EU", "AS" to "AS")
+            "us" -> listOf("AM" to "US", "AS" to "AS")
+            "as" -> listOf("AS" to "AS", "EU" to "EU")
             "ru" -> emptyList()
-            else -> listOf("EU" to "EU", "AM" to "US")
+            else -> listOf("EU" to "EU", "AS" to "AS", "AM" to "US")
         }
     }
 

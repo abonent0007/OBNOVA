@@ -87,7 +87,7 @@ class ConnectionSelectorPolicyTest {
     @Test
     fun `sub regions exist only for opera, proton and tor`() {
         assertEquals(
-            listOf("eu" to "EU", "us" to "US"),
+            listOf("eu" to "EU", "us" to "US", "as" to "AS"),
             ConnectionSelectorPolicy.subRegionsFor("opera", emptyList()),
         )
         // «AUTO» — своя кнопка, а не отметка на первой стране: пустое

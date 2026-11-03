@@ -3,12 +3,13 @@ module nova-core
 go 1.26.3
 
 require (
-	github.com/Diniboy1123/connect-ip-go v0.0.0-20251011145655-7be32d5976d9
+	github.com/Diniboy1123/connect-ip-go v0.0.0-20260613064811-66cba32d7d33
 	github.com/Diniboy1123/usque v0.0.0
 	github.com/amnezia-vpn/amneziawg-go/v3 v3.1.20260828
 	github.com/bepass-org/warp-plus v1.2.6
+	github.com/net2share/vaydns v0.2.8
 	github.com/pion/transport/v4 v4.0.1
-	github.com/quic-go/quic-go v0.61.0
+	github.com/quic-go/quic-go v0.65.0
 	github.com/refraction-networking/utls v1.8.2
 	github.com/yosida95/uritemplate/v3 v3.0.2
 	gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/goptlib v1.6.0
@@ -78,7 +79,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/klauspost/reedsolomon v1.13.0 // indirect
 	github.com/miekg/dns v1.1.65 // indirect
-	github.com/net2share/vaydns v0.2.8 // indirect
 	github.com/noql-net/certpool v0.0.0-20250417123926-688b52c002ee // indirect
 	github.com/patrickmn/go-cache v2.1.0+incompatible // indirect
 	github.com/pion/datachannel v1.6.0 // indirect
@@ -103,8 +103,8 @@ require (
 	github.com/songgao/water v0.0.0-20200317203138-2b4b6d7c09d8 // indirect
 	github.com/theodorsm/covert-dtls v1.5.0 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
-	github.com/txthinking/runnergroup v0.0.0-20241229123329-7b873ad00768 // indirect
-	github.com/txthinking/socks5 v0.0.0-20251011041537-5c31f201a10e // indirect
+	github.com/txthinking/runnergroup v0.0.0-20250224021307-5864ffeb65ae // indirect
+	github.com/txthinking/socks5 v0.0.0-20260601051520-339b044ab0eb // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/xtaci/kcp-go/v5 v5.6.61 // indirect
 	github.com/xtaci/smux v1.5.56 // indirect
@@ -116,6 +116,6 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
-	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb // indirect
-	gvisor.dev/gvisor v0.0.0-20251011013117-af7a19336e55 // indirect
+	golang.zx2c4.com/wireguard v0.0.0-20260522210424-ecfc5a8d5446 // indirect
+	gvisor.dev/gvisor v0.0.0-20260616165937-8e4bc62602eb // indirect
 )

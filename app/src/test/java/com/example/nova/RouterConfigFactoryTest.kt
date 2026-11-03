@@ -36,7 +36,7 @@ class RouterConfigFactoryTest {
             cfProxyPort = 1378,
         )
         assertTrue(json.contains("\"ws\":{\"type\":\"ws\",\"url\":\"wss://relay.example/apiws\",\"secret\":\"s3cret\"}"))
-        assertTrue(json.contains("\"order\":[\"ws\",\"secondary\",\"cfproxy\",\"primary\"]"))
+        assertTrue(json.contains("\"order\":[\"cfproxy\",\"ws\",\"secondary\",\"primary\"]"))
     }
 
     @Test
@@ -177,7 +177,7 @@ class RouterConfigFactoryTest {
         assertTrue(json.contains("\"cfproxy\":{\"type\":\"socks5\",\"addr\":\"127.0.0.1:1378\"}"))
         assertTrue(
             json.contains(
-                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"secondary\",\"cfproxy\",\"primary\"]"
+                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"cfproxy\",\"secondary\",\"primary\"]"
             )
         )
     }

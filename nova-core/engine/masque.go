@@ -646,7 +646,7 @@ func StartMasque(fd int, identityJSON string, endpointHost string, endpointPort 
 		connectSNI = masqueConnectSNI
 	}
 
-	tlsConfig, err := usqueapi.PrepareTlsConfig(privKey, peerPubKey, cert, connectSNI)
+	tlsConfig, err := usqueapi.PrepareTlsConfig(privKey, peerPubKey, cert, connectSNI, false)
 	if err != nil {
 		return fmt.Errorf("failed to prepare MASQUE TLS config: %w", err)
 	}

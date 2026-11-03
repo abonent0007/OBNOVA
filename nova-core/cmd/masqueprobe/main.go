@@ -238,7 +238,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("регистрация не прошла: %v", err)
 		}
-		account = registered
+		account = *registered
 		log.Printf(
 			"    id=%s… account_type=%q warp_enabled=%v premium=%d",
 			truncate(account.ID, 8), account.Account.AccountType, account.WarpEnabled, account.Account.PremiumData,
@@ -284,13 +284,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("не удалось сгенерировать пару ключей: %v", err)
 	}
-	enrolled, apiErr, err := usqueapi.EnrollKey(account, pubKey, "Nova Android")
+	enrolledPtr, err := usqueapi.EnrollKey(account.ID, account.Token, pubKey, "Nova Android")
 	if err != nil {
-		if apiErr != nil {
-			log.Fatalf("enroll не прошёл: %v (%s)", err, apiErr.ErrorsAsString("; "))
-		}
 		log.Fatalf("enroll не прошёл: %v", err)
 	}
+	enrolled := *enrolledPtr
 	log.Printf(
 		"    tunnel_type=%q key_type=%q warp_enabled=%v waitlist=%v peers=%d",
 		enrolled.TunType, enrolled.KeyType, enrolled.WarpEnabled, enrolled.Waitlist, len(enrolled.Config.Peers),
@@ -392,7 +390,7 @@ func handshakeWithTimeout(
 		return "", fmt.Errorf("сборка сертификата: %w", err)
 	}
 
-	tlsConfig, err := usqueapi.PrepareTlsConfig(privKey, peerPub, cert, sni)
+	tlsConfig, err := usqueapi.PrepareTlsConfig(privKey, peerPub, cert, sni, false)
 	if err != nil {
 		return "", fmt.Errorf("подготовка TLS: %w", err)
 	}
@@ -409,6 +407,7 @@ func handshakeWithTimeout(
 		defaultQuicConfig(5*time.Second, 1242),
 		connectURI,
 		endpoint,
+		false,
 	)
 	if err != nil {
 		return "", err

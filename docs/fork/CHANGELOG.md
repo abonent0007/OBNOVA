@@ -90,6 +90,27 @@
   отдавали 0 байт. Поэтому Telegram оставлен на MTProto-прокси через Opera,
   а `ws` — экспериментальный резерв.
 
+## 2026-11-03 — MASQUE-SOCKS слот и обновление апстримов
+
+- `nova-core/engine/masque_socks.go`: `StartMasqueSocks` — отдельный
+  userspace MASQUE поверх `wgnetstack.CreateNetTUN`, SOCKS5 на
+  `127.0.0.1:1379`; `activeMasque` не трогается, второй TUN не создаётся.
+- `MasqueSocksBridge.kt`: перебор портов/SNI (443, `last_port`, 8443;
+  `i.ytimg.com`), запуск из MULTI; `cfproxy` в роутере теперь смотрит на 1379,
+  AWG (1378) остался запасным.
+- **Проверено на устройстве:** `MASQUE SOCKS … 162.159.198.2:443`,
+  `204` за 0.30 с, `example.com` 200, `colo=DME`, `loc=RU`.
+- **Прямые Telegram DC через MASQUE не проходят:** `149.154.167.50/41`
+  таймаут при живом `example.com` — фильтрация на выходе DME подтверждена.
+  Поэтому Telegram остаётся на MTProto-прокси, а не на прямых DC.
+- **Прокси 65.109 через MASQUE подключается** (`ROUTER: 65.109…:300 → cfproxy`),
+  но MTProto-ping 3.5 с против 0.67 с через Opera — для `mtproto-proxy`
+  оставлен порядок `secondary → cfproxy → primary`.
+- **Апстримы:** opera-proxy `v1.31.0` (пересобран), Xray-core `26.10.31`
+  (пересобран), `quic-go v0.65.0`, `connect-ip-go`/`usque` (адаптированы
+  `PrepareTlsConfig`/`EnrollKey`/`ConnectTunnel`). Резерв регионов Opera:
+  `EU → AS → AM`; в селекторе появился `AS`.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS-мост
 
 - Новый `nova-core/engine/awg_socks.go`: отдельный userspace-экземпляр
