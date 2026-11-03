@@ -56,6 +56,18 @@ tgnet: connected to 149.154.167.41:443
 YouTube в этом же режиме: `PlaybackState {state=6, position=0}` через 30 с —
 WARP не отдаёт `googlevideo`. Вывод: MASQUE — для Telegram, MULTI — для YouTube.
 
+### MULTI: Telegram через Opera (2026-11-03)
+
+```text
+ROUTER: 65.109.194.***:300 → secondary      (Opera, CONNECT 200)
+Telegram: 65.109.194.157:300 — «Подключён, пинг: 668 мс»
+Баннер «Соединение...» исчез, список чатов живой
+curl --socks5-hostname 127.0.0.1:1373 https://www.youtube.com → 200
+```
+
+`cfproxy` вторым: мост поднят (`127.0.0.1:1378` слушает), но сейчас не несёт
+трафик — даже `cp.cloudflare.com` через него отдаёт 000.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS
 
 ```text

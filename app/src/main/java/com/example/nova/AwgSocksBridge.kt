@@ -44,17 +44,13 @@ object AwgSocksBridge {
             return "CF_PROXY_SLOT_ENABLED=false"
         }
         return runCatching {
-            val clientData = ClientData(context.applicationContext)
-            val endpoint = clientData.getConfig()?.peerEndpoint.orEmpty().trim()
-            val verified = clientData.getWarpVerifiedConfigs()
-            val chosen = verified.firstOrNull { config ->
-                endpoint.isNotBlank() && "${config.host}:${config.port}" == endpoint
-            } ?: verified.maxByOrNull { it.lastVerifiedAt }
-            val config = chosen?.rawConfig?.takeIf { it.isNotBlank() }
-                ?: context.assets.open("warp_verified_seeds.json")
-                    .bufferedReader()
-                    .use { it.readText() }
-                    .let { org.json.JSONArray(it).getJSONObject(0).getString("raw_config") }
+            // Bundled seed — проверенный AWG-профиль. Verified-конфиги могли
+            // остаться от MASQUE-сессии (endpoint 162.159.x:443), и тогда мост
+            // поднимается, но трафика не несёт: 204 не приходит.
+            val config = context.assets.open("warp_verified_seeds.json")
+                .bufferedReader()
+                .use { it.readText() }
+                .let { org.json.JSONArray(it).getJSONObject(0).getString("raw_config") }
             Nova.startAwgSocks(config, LISTEN_ADDRESS, true)
         }.getOrElse { error ->
             "ошибка запуска: ${error.javaClass.simpleName}: ${error.message}"

@@ -24,6 +24,25 @@ class RouterConfigFactoryTest {
     )
 
     @Test
+    fun `mtproto proxy ip goes to cfproxy before default`() {
+        val json = RouterConfigFactory.build(
+            input = input(),
+            primaryPort = 1376,
+            operaPort = 1371,
+            cfProxyPort = 1378,
+        )
+        val proxyAt = json.indexOf("\"name\":\"mtproto-proxy\"")
+        val ruAt = json.indexOf("\"name\":\"ru\"")
+        assertTrue(proxyAt >= 0)
+        assertTrue(proxyAt < ruAt)
+        assertTrue(
+            json.contains(
+                "\"name\":\"mtproto-proxy\",\"domains\":[],\"cidrs\":[\"65.109.194.157/32\"],\"order\":[\"secondary\",\"cfproxy\",\"primary\"]"
+            )
+        )
+    }
+
+    @Test
     fun `apis rule is before youtube and keeps youtubei on secondary`() {
         val json = RouterConfigFactory.build(
             input = input(),

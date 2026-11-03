@@ -14,6 +14,13 @@ object RouterConfigFactory {
      */
     private val APIS_DOMAINS = listOf("apis.google.com", "gvt1.com")
 
+    /**
+     * MTProto-прокси, который Telegram держит включённым. Через WARP-мост
+     * Hetzner доступен, а прямой DC2 оператор режет; поэтому IP прокси идёт
+     * в cfproxy, а не в default (DESYNC).
+     */
+    private val MTPROTO_PROXY_CIDRS = listOf("65.109.194.157/32")
+
     data class Input(
         val localTlds: Set<String> = emptySet(),
         val exclude: List<String> = emptyList(),
@@ -65,6 +72,22 @@ object RouterConfigFactory {
         }
         // До YouTube и до CIDR: Play Services не должен попасть в Opera.
         add(rules, APIS_DOMAINS, order("apis", input.overrides, opera, spoof, killSwitch), "apis")
+        if (cfProxy || opera) {
+            // MTProto-прокси Telegram: Opera первой — её CONNECT на IP:300
+            // проходит (проверено 200), а WARP-мост сейчас не несёт трафик.
+            // cfproxy оставлен вторым, primary — последним.
+            val mtprotoProxyOrder = buildList {
+                if (opera) add("secondary")
+                if (cfProxy) add("cfproxy")
+                add("primary")
+            }
+            rules += RouterConfig.RuleSpec(
+                domains = emptyList(),
+                order = mtprotoProxyOrder,
+                name = "mtproto-proxy",
+                cidrs = MTPROTO_PROXY_CIDRS,
+            )
+        }
         add(rules, input.ai, order("ai", input.overrides, opera, spoof, killSwitch), "ai")
         add(rules, input.second, order("eu", input.overrides, opera, spoof, killSwitch), "eu")
         if (input.youtubeIps.isNotEmpty()) {

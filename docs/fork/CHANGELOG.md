@@ -49,6 +49,20 @@
 - Итог: MASQUE — для Telegram через его MTProto-прокси; MULTI — для YouTube.
   Оба одновременно без VLESS-узла не получить.
 
+## 2026-11-03 — MULTI: Telegram через MTProto-прокси в Opera
+
+- Правило `mtproto-proxy`: `65.109.194.157/32 → secondary → cfproxy → primary`.
+  Telegram держит этот прокси включённым; Opera принимает
+  `CONNECT 65.109.194.157:300` (200) и доносит MTProto до Hetzner → DC2.
+- **Проверено:** `ROUTER: 65.109.194.***:300 → secondary`; в Telegram прокси
+  «Подключён, пинг: 668 мс», баннер «Соединение...» исчез, чаты живые;
+  `www.youtube.com` через router → 200.
+- AWG-мост (`cfproxy`) в этой сети сейчас не несёт трафик: даже
+  `cp.cloudflare.com` через 1378 → 000, поэтому cfproxy оставлен вторым
+  фоллбеком, а рабочий egress — Opera.
+- Bundled seed теперь используется всегда: verified-конфиги могли остаться от
+  MASQUE-сессии (endpoint 162.159.x:443) и давали «мост поднят, трафика нет».
+
 ## 2026-11-02 — Stage 2: AWG SOCKS-мост
 
 - Новый `nova-core/engine/awg_socks.go`: отдельный userspace-экземпляр
