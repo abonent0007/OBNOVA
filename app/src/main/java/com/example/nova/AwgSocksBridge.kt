@@ -44,13 +44,72 @@ object AwgSocksBridge {
             return "CF_PROXY_SLOT_ENABLED=false"
         }
         return runCatching {
-            // Bundled seed — проверенный AWG-профиль. Verified-конфиги могли
-            // остаться от MASQUE-сессии (endpoint 162.159.x:443), и тогда мост
-            // поднимается, но трафика не несёт: 204 не приходит.
-            val config = context.assets.open("warp_verified_seeds.json")
-                .bufferedReader()
-                .use { it.readText() }
-                .let { org.json.JSONArray(it).getJSONObject(0).getString("raw_config") }
+            val clientData = ClientData(context.applicationContext)
+            val warp = clientData.getConfig()
+            val warpEndpoint = warp?.peerEndpoint.orEmpty().trim()
+            val warpPort = warpEndpoint.substringAfterLast(':', "").toIntOrNull()
+            // MASQUE-профиль ходит на 443 и для userspace-WireGuard не годится:
+            // мост поднимается, но handshake не проходит. Берём bootstrap-личность.
+            val looksWireGuard = warpPort in setOf(500, 4500, 2408, 51820, 1701)
+            val fromWarp = warp != null &&
+                warp.privateKey.isNotBlank() &&
+                warp.peerPublicKey.isNotBlank() &&
+                warpEndpoint.isNotBlank() &&
+                looksWireGuard
+            val config = if (fromWarp) {
+                buildString {
+                    appendLine("[Interface]")
+                    appendLine("PrivateKey = ${warp!!.privateKey}")
+                    val addresses = listOfNotNull(
+                        warp.ipv4.trim().takeIf { it.isNotEmpty() },
+                        warp.ipv6.trim().takeIf { it.isNotEmpty() },
+                    )
+                    if (addresses.isNotEmpty()) appendLine("Address = ${addresses.joinToString(", ")}")
+                    appendLine("DNS = 1.1.1.1")
+                    appendLine("MTU = 1280")
+                    // Reserved (client_id WARP) обязателен: с нулями Cloudflare
+                    // отвечает только по своей сети, а внешний egress молча дропает.
+                    if (!warp.reserved.isNullOrBlank()) {
+                        appendLine("Reserved = ${warp.reserved}")
+                    }
+                    appendLine()
+                    appendLine("[Peer]")
+                    appendLine("PublicKey = ${warp.peerPublicKey}")
+                    appendLine("AllowedIPs = 0.0.0.0/0, ::/0")
+                    appendLine("Endpoint = ${warp.peerEndpoint}")
+                }
+            } else {
+                // Bootstrap-личность WARP: нормальный WG-endpoint (162.159.x:500),
+                // в отличие от bundled seed с устаревшим 8.34.146.3:903.
+                val bootstrap = org.json.JSONObject(
+                    context.assets.open("warp_bootstrap.json")
+                        .bufferedReader()
+                        .use { it.readText() }
+                )
+                buildString {
+                    appendLine("[Interface]")
+                    appendLine("PrivateKey = ${bootstrap.getString("private_key")}")
+                    val v4 = bootstrap.optString("ipv4").trim()
+                    val v6 = bootstrap.optString("ipv6").trim()
+                    val addresses = buildList {
+                        if (v4.isNotEmpty()) add(if ('/' in v4) v4 else "$v4/32")
+                        if (v6.isNotEmpty()) add(if ('/' in v6) v6 else "$v6/128")
+                    }
+                    if (addresses.isNotEmpty()) appendLine("Address = ${addresses.joinToString(", ")}")
+                    appendLine("DNS = 1.1.1.1")
+                    appendLine("MTU = 1280")
+                    appendLine()
+                    appendLine("[Peer]")
+                    appendLine("PublicKey = ${bootstrap.getString("peer_pub")}")
+                    appendLine("AllowedIPs = 0.0.0.0/0, ::/0")
+                    appendLine("Endpoint = ${bootstrap.getString("peer_endpoint")}")
+                }
+            }
+            LogManager.log(
+                "MULTI: AWG-мост из ${if (fromWarp) "текущего WARP-профиля" else "bootstrap-профиля"}" +
+                    ", endpoint=$warpEndpoint" +
+                    ", reserved=${warp?.reserved ?: "нет"}"
+            )
             Nova.startAwgSocks(config, LISTEN_ADDRESS, true)
         }.getOrElse { error ->
             "ошибка запуска: ${error.javaClass.simpleName}: ${error.message}"
