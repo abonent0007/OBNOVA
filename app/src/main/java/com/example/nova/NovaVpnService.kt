@@ -10176,6 +10176,14 @@ class NovaVpnService : OperaNativeVpnService() {
         }
     }
 
+    private fun refreshUnderlyingNetworksIfChangedForLocalSlots() {
+        val connectivityManager = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        val network = selectUnderlyingNetwork(connectivityManager)
+        val signature = buildUnderlyingNetworkSignature(connectivityManager, network)
+        if (signature != null && signature == observedUnderlyingNetworkSignature) return
+        refreshUnderlyingNetworksForLocalSlots()
+    }
+
     /**
      * Обновляет underlying networks у TUN без пересборки интерфейса.
      *
@@ -15969,7 +15977,14 @@ class NovaVpnService : OperaNativeVpnService() {
         val warpBackend =
             currentBackendLabel.trim().uppercase(Locale.ROOT).startsWith(BACKEND_WARP) &&
                 !importedExactAwgActive
-        val probeTimeout = if (isOperaBackendLabel(currentBackendLabel)) 1400 else 1600
+        val probeTimeout = when {
+            isOperaBackendLabel(currentBackendLabel) -> 1400
+            // MULTI держит локальные слоты: на мобильной сети пакет через
+            // tun2proxy → DESYNC идёт сотнями миллисекунд, и 1,6 с давали
+            // ложные отказы на каждом handover.
+            currentBackendLabel == BACKEND_MULTI -> 4500
+            else -> 1600
+        }
         // См. пояснение в evaluateNetworkRecoveryNeed: пока взведено требование свежей
         // пробы, накопленные доказательства относятся к прежней сети и ничего не говорят
         // о работоспособности туннеля сейчас.
@@ -16052,6 +16067,23 @@ class NovaVpnService : OperaNativeVpnService() {
             return
         }
         var health = inspectVpnHealth(connectivityManager, currentVpn)
+        if (
+            currentBackendLabel == BACKEND_MULTI &&
+            health.reason == "VPN потерял underlying networks"
+        ) {
+            // MULTI не привязан к интерфейсу: DESYNC/Opera/router держат свои
+            // loopback-сокеты, а новые соединения уходят через текущую сеть.
+            // Реконнект здесь только рвёт живой сеанс на каждом handover.
+            LogManager.log(
+                "MULTI: underlying networks обновились — слоты локальные, реконнект не нужен."
+            )
+            refreshUnderlyingNetworksIfChangedForLocalSlots()
+            connectedHealthProbeFailures = 0
+            if (currentState == STATE_CONNECTING && isRunning) {
+                broadcastState(STATE_CONNECTED)
+            }
+            return
+        }
         if (
             !requiresFreshTunnelProbeNow() &&
             health.reason == "VPN потерял underlying networks" &&
@@ -16842,7 +16874,14 @@ class NovaVpnService : OperaNativeVpnService() {
             triggerReconnectForNetworkChange(clientData)
             return
         }
-        val probeTimeout = if (isOperaBackendLabel(currentBackendLabel)) 1400 else 1600
+        val probeTimeout = when {
+            isOperaBackendLabel(currentBackendLabel) -> 1400
+            // MULTI держит локальные слоты: на мобильной сети пакет через
+            // tun2proxy → DESYNC идёт сотнями миллисекунд, и 1,6 с давали
+            // ложные отказы на каждом handover.
+            currentBackendLabel == BACKEND_MULTI -> 4500
+            else -> 1600
+        }
         // Пока действует окно требования свежей пробы (его взводит смена подложной
         // сети), накопленные доказательства не считаются. Иначе туннель объявляется
         // живым по данным из прошлой сети: счётчики трафика в
@@ -16947,6 +16986,20 @@ class NovaVpnService : OperaNativeVpnService() {
             return
         }
         val health = inspectVpnHealth(connectivityManager, currentVpn)
+        if (
+            currentBackendLabel == BACKEND_MULTI &&
+            health.reason == "VPN потерял underlying networks"
+        ) {
+            LogManager.log(
+                "MULTI: underlying networks обновились — слоты локальные, реконнект не нужен."
+            )
+            refreshUnderlyingNetworksIfChangedForLocalSlots()
+            connectedHealthProbeFailures = 0
+            if (currentState == STATE_CONNECTING && isRunning) {
+                broadcastState(STATE_CONNECTED)
+            }
+            return
+        }
         if (
             !requiresFreshTunnelProbeNow() &&
             health.reason == "VPN потерял underlying networks" &&
@@ -25603,7 +25656,7 @@ class NovaVpnService : OperaNativeVpnService() {
             requiresFreshTunnelProbeNow() && isOperaBackendLabel(currentBackendLabel) -> 2
             requiresFreshTunnelProbeNow() -> 1
             normalizedReason == "VPN потерял underlying networks" && isOperaBackendLabel(currentBackendLabel) -> 3
-            normalizedReason == "VPN потерял underlying networks" -> 2
+            normalizedReason == "VPN потерял underlying networks" -> 3
             else -> 2
         }
     }
@@ -27062,6 +27115,16 @@ class NovaVpnService : OperaNativeVpnService() {
         val budgetDeadlineMs = SystemClock.elapsedRealtime() + probeBudgetMs.coerceAtLeast(250)
         fun remainingBudgetMs(): Int =
             (budgetDeadlineMs - SystemClock.elapsedRealtime()).coerceAtLeast(0L).toInt()
+
+        // Для MULTI бюджет 4,5 с: сначала честный 204 через DNS и HTTPS.
+        // Прямые литералы 1.1.1.1 на мобильных сетях РФ часто режутся, и проба
+        // объявляла мёртвым живой туннель, который только что отдал видео.
+        if (probeBudgetMs >= 2_000) {
+            val httpsBudget = minOf(2_500, remainingBudgetMs() - 300).coerceAtLeast(800)
+            if (httpProbe(vpnNet, "https://cp.cloudflare.com/generate_204", httpsBudget)) {
+                return true
+            }
+        }
 
         val tcpTargets = listOf(
             "1.1.1.1" to 443,

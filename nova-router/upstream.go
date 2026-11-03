@@ -26,7 +26,7 @@ func (r Router) Dial(host string, port int) (net.Conn, string, error) {
 // DialSNI принимает SNI, извлечённый из ClientHello. Он используется только
 // HTTP-слотом: Opera ждёт FQDN, а не голый IP.
 func (r Router) DialSNI(host string, port int, sni string) (net.Conn, string, error) {
-	order, routeName := r.cfg.OrderFor(host)
+	order, routeName := r.routeOrderFor(host, sni)
 	if r.stats != nil {
 		r.stats.recordRoute(routeName)
 	}
@@ -50,6 +50,19 @@ func (r Router) DialSNI(host string, port int, sni string) (net.Conn, string, er
 		lastErr = fmt.Errorf("нет доступных слотов")
 	}
 	return nil, "", lastErr
+}
+
+// routeOrderFor выбирает правило: SNI точнее CIDR. Хост
+// `android.apis.google.com` живёт в сетях Google, но Opera не тянет его
+// gRPC-потоки (500), поэтому доменное исключение должно победить IP-правило.
+// Если SNI не совпал ни с одним правилом, решает адрес.
+func (r Router) routeOrderFor(host, sni string) ([]string, string) {
+	if sni != "" {
+		if order, name := r.cfg.OrderFor(sni); name != "default" {
+			return order, name
+		}
+	}
+	return r.cfg.OrderFor(host)
 }
 
 func dialSlot(slot Slot, host string, port int, sni string) (net.Conn, error) {

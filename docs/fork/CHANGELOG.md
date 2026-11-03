@@ -22,6 +22,17 @@
   `ya.ru`, `github.com`, `example.com`.
 - **Проверено:** автозапуск Opera — `MULTI активен … / Opera34920`,
   `curl --proxy http://127.0.0.1:34920 …/generate_204` → **204**.
+- **Меньше ложных реконнектов:** MULTI-проба получила бюджет 4,5 с и первой
+  идёт `https://cp.cloudflare.com/generate_204` (литералы 1.1.1.1 в РФ режутся);
+  «VPN потерял underlying networks» требует 3 отказа подряд, а для MULTI это
+  событие вообще не повод рвать сеанс — обновляем underlying networks без
+  пересборки TUN и остаёмся в CONNECTED.
+- **Play Services:** правило `apis` (`apis.google.com`, `gvt1.com` → `primary`)
+  стоит до YouTube и до CIDR; `nova-router` теперь предпочитает SNI-правило
+  CIDR-правилу, поэтому `android.apis.google.com` на IP `142.251.x` больше не
+  уходит в Opera. `youtubei.googleapis.com` остаётся на `secondary`.
+- **Проверено:** `android.apis.google.com:443 → primary` (404), видео 1:25
+  играет (0:11 → 0:25), за 70 с тишины — ноль `CONNECTED → CONNECTING`.
 
 ## 2026-11-02 — Stage 2: AWG SOCKS-мост
 

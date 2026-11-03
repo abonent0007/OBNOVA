@@ -6,6 +6,14 @@ package com.example.nova
  */
 object RouterConfigFactory {
 
+    /**
+     * Play Services/FCM и загрузки Play: gRPC-потоки и проверки целостности
+     * Opera рвёт 500-й, а из РФ эти хосты доступны через DESYNC.
+     * `googleapis.com` целиком сюда не входит: `youtubei.googleapis.com`
+     * обязан остаться на SECONDARY.
+     */
+    private val APIS_DOMAINS = listOf("apis.google.com", "gvt1.com")
+
     data class Input(
         val localTlds: Set<String> = emptySet(),
         val exclude: List<String> = emptyList(),
@@ -55,6 +63,8 @@ object RouterConfigFactory {
         if (input.localTlds.isNotEmpty()) {
             rules += RouterConfig.RuleSpec(input.localTlds.toList(), listOf("direct"), "local-tld")
         }
+        // До YouTube и до CIDR: Play Services не должен попасть в Opera.
+        add(rules, APIS_DOMAINS, order("apis", input.overrides, opera, spoof, killSwitch), "apis")
         add(rules, input.ai, order("ai", input.overrides, opera, spoof, killSwitch), "ai")
         add(rules, input.second, order("eu", input.overrides, opera, spoof, killSwitch), "eu")
         if (input.youtubeIps.isNotEmpty()) {

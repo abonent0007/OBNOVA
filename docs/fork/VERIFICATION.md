@@ -33,6 +33,13 @@ YouTube-приложение: лента с реальными карточка�
 каждые ~13 с, если периодический tunnel-probe не проходит; на воспроизведение
 это не влияет, но требует отдельного разбора.
 
+Уточнение 2026-11-03: цикл закрыт. MULTI-проба ходит в
+`https://cp.cloudflare.com/generate_204` с бюджетом 4,5 с, «потеря underlying
+networks» требует 3 отказа, а для MULTI обновляет сети без реконнекта. За 70 с
+наблюдения — **0** переходов `CONNECTED → CONNECTING`. Исключение
+`apis.google.com`/`gvt1.com` проверено: `android.apis.google.com:443 → primary`;
+`youtubei.googleapis.com` и `rr*.googlevideo.com` по-прежнему `secondary`.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS
 
 ```text

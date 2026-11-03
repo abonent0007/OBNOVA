@@ -24,6 +24,27 @@ class RouterConfigFactoryTest {
     )
 
     @Test
+    fun `apis rule is before youtube and keeps youtubei on secondary`() {
+        val json = RouterConfigFactory.build(
+            input = input(),
+            primaryPort = 1376,
+            operaPort = 1371,
+        )
+        val apisAt = json.indexOf("\"name\":\"apis\"")
+        val youtubeAt = json.indexOf("\"name\":\"youtube\"")
+        assertTrue(apisAt >= 0)
+        assertTrue(youtubeAt >= 0)
+        assertTrue(apisAt < youtubeAt)
+        assertTrue(
+            json.contains(
+                "\"name\":\"apis\",\"domains\":[\"apis.google.com\",\"gvt1.com\"],\"order\":[\"primary\",\"direct\"]"
+            )
+        )
+        // apis.google.com не покрывает youtubei.googleapis.com — другой суффикс.
+        assertFalse(json.contains("\"domains\":[\"apis.google.com\",\"gvt1.com\",\"youtubei"))
+    }
+
+    @Test
     fun `without opera eu goes through primary`() {
         val order = RouterConfigFactory.order("eu", emptyMap(), opera = false)
         assertEquals(listOf("primary", "direct"), order)
