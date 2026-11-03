@@ -63,6 +63,24 @@
 - Bundled seed теперь используется всегда: verified-конфиги могли остаться от
   MASQUE-сессии (endpoint 162.159.x:443) и давали «мост поднят, трафика нет».
 
+## 2026-11-03 — WSS-прокладка для Telegram (Cloudflare Worker)
+
+- `tools/cf-relay/worker.js` — Worker `nova-connect`: принимает WSS на
+  `/tcp?host=&port=`, открывает TCP через `cloudflare:sockets` и гоняет байты
+  в обе стороны. Разрешены только сети Telegram (`149.154.160.0/20`,
+  `91.108.0.0/16`, `2001:67c:4e8::/48`) и только с секретом.
+- `nova-router`: тип слота `ws` — TLS + WebSocket-клиент (маскирование,
+  ping/pong, close), байтовый мост TCP↔фреймы. Правило `telegram-ip`:
+  `ws → secondary → cfproxy → primary`.
+- **Ключевая находка:** Cloudflare отдаёт бинарный кадр как **Blob**, а не
+  ArrayBuffer. Без `await data.arrayBuffer()` первый же кадр уходил в
+  `TransformStream` объектом и отбрасывался — Telegram висел на «Соединение...».
+- **Проверено:** `ROUTER: 149.154.167.***:443 → ws`; Telegram **без прокси**
+  подключается, баннер исчезает, чаты обновляются; прокси `65.109…` выключен.
+- Официальный `kwsN.web.telegram.org` для этой сети не годится: резолвится в
+  `149.154.167.99`, то есть в заблокированный диапазон. Поэтому реле — свой
+  Worker на Cloudflare.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS-мост
 
 - Новый `nova-core/engine/awg_socks.go`: отдельный userspace-экземпляр

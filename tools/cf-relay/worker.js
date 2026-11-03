@@ -44,26 +44,43 @@ export default {
     let socket;
     try {
       socket = connect({ hostname: host, port });
-    } catch {
+      await socket.opened;
+    } catch (e) {
+      console.log("connect-failed", host, port, e && e.message);
       return notFound();
     }
+    console.log("connected", host, port);
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     server.accept();
 
     const writer = socket.writable.getWriter();
-    server.addEventListener("message", (event) => {
+    server.addEventListener("message", async (event) => {
       const data = event.data;
-      const payload =
-        typeof data === "string" ? new TextEncoder().encode(data) : data;
-      writer.write(payload).catch(() => {});
+      let payload;
+      if (typeof data === "string") {
+        payload = new TextEncoder().encode(data);
+      } else if (data instanceof ArrayBuffer) {
+        payload = new Uint8Array(data);
+      } else if (ArrayBuffer.isView(data)) {
+        payload = data;
+      } else if (data && typeof data.arrayBuffer === "function") {
+        // Cloudflare отдаёт бинарный кадр как Blob, а не ArrayBuffer.
+        payload = new Uint8Array(await data.arrayBuffer());
+      } else {
+        console.log("unsupported-frame", typeof data);
+        return;
+      }
+      writer.write(payload).catch((e) => console.log("write-failed", e && e.message));
     });
     server.addEventListener("close", () => {
+      console.log("ws-close");
       writer.close().catch(() => {});
       socket.close().catch(() => {});
     });
     server.addEventListener("error", () => {
+      console.log("ws-error");
       writer.close().catch(() => {});
       socket.close().catch(() => {});
     });
@@ -73,11 +90,14 @@ export default {
         const reader = socket.readable.getReader();
         while (true) {
           const { done, value } = await reader.read();
-          if (done) break;
+          if (done) {
+            console.log("tcp-eof");
+            break;
+          }
           server.send(value);
         }
-      } catch {
-        // соединение с DC оборвалось — закрываем WS ниже
+      } catch (e) {
+        console.log("read-failed", e && e.message);
       }
       try {
         server.close(1000, "closed");

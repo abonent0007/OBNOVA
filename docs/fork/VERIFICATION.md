@@ -68,6 +68,21 @@ curl --socks5-hostname 127.0.0.1:1373 https://www.youtube.com → 200
 `cfproxy` вторым: мост поднят (`127.0.0.1:1378` слушает), но сейчас не несёт
 трафик — даже `cp.cloudflare.com` через него отдаёт 000.
 
+### WSS-реле для Telegram (2026-11-03)
+
+```text
+Cloudflare Worker: https://nova-connect.yurentiy-avd.workers.dev/tcp
+ROUTER: 149.154.167.***:443 → ws (SNI "")
+tgnet: connected to 149.154.167.41:443, 149.154.162.123:5222  (без proxy)
+Telegram: баннера «Соединение...» нет, чаты обновляются
+```
+
+Первый вариант — passthrough в `kwsN.web.telegram.org` — отдавал 101, но
+закрывался с `404`: KWS ждёт один MTProto-пакет на кадр. Перешли на сырой
+TCP-over-WS: Worker `connect()` + `WebSocketPair`. Ошибка, из-за которой мост
+молчал: `event.data` приходит **Blob**, и без `await data.arrayBuffer()` кадр
+отбрасывался.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS
 
 ```text
