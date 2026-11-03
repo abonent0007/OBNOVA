@@ -40,6 +40,22 @@ networks» требует 3 отказа, а для MULTI обновляет с�
 `apis.google.com`/`gvt1.com` проверено: `android.apis.google.com:443 → primary`;
 `youtubei.googleapis.com` и `rr*.googlevideo.com` по-прежнему `secondary`.
 
+### MASQUE: Telegram (2026-11-03)
+
+```text
+Состояние сеанса: CONNECTED (backend=WARP, транспорт=MASQUE)
+tun0 172.16.0.2/32
+MASQUE-ZT@162.159.198.***:443 19/19, avg=63ms
+
+tgnet: connecting via proxy 65.109.194.157:300 secret[54]
+tgnet: connected to 149.154.167.41:443
+Настройки прокси: 65.109.194.157:300 — «Подключён, пинг: 100 мс»
+Баннер «Соединение...» исчез, список чатов живой.
+```
+
+YouTube в этом же режиме: `PlaybackState {state=6, position=0}` через 30 с —
+WARP не отдаёт `googlevideo`. Вывод: MASQUE — для Telegram, MULTI — для YouTube.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS
 
 ```text

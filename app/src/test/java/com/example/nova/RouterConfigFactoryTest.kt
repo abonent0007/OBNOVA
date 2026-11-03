@@ -142,7 +142,7 @@ class RouterConfigFactoryTest {
         assertTrue(json.contains("\"cfproxy\":{\"type\":\"socks5\",\"addr\":\"127.0.0.1:1378\"}"))
         assertTrue(
             json.contains(
-                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"cfproxy\",\"primary\"]"
+                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"secondary\",\"primary\"]"
             )
         )
     }

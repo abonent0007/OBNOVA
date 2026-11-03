@@ -10176,12 +10176,15 @@ class NovaVpnService : OperaNativeVpnService() {
         }
     }
 
-    private fun refreshUnderlyingNetworksIfChangedForLocalSlots() {
-        val connectivityManager = getSystemService(android.net.ConnectivityManager::class.java) ?: return
-        val network = selectUnderlyingNetwork(connectivityManager)
-        val signature = buildUnderlyingNetworkSignature(connectivityManager, network)
-        if (signature != null && signature == observedUnderlyingNetworkSignature) return
+    private fun refreshUnderlyingNetworksIfChangedForLocalSlots(): Boolean {
+        val connectivityManager = getSystemService(android.net.ConnectivityManager::class.java) ?: return false
+        val network = selectUnderlyingNetwork(connectivityManager) ?: return false
+        // Сравниваем сам network, а не подпись возможностей: у dual-SIM
+        // capabilities меняются на каждом опросе, и setUnderlyingNetworks
+        // вызывался заново, порождая новый callback — петля каждые 4,5 с.
+        if (network.toString() == observedUnderlyingNetworkId) return false
         refreshUnderlyingNetworksForLocalSlots()
+        return true
     }
 
     /**
@@ -16074,10 +16077,11 @@ class NovaVpnService : OperaNativeVpnService() {
             // MULTI не привязан к интерфейсу: DESYNC/Opera/router держат свои
             // loopback-сокеты, а новые соединения уходят через текущую сеть.
             // Реконнект здесь только рвёт живой сеанс на каждом handover.
-            LogManager.log(
-                "MULTI: underlying networks обновились — слоты локальные, реконнект не нужен."
-            )
-            refreshUnderlyingNetworksIfChangedForLocalSlots()
+            if (refreshUnderlyingNetworksIfChangedForLocalSlots()) {
+                LogManager.log(
+                    "MULTI: underlying networks обновились — слоты локальные, реконнект не нужен."
+                )
+            }
             connectedHealthProbeFailures = 0
             if (currentState == STATE_CONNECTING && isRunning) {
                 broadcastState(STATE_CONNECTED)
@@ -16990,10 +16994,11 @@ class NovaVpnService : OperaNativeVpnService() {
             currentBackendLabel == BACKEND_MULTI &&
             health.reason == "VPN потерял underlying networks"
         ) {
-            LogManager.log(
-                "MULTI: underlying networks обновились — слоты локальные, реконнект не нужен."
-            )
-            refreshUnderlyingNetworksIfChangedForLocalSlots()
+            if (refreshUnderlyingNetworksIfChangedForLocalSlots()) {
+                LogManager.log(
+                    "MULTI: underlying networks обновились — слоты локальные, реконнект не нужен."
+                )
+            }
             connectedHealthProbeFailures = 0
             if (currentState == STATE_CONNECTING && isRunning) {
                 broadcastState(STATE_CONNECTED)

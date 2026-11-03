@@ -77,8 +77,11 @@ object RouterConfigFactory {
         }
         if (input.telegramIps.isNotEmpty()) {
             val baseTelegramOrder = order("telegram", input.overrides, opera, spoof, killSwitch)
-            val telegramIpOrder = if (cfProxy && input.overrides["telegram"] == null) {
-                listOf("cfproxy") + baseTelegramOrder
+            // cfproxy (WARP) несёт только Cloudflare: TCP до Telegram DC
+            // «поднимается», а данные не идут — в Telegram висит «Соединение...».
+            // Opera принимает CONNECT на IP и отдаёт MTProto, DESYNC — запас.
+            val telegramIpOrder = if (opera && input.overrides["telegram"] == null) {
+                listOf("secondary") + baseTelegramOrder
             } else {
                 baseTelegramOrder
             }

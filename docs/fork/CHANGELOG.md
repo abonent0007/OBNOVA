@@ -34,6 +34,21 @@
 - **Проверено:** `android.apis.google.com:443 → primary` (404), видео 1:25
   играет (0:11 → 0:25), за 70 с тишины — ноль `CONNECTED → CONNECTING`.
 
+## 2026-11-03 — тест MASQUE: Telegram живёт, YouTube нет
+
+- Причина «Соединение...» в Telegram: он был привязан к мёртвым MTProto-прокси
+  (`91.219.227.10:9443`, `85.192.35.94:443`) и к локальному `127.0.0.1:1373`
+  (router живёт только в MULTI). Прямой DC2 `149.154.167.50` оператор режет:
+  TCP timeout и в direct, и в DESYNC; через cfproxy — TCP есть, 0 байт.
+- В **MASQUE** (`backend=WARP, транспорт=MASQUE`, TUN `172.16.0.2/32`) прокси
+  Telegram `65.109.194.157:300` поднялся: статус «Подключён, пинг: 100 мс»,
+  баннер «Соединение...» исчез, `tgnet: connected to 149.154.167.41:443`.
+- **YouTube в MASQUE не работает:** media session `state=6` (BUFFERING),
+  `position=0` через 30 с. WARP не тянет `googlevideo`, поэтому YouTube остаётся
+  на связке MULTI + Opera.
+- Итог: MASQUE — для Telegram через его MTProto-прокси; MULTI — для YouTube.
+  Оба одновременно без VLESS-узла не получить.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS-мост
 
 - Новый `nova-core/engine/awg_socks.go`: отдельный userspace-экземпляр
