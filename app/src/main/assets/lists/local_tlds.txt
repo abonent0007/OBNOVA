@@ -1,0 +1,14 @@
+# Локальные TLD, которые идут напрямую (fallback, если фид не принёс local_tlds.txt).
+# Одна зона в строке; `#` — комментарий.
+ru
+su
+рф
+xn--p1ai
+москва
+xn--80adxhks
+moscow
+рус
+xn--p1acf
+дети
+xn--d1acj3b
+tatar

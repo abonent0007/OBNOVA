@@ -1,0 +1,343 @@
+package com.example.nova
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/**
+ * Селектор протокола/региона.
+ *
+ * Тест существует потому, что описание селектора было выписано четырьмя копиями,
+ * и порядок в коде не совпадает с порядком в разметке. Такие списки расходятся
+ * молча — это G49, — а теперь их пинует проверка.
+ */
+class ConnectionSelectorPolicyTest {
+
+    @Test
+    fun `order and labels stay in step`() {
+        assertEquals(ConnectionSelectorPolicy.ORDER.size, ConnectionSelectorPolicy.LABELS.size)
+        assertEquals(7, ConnectionSelectorPolicy.SIZE)
+        // Порядок кода, а не разметки: masque третий. Разъедется — сломается и
+        // главный экран, и настройки, каждый по-своему.
+        assertEquals(
+            listOf("auto", "ru", "masque", "opera", "proton", "tor", "dns"),
+            ConnectionSelectorPolicy.ORDER,
+        )
+        assertEquals(
+            listOf("AUTO", "WARP", "MASQUE", "OPERA", "PROTON", "TOR", "DNS"),
+            ConnectionSelectorPolicy.LABELS,
+        )
+    }
+
+    /** ZAPRET больше не отдельная кнопка: DESYNC встроен в MULTI. */
+    @Test
+    fun `zapret is not a chip anymore`() {
+        assertFalse(ConnectionSelectorPolicy.ORDER.contains("desync"))
+    }
+
+    /**
+     * Три полосы — это данные, а не разметка.
+     *
+     * Разбиение смысловое: Cloudflare, зарубежные VPN, Tor. По ширине его не
+     * восстановить, поэтому оно живёт в политике и проверяется здесь: сумма
+     * обязана совпасть с числом кнопок, иначе часть их просто не нарисуется.
+     */
+    @Test
+    fun `rows cover every button exactly once`() {
+        assertEquals(ConnectionSelectorPolicy.SIZE, ConnectionSelectorPolicy.ROWS.sum())
+        assertTrue(ConnectionSelectorPolicy.ROWS.all { it > 0 })
+        assertEquals(3, ConnectionSelectorPolicy.ROWS.size)
+    }
+
+    @Test
+    fun `every selectable chip maps to its own button`() {
+        val seen = mutableSetOf<Int>()
+        for (chip in ConnectionSelectorPolicy.ORDER) {
+            val index = ConnectionSelectorPolicy.ORDER.indexOf(chip)
+            assertEquals(chip, ConnectionSelectorPolicy.valueAt(index))
+            assertTrue("duplicate index for $chip", seen.add(index))
+        }
+    }
+
+    /**
+     * Кнопка OPERA — одна на два значения службы.
+     *
+     * Словарь службы по-прежнему знает `eu` и `us`: смена подписи не должна была
+     * тронуть семнадцать мест, которые эти значения разбирают.
+     */
+    @Test
+    fun `opera is one chip over two stored values`() {
+        val opera = ConnectionSelectorPolicy.ORDER.indexOf(ConnectionSelectorPolicy.CHIP_OPERA)
+        assertEquals(opera, ConnectionSelectorPolicy.indexOf("eu"))
+        assertEquals(opera, ConnectionSelectorPolicy.indexOf("us"))
+        assertEquals("us", ConnectionSelectorPolicy.storedValueForChip("opera", "us"))
+        assertEquals("eu", ConnectionSelectorPolicy.storedValueForChip("opera", "eu"))
+        // Незнакомый подрегион — это EU, а не пустая строка: пустую службу не
+        // понимает, и `normalizeKnown` превратил бы её в «Авто», а «Авто»
+        // разрешает подмену транспорта.
+        assertEquals("eu", ConnectionSelectorPolicy.storedValueForChip("opera", null))
+        assertEquals("eu", ConnectionSelectorPolicy.storedValueForChip("opera", "atlantis"))
+        // Остальные кнопки переводятся сами в себя.
+        assertEquals("masque", ConnectionSelectorPolicy.storedValueForChip("masque", "us"))
+    }
+
+    /** Строка подрегионов есть только там, где подрегион существует. */
+    @Test
+    fun `sub regions exist only for opera, proton and tor`() {
+        assertEquals(
+            listOf("eu" to "EU", "us" to "US"),
+            ConnectionSelectorPolicy.subRegionsFor("opera", emptyList()),
+        )
+        // «AUTO» — своя кнопка, а не отметка на первой стране: пустое
+        // предпочтение иначе нельзя было бы ни увидеть, ни выбрать обратно.
+        assertEquals(
+            listOf("" to "AUTO", "NL" to "NL", "PL" to "PL", "JP" to "JP"),
+            ConnectionSelectorPolicy.subRegionsFor("proton", listOf("JP", "PL", "NL")),
+        )
+        // Профилей нет — обещать страны нечем, и «AUTO» в одиночку бессмысленна.
+        assertTrue(ConnectionSelectorPolicy.subRegionsFor("proton", emptyList()).isEmpty())
+        // У Tor подвыбор — это способ входа, а не регион. Порядок закреплён
+        // тестом намеренно: он означает «по убыванию вероятности пройти из
+        // России», и переставить его молча нельзя.
+        assertEquals(
+            listOf(
+                "auto" to "AUTO",
+                "webtunnel" to "WEBTUNNEL",
+                "obfs4" to "OBFS4",
+                "snowflake" to "SNOWFLAKE",
+                "vanilla" to "VANILLA",
+                "direct" to "БЕЗ МОСТОВ",
+            ),
+            ConnectionSelectorPolicy.subRegionsFor("tor", emptyList()),
+        )
+        // Умолчание — первый в списке, иначе порядок обещал бы одно, а приложение
+        // делало другое.
+        assertEquals(
+            ConnectionSelectorPolicy.TOR_ENTRY_MODES.first().first,
+            ConnectionSelectorPolicy.DEFAULT_TOR_ENTRY,
+        )
+        // Прокси в ядре нужен только транспортам; мосты — всем, кроме прямого входа.
+        assertTrue(ConnectionSelectorPolicy.torEntryUsesPluggableTransport("webtunnel"))
+        assertTrue(ConnectionSelectorPolicy.torEntryUsesPluggableTransport("obfs4"))
+        // snowflake тоже ходит через прокси в ядре: сокеты pion помечены
+        // `protect()` ловушками внутри самого snowflake, а не снаружи.
+        assertTrue(ConnectionSelectorPolicy.torEntryUsesPluggableTransport("snowflake"))
+        assertFalse(ConnectionSelectorPolicy.torEntryUsesPluggableTransport("vanilla"))
+        assertFalse(ConnectionSelectorPolicy.torEntryUsesPluggableTransport("direct"))
+        assertEquals("webtunnel", ConnectionSelectorPolicy.torBridgeTransportFor("webtunnel"))
+        assertEquals("snowflake", ConnectionSelectorPolicy.torBridgeTransportFor("snowflake"))
+        assertEquals("vanilla", ConnectionSelectorPolicy.torBridgeTransportFor("vanilla"))
+        assertEquals("", ConnectionSelectorPolicy.torBridgeTransportFor("direct"))
+        for (chip in listOf("auto", "ru", "masque")) {
+            assertTrue(chip, ConnectionSelectorPolicy.subRegionsFor(chip, listOf("NL")).isEmpty())
+        }
+    }
+
+    /** Подпись строки подвыбора зависит от кнопки: у Tor выбирают вход, а не регион. */
+    @Test
+    fun `sub region prefix says what is being chosen`() {
+        assertEquals("Регион: ", ConnectionSelectorPolicy.subRegionPrefixFor("opera"))
+        assertEquals("Регион: ", ConnectionSelectorPolicy.subRegionPrefixFor("proton"))
+        assertEquals("Вход: ", ConnectionSelectorPolicy.subRegionPrefixFor("tor"))
+    }
+
+    /** Незнакомый способ входа — это откат версии или правка файла руками. */
+    @Test
+    fun `unknown tor entry falls back to auto`() {
+        assertEquals("auto", ConnectionSelectorPolicy.normalizeTorEntry(null))
+        assertEquals("auto", ConnectionSelectorPolicy.normalizeTorEntry(""))
+        // meek_lite в ядро собран, но способа входа у него нет: источника живых
+        // строк моста нет, и режим был бы кнопкой, которая молча не подключается.
+        // Значение из чужой версии обязано откатываться на умолчание.
+        assertEquals("auto", ConnectionSelectorPolicy.normalizeTorEntry("meek_lite"))
+        // А snowflake, наоборот, с 1.32.2 настоящий способ входа и обязан
+        // доезжать до фазы как есть.
+        assertEquals("snowflake", ConnectionSelectorPolicy.normalizeTorEntry("SNOWFLAKE"))
+        assertEquals("vanilla", ConnectionSelectorPolicy.normalizeTorEntry(" VANILLA "))
+        assertEquals("direct", ConnectionSelectorPolicy.normalizeTorEntry("direct"))
+    }
+
+    /**
+     * «Авто» разворачивается в перебор, явный выбор — в себя одного (I1).
+     *
+     * Прямого входа в переборе нет намеренно: из России он встаёт на 10 %
+     * (замер 2026-09-10), то есть стоил бы полного таймаута на каждом
+     * подключении. Закреплено тестом, чтобы его не добавили «для полноты».
+     */
+    @Test
+    fun `auto expands to an ordered attempt list`() {
+        assertEquals(
+            listOf("webtunnel", "obfs4", "snowflake", "vanilla"),
+            ConnectionSelectorPolicy.torEntryAttempts("auto"),
+        )
+        assertEquals(listOf("obfs4"), ConnectionSelectorPolicy.torEntryAttempts("obfs4"))
+        assertEquals(listOf("snowflake"), ConnectionSelectorPolicy.torEntryAttempts("snowflake"))
+        assertEquals(listOf("direct"), ConnectionSelectorPolicy.torEntryAttempts("direct"))
+        // Незнакомое нормализуется в «авто», а значит и разворачивается в перебор.
+        assertEquals(
+            ConnectionSelectorPolicy.torEntryAttempts("auto"),
+            ConnectionSelectorPolicy.torEntryAttempts("meek_lite"),
+        )
+    }
+
+    /**
+     * Кнопка «след. выход» ведёт по кругу и не заходит в «Авто»: она меняет
+     * выход, а не отменяет перебор.
+     */
+    @Test
+    fun `next tor exit walks the cycle without auto`() {
+        assertEquals("obfs4", ConnectionSelectorPolicy.nextTorEntry("webtunnel"))
+        assertEquals("snowflake", ConnectionSelectorPolicy.nextTorEntry("obfs4"))
+        assertEquals("vanilla", ConnectionSelectorPolicy.nextTorEntry("snowflake"))
+        assertEquals("direct", ConnectionSelectorPolicy.nextTorEntry("vanilla"))
+        assertEquals("webtunnel", ConnectionSelectorPolicy.nextTorEntry("direct"))
+        // Из «Авто» первое нажатие уводит в начало круга, а не в само «Авто».
+        assertEquals("webtunnel", ConnectionSelectorPolicy.nextTorEntry("auto"))
+        repeat(8) {
+            assertTrue(ConnectionSelectorPolicy.nextTorEntry("auto") != "auto")
+        }
+    }
+
+    @Test
+    fun `case and spacing do not move the button`() {
+        assertEquals(ConnectionSelectorPolicy.indexOf("masque"), ConnectionSelectorPolicy.indexOf(" MASQUE "))
+        assertEquals(ConnectionSelectorPolicy.indexOf("proton"), ConnectionSelectorPolicy.indexOf("Proton"))
+    }
+
+    /**
+     * `vless` — известный регион, но кнопки у него нет: он выбирается как
+     * семейство импортированных протоколов. «Авто» здесь честнее, чем показать
+     * нажатой чужую кнопку.
+     */
+    @Test
+    fun `a region without a button falls back to auto`() {
+        for (value in listOf(null, "", "vless", "atlantis")) {
+            assertEquals(0, ConnectionSelectorPolicy.indexOf(value))
+        }
+        assertEquals("auto", ConnectionSelectorPolicy.valueAt(-1))
+        assertEquals("auto", ConnectionSelectorPolicy.valueAt(99))
+    }
+
+    /**
+     * Идущий выпуск Proton сильнее сохранённого значения: предпочтение
+     * записывается только по успеху, а перерисовок до него много.
+     */
+    @Test
+    fun `a running proton run holds the button down`() {
+        assertEquals(
+            ConnectionSelectorPolicy.indexOf("proton"),
+            ConnectionSelectorPolicy.selectedIndex(storedRegion = "ru", protonPreparationRequested = true),
+        )
+        assertEquals(
+            ConnectionSelectorPolicy.indexOf("ru"),
+            ConnectionSelectorPolicy.selectedIndex(storedRegion = "ru", protonPreparationRequested = false),
+        )
+    }
+
+    @Test
+    fun `registration locks every button and says why`() {
+        val a = ConnectionSelectorPolicy.availability(
+            operaSupported = true,
+            deviceRegistrationInProgress = true,
+            storedRegion = "ru",
+        )
+        assertEquals(ConnectionSelectorPolicy.SIZE, a.enabled.size)
+        assertTrue(a.enabled.none { it })
+        assertTrue(a.lockReason.isNotBlank())
+        // Запрет временный: переписывать чужой выбор из-за него нельзя.
+        assertNull(a.rewriteStoredTo)
+    }
+
+    @Test
+    fun `without opera only the opera chip goes dark`() {
+        val a = ConnectionSelectorPolicy.availability(
+            operaSupported = false,
+            deviceRegistrationInProgress = false,
+            storedRegion = "ru",
+        )
+        for ((i, chip) in ConnectionSelectorPolicy.ORDER.withIndex()) {
+            assertEquals(chip, chip != ConnectionSelectorPolicy.CHIP_OPERA, a.enabled[i])
+        }
+        // Пользователь стоял на достижимом — его выбор не трогаем.
+        assertNull(a.rewriteStoredTo)
+        assertTrue(a.lockReason.isBlank())
+    }
+
+    @Test
+    fun `an unreachable stored choice is rewritten, a reachable one is not`() {
+        for (region in listOf("eu", "us")) {
+            assertEquals(
+                region,
+                "auto",
+                ConnectionSelectorPolicy.availability(false, false, region).rewriteStoredTo,
+            )
+        }
+        for (region in listOf("auto", "ru", "masque", "proton", "tor")) {
+            assertNull(region, ConnectionSelectorPolicy.availability(false, false, region).rewriteStoredTo)
+        }
+        // С поддержкой Opera переписывать нечего вообще.
+        assertNull(ConnectionSelectorPolicy.availability(true, false, "eu").rewriteStoredTo)
+    }
+
+    @Test
+    fun `everything is enabled when nothing forbids it`() {
+        val a = ConnectionSelectorPolicy.availability(true, false, "auto")
+        assertTrue(a.enabled.all { it })
+        assertFalse(a.lockReason.isNotBlank())
+    }
+
+    // ------------------------------------------------ режим DNS
+
+    @Test
+    fun `a dead session is never dns mode`() {
+        // Выключенный VPN — обычный канал: глушить в нём пинг и обновления не за что,
+        // как бы ни стоял чип и что бы ни осталось в последней записи службы.
+        assertFalse(
+            ConnectionSelectorPolicy.isDnsSessionActive(
+                exitPreference = "dns",
+                serviceTransport = "DNS",
+                sessionLive = false,
+            )
+        )
+    }
+
+    @Test
+    fun `the chip alone is enough on a live session`() {
+        // Фаза только началась, транспорт служба ещё не опубликовала.
+        assertTrue(
+            ConnectionSelectorPolicy.isDnsSessionActive(
+                exitPreference = "DNS",
+                serviceTransport = "",
+                sessionLive = true,
+            )
+        )
+    }
+
+    @Test
+    fun `a published dns transport is enough by itself`() {
+        // Обратный случай: чип уже переставили, а сеанс всё ещё идёт по DNS.
+        assertTrue(
+            ConnectionSelectorPolicy.isDnsSessionActive(
+                exitPreference = "auto",
+                serviceTransport = " dns ",
+                sessionLive = true,
+            )
+        )
+    }
+
+    @Test
+    fun `other transports are not dns mode`() {
+        for (transport in listOf("WARP", "MASQUE", "TOR", "VLESS", "AWG Proton", "OPERA")) {
+            assertFalse(
+                transport,
+                ConnectionSelectorPolicy.isDnsSessionActive(
+                    exitPreference = "auto",
+                    serviceTransport = transport,
+                    sessionLive = true,
+                )
+            )
+        }
+    }
+}
