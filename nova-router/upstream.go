@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -77,6 +78,9 @@ func dialSlot(slot Slot, host string, port int, sni string) (net.Conn, error) {
 			targetHost = candidate
 		}
 		return dialHTTPConnect(slot.Addr, targetHost, port)
+	case SlotWS:
+		relayURL := slot.URL + "?host=" + url.QueryEscape(host) + "&port=" + strconv.Itoa(port)
+		return dialWebSocket(relayURL, slot.Secret)
 	default:
 		return nil, fmt.Errorf("неизвестный тип слота %q", slot.Type)
 	}

@@ -10243,6 +10243,8 @@ class NovaVpnService : OperaNativeVpnService() {
                 youtube = lists.youtubeDomains(),
                 youtubeIps = lists.youtubeIps(),
                 telegramIps = lists.telegramIps(),
+                telegramRelayUrl = TelegramRelay.URL.takeIf { TelegramRelay.isConfigured }.orEmpty(),
+                telegramRelaySecret = TelegramRelay.SECRET,
                 telegram = lists.telegramDomains(),
                 whatsapp = lists.whatsappDomains(),
                 discord = lists.discordDomains(),

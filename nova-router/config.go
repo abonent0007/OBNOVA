@@ -12,11 +12,14 @@ const (
 	SlotSocks5 = "socks5"
 	SlotHTTP   = "http"
 	SlotDirect = "direct"
+	SlotWS     = "ws"
 )
 
 type Slot struct {
-	Type string `json:"type"`
-	Addr string `json:"addr,omitempty"`
+	Type   string `json:"type"`
+	Addr   string `json:"addr,omitempty"`
+	URL    string `json:"url,omitempty"`
+	Secret string `json:"secret,omitempty"`
 }
 
 type Rule struct {
@@ -63,6 +66,13 @@ func (c Config) validate() error {
 				return fmt.Errorf("слот %s: пустой адрес", name)
 			}
 		case SlotDirect:
+		case SlotWS:
+			if slot.URL == "" {
+				return fmt.Errorf("слот %s: пустой URL реле", name)
+			}
+			if !strings.HasPrefix(slot.URL, "wss://") {
+				return fmt.Errorf("слот %s: реле должно быть wss://", name)
+			}
 		default:
 			return fmt.Errorf("слот %s: неизвестный тип %q", name, slot.Type)
 		}

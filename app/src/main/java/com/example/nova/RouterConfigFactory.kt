@@ -32,6 +32,9 @@ object RouterConfigFactory {
         val youtubeIps: List<String> = emptyList(),
         /** IP-литералы Telegram: MTProto часто идёт по IP. */
         val telegramIps: List<String> = emptyList(),
+        /** WSS-реле для Telegram (Cloudflare Worker). Пусто — слот выключен. */
+        val telegramRelayUrl: String = "",
+        val telegramRelaySecret: String = "",
         val telegram: List<String> = emptyList(),
         val whatsapp: List<String> = emptyList(),
         val discord: List<String> = emptyList(),
@@ -100,11 +103,16 @@ object RouterConfigFactory {
         }
         if (input.telegramIps.isNotEmpty()) {
             val baseTelegramOrder = order("telegram", input.overrides, opera, spoof, killSwitch)
-            // cfproxy (WARP) несёт только Cloudflare: TCP до Telegram DC
-            // «поднимается», а данные не идут — в Telegram висит «Соединение...».
-            // Opera принимает CONNECT на IP и отдаёт MTProto, DESYNC — запас.
-            val telegramIpOrder = if (opera && input.overrides["telegram"] == null) {
-                listOf("secondary") + baseTelegramOrder
+            // Первым идёт WSS-реле: оно несёт MTProto до DC через Cloudflare,
+            // а оператор видит обычный HTTPS к Cloudflare. Opera и cfproxy —
+            // запас, если реле не ответило. При ручном override не вмешиваемся.
+            val telegramIpOrder = if (input.overrides["telegram"] == null) {
+                buildList {
+                    if (input.telegramRelayUrl.isNotBlank()) add("ws")
+                    if (opera) add("secondary")
+                    if (cfProxy) add("cfproxy")
+                    add("primary")
+                }
             } else {
                 baseTelegramOrder
             }
@@ -133,6 +141,13 @@ object RouterConfigFactory {
         }
         if (cfProxy) {
             slots["cfproxy"] = RouterConfig.SlotSpec("socks5", "127.0.0.1:$cfProxyPort")
+        }
+        if (input.telegramRelayUrl.isNotBlank()) {
+            slots["ws"] = RouterConfig.SlotSpec(
+                type = "ws",
+                url = input.telegramRelayUrl,
+                secret = input.telegramRelaySecret,
+            )
         }
 
         return RouterConfig.build(

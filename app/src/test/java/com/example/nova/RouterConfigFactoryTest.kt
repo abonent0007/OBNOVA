@@ -24,6 +24,22 @@ class RouterConfigFactoryTest {
     )
 
     @Test
+    fun `telegram relay slot is first for telegram ips`() {
+        val json = RouterConfigFactory.build(
+            input = input().copy(
+                telegramRelayUrl = "wss://relay.example/apiws",
+                telegramRelaySecret = "s3cret",
+                telegramIps = listOf("149.154.160.0/20"),
+            ),
+            primaryPort = 1376,
+            operaPort = 1371,
+            cfProxyPort = 1378,
+        )
+        assertTrue(json.contains("\"ws\":{\"type\":\"ws\",\"url\":\"wss://relay.example/apiws\",\"secret\":\"s3cret\"}"))
+        assertTrue(json.contains("\"order\":[\"ws\",\"secondary\",\"cfproxy\",\"primary\"]"))
+    }
+
+    @Test
     fun `mtproto proxy ip goes to cfproxy before default`() {
         val json = RouterConfigFactory.build(
             input = input(),
@@ -161,7 +177,7 @@ class RouterConfigFactoryTest {
         assertTrue(json.contains("\"cfproxy\":{\"type\":\"socks5\",\"addr\":\"127.0.0.1:1378\"}"))
         assertTrue(
             json.contains(
-                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"secondary\",\"primary\"]"
+                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"secondary\",\"cfproxy\",\"primary\"]"
             )
         )
     }

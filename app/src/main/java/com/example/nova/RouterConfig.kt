@@ -9,7 +9,12 @@ package com.example.nova
  */
 object RouterConfig {
 
-    data class SlotSpec(val type: String, val addr: String = "")
+    data class SlotSpec(
+        val type: String,
+        val addr: String = "",
+        val url: String = "",
+        val secret: String = "",
+    )
 
     data class RuleSpec(
         val domains: List<String>,
@@ -32,6 +37,12 @@ object RouterConfig {
             json.append("\"type\":\"").append(escape(slot.type)).append('"')
             if (slot.addr.isNotEmpty()) {
                 json.append(",\"addr\":\"").append(escape(slot.addr)).append('"')
+            }
+            if (slot.url.isNotEmpty()) {
+                json.append(",\"url\":\"").append(escape(slot.url)).append('"')
+            }
+            if (slot.secret.isNotEmpty()) {
+                json.append(",\"secret\":\"").append(escape(slot.secret)).append('"')
             }
             json.append('}')
         }
