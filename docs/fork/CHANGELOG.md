@@ -3,6 +3,26 @@
 > Формат: дата → что изменено → где → чем проверено. Все пути от корня
 > `C:\Users\User\Documents\Nova-Android-Fork`.
 
+## 2026-11-03 — SNI для IP-литералов и автозапуск Opera
+
+- `nova-router/sni.go`: ClientHello читается **после** SOCKS-reply (Cronet
+  начинает TLS только после него); из SNI восстанавливается FQDN, и
+  HTTP-CONNECT к Opera уходит с именем, а не с голым IP. Только CONNECT на 443
+  с IP-литералом.
+- `OperaProxyManager`: параметры `bootstrapApiProxy` / `bootstrapDialProxy`.
+  Stage 2 запускает Opera с `-api-proxy socks5h://127.0.0.1:1376` и
+  `-proxy socks5h://127.0.0.1:1376` — API и туннель с одного egress (DESYNC).
+  Если задан прокси из настроек, `-proxy` не навязывается.
+- `NovaVpnService`: AWG-мост поднимается до Opera; Opera стартует только после
+  открытия `127.0.0.1:1378`; старый 10-минутный backoff игнорируется при
+  `CF_PROXY_SLOT_ENABLED`; мост гасится после Opera в `finally`.
+- **Проверено на устройстве:** `142.251.x:443 → secondary
+  (SNI "rr…googlevideo.com")`, лента YouTube грузится, Shorts играет
+  (0:08 из 0:48, кадры меняются); `149.154.167.x → cfproxy`; Chrome открывает
+  `ya.ru`, `github.com`, `example.com`.
+- **Проверено:** автозапуск Opera — `MULTI активен … / Opera34920`,
+  `curl --proxy http://127.0.0.1:34920 …/generate_204` → **204**.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS-мост
 
 - Новый `nova-core/engine/awg_socks.go`: отдельный userspace-экземпляр

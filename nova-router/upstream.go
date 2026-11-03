@@ -20,6 +20,12 @@ type Router struct {
 }
 
 func (r Router) Dial(host string, port int) (net.Conn, string, error) {
+	return r.DialSNI(host, port, "")
+}
+
+// DialSNI принимает SNI, извлечённый из ClientHello. Он используется только
+// HTTP-слотом: Opera ждёт FQDN, а не голый IP.
+func (r Router) DialSNI(host string, port int, sni string) (net.Conn, string, error) {
 	order, routeName := r.cfg.OrderFor(host)
 	if r.stats != nil {
 		r.stats.recordRoute(routeName)
@@ -31,7 +37,7 @@ func (r Router) Dial(host string, port int) (net.Conn, string, error) {
 			continue
 		}
 		started := time.Now()
-		conn, err := dialSlot(slot, host, port)
+		conn, err := dialSlot(slot, host, port, sni)
 		if r.stats != nil {
 			r.stats.record(name, time.Since(started), err == nil)
 		}
@@ -46,14 +52,18 @@ func (r Router) Dial(host string, port int) (net.Conn, string, error) {
 	return nil, "", lastErr
 }
 
-func dialSlot(slot Slot, host string, port int) (net.Conn, error) {
+func dialSlot(slot Slot, host string, port int, sni string) (net.Conn, error) {
 	switch slot.Type {
 	case SlotDirect:
 		return dialDirect(host, port, dialTimeout)
 	case SlotSocks5:
 		return dialSocks5(slot.Addr, host, port)
 	case SlotHTTP:
-		return dialHTTPConnect(slot.Addr, host, port)
+		targetHost := host
+		if candidate, err := validSNI(sni); err == nil {
+			targetHost = candidate
+		}
+		return dialHTTPConnect(slot.Addr, targetHost, port)
 	default:
 		return nil, fmt.Errorf("неизвестный тип слота %q", slot.Type)
 	}

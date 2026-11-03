@@ -10020,11 +10020,26 @@ class NovaVpnService : OperaNativeVpnService() {
                 return false
             }
 
-            // SECONDARY — Opera, если она вообще доступна и успела зарегистрироваться.
+            // SECONDARY — Opera. Stage 2: сначала поднимаем AWG SOCKS (:1378),
+            // затем Opera с `-api-proxy`: прямой discover из RU не проходит, а
+            // через мост регистрация и данные идут одним путём.
             var operaPort = 0
+            fun stopAwgBridge() {
+                stopAwgBridgeIfEnabled()
+            }
             val routingStore = RoutingStore(this)
             val operaRetryAfter = routingStore.operaRetryAfterMs()
             val nowMs = System.currentTimeMillis()
+            if (BuildConfig.CF_PROXY_SLOT_ENABLED) {
+                val bridgeReady = AwgSocksBridge.startAndWait(this)
+                LogManager.log(
+                    if (bridgeReady) {
+                        "MULTI: AWG SOCKS ${AwgSocksBridge.LISTEN_ADDRESS} готов — слот cfproxy для Telegram."
+                    } else {
+                        "MULTI: AWG SOCKS не поднялся — Telegram останется без cfproxy."
+                    }
+                )
+            }
             if (OperaProxyManager.isLocalProxyListeningOn(OperaProxyManager.BOOTSTRAP_PROXY_PORT)) {
                 // Opera поднята вручную с -api-proxy socks5://127.0.0.1:1378:
                 // именно этот сценарий разблокирует YouTube-egress через Opera.
@@ -10038,18 +10053,25 @@ class NovaVpnService : OperaNativeVpnService() {
                 operaPort = OperaProxyManager.getLoopbackProxyPort(this)
                 routingStore.setOperaRetryAfterMs(0L)
                 LogManager.log("MULTI: Opera уже слушает 127.0.0.1:$operaPort — SECONDARY подключён.")
-            } else if (nowMs < operaRetryAfter) {
+            } else if (nowMs < operaRetryAfter && !BuildConfig.CF_PROXY_SLOT_ENABLED) {
                 LogManager.log(
                     "MULTI: Opera недавно не поднялась — SECONDARY пропускаем ещё " +
                         "${(operaRetryAfter - nowMs) / 1000} с."
                 )
             } else if (OperaProxyManager.isTransportSupportedOnDevice(this)) {
+                if (nowMs < operaRetryAfter) {
+                    // Старый backoff накоплен прямым запуском без моста. С Stage 2
+                    // путь другой, и он не должен блокировать попытку.
+                    LogManager.log("MULTI: старый backoff Opera игнорируем — Stage 2 поднимает её через мост.")
+                }
                 val ready = OperaProxyManager.ensureReady(
                     this,
                     LogManager::log,
                     purposeLabel = "умной маршрутизации",
-                    readyTimeoutMs = 6_000L,
-                    maxLaunchPlans = 3,
+                    readyTimeoutMs = 20_000L,
+                    maxLaunchPlans = 40,
+                    bootstrapApiProxy = "socks5h://127.0.0.1:$desyncPort",
+                    bootstrapDialProxy = "socks5h://127.0.0.1:$desyncPort",
                     shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
                 )
                 if (ready == OperaProxyManager.ReadyState.FAILED) {
@@ -10065,13 +10087,10 @@ class NovaVpnService : OperaNativeVpnService() {
             if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
                 DesyncProxyManager.stop(LogManager::log)
                 OperaProxyManager.stopManaged(LogManager::log)
+                stopAwgBridge()
                 return true
             }
 
-            if (BuildConfig.CF_PROXY_SLOT_ENABLED) {
-                val bridgeStatus = AwgSocksBridge.startFromBundled(this)
-                LogManager.log("MULTI: AWG SOCKS: $bridgeStatus")
-            }
             val vlessPort = startVlessSocksForMulti(clientData, connectGenerationId)
             multiVlessActive = vlessPort > 0
             val primaryPort = if (vlessPort > 0) vlessPort else desyncPort
@@ -10089,18 +10108,21 @@ class NovaVpnService : OperaNativeVpnService() {
             if (routerPort == 0) {
                 DesyncProxyManager.stop(LogManager::log)
                 OperaProxyManager.stopManaged(LogManager::log)
+                stopAwgBridge()
                 return false
             }
             if (!startProxyTunnel(clientData, routerPort, BACKEND_MULTI, "NovaMultiVPN", "NovaMultiTunThread")) {
                 RouterProcess.stop(LogManager::log)
                 DesyncProxyManager.stop(LogManager::log)
                 OperaProxyManager.stopManaged(LogManager::log)
+                stopAwgBridge()
                 return false
             }
             if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
                 RouterProcess.stop(LogManager::log)
                 DesyncProxyManager.stop(LogManager::log)
                 OperaProxyManager.stopManaged(LogManager::log)
+                stopAwgBridge()
                 return true
             }
             markSuccessfulTunnelProbe()
@@ -10144,6 +10166,7 @@ class NovaVpnService : OperaNativeVpnService() {
                 RouterProcess.stop(LogManager::log)
                 DesyncProxyManager.stop(LogManager::log)
                 OperaProxyManager.stopManaged(LogManager::log)
+                stopAwgBridgeIfEnabled()
                 if (multiVlessActive) {
                     XrayBridge.stop()
                     multiVlessActive = false
@@ -10174,6 +10197,14 @@ class NovaVpnService : OperaNativeVpnService() {
             "Underlying network обновлён без пересборки TUN: " +
                 (network?.let { describeNetwork(connectivityManager, it) } ?: "нет сети") + "."
         )
+    }
+
+    /**
+     * Гасит Stage 2 мост. Вызывается после остановки Opera: порядок обратный
+     * запуску, иначе Opera теряет `-api-proxy` на живом соединении.
+     */
+    private fun stopAwgBridgeIfEnabled() {
+        if (BuildConfig.CF_PROXY_SLOT_ENABLED) AwgSocksBridge.stop()
     }
 
     /**

@@ -86,7 +86,36 @@ func serveSOCKS(client net.Conn, router Router, verbose bool) error {
 	if cmd == socksUDPAssociate {
 		return serveUDPAssociate(client)
 	}
-	upstream, slot, err := router.Dial(host, port)
+	clientReader := io.Reader(client)
+	sni := ""
+	if cmd == 1 && port == 443 && net.ParseIP(host) != nil {
+		// Ответ клиенту обязателен ДО чтения ClientHello: Cronet и tun2proxy
+		// начинают TLS только после успешного SOCKS-reply. Если ждать hello
+		// первым, получаем ровно 0 байт и таймаут.
+		if err := writeReply(client, 0x00); err != nil {
+			return err
+		}
+		reader, hello, name := peekTLSClientHello(client)
+		clientReader = reader
+		sni = name
+		if verbose {
+			log.Printf("%s:%d — ClientHello %d байт, SNI %q", host, port, len(hello), sni)
+		}
+		upstream, slot, dialErr := router.DialSNI(host, port, sni)
+		if dialErr != nil {
+			if verbose {
+				log.Printf("%s:%d — нет слота: %v", host, port, dialErr)
+			}
+			return nil
+		}
+		defer upstream.Close()
+		if verbose {
+			log.Printf("%s:%d → %s (SNI %q)", host, port, slot, sni)
+		}
+		pipeBothReader(client, clientReader, upstream)
+		return nil
+	}
+	upstream, slot, err := router.DialSNI(host, port, sni)
 	if err != nil {
 		_ = writeReply(client, 0x05)
 		if verbose {
@@ -101,7 +130,7 @@ func serveSOCKS(client net.Conn, router Router, verbose bool) error {
 	if err := writeReply(client, 0x00); err != nil {
 		return err
 	}
-	pipeBoth(client, upstream)
+	pipeBothReader(client, clientReader, upstream)
 	return nil
 }
 
@@ -168,14 +197,21 @@ func writeReply(w io.Writer, code byte) error {
 }
 
 func pipeBoth(a, b net.Conn) {
+	pipeBothReader(a, a, b)
+}
+
+func pipeBothReader(client net.Conn, reader io.Reader, upstream net.Conn) {
 	done := make(chan struct{}, 2)
 	go func() {
-		_, _ = io.Copy(b, a)
+		_, _ = io.Copy(upstream, reader)
 		done <- struct{}{}
 	}()
 	go func() {
-		_, _ = io.Copy(a, b)
+		_, _ = io.Copy(client, upstream)
 		done <- struct{}{}
 	}()
+	<-done
+	_ = client.Close()
+	_ = upstream.Close()
 	<-done
 }

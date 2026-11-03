@@ -13,6 +13,31 @@ import nova.Nova
 object AwgSocksBridge {
 
     const val LISTEN_ADDRESS = "127.0.0.1:1378"
+    const val LISTEN_PORT = 1378
+    const val LOCAL_SOCKS_URL = "socks5h://$LISTEN_ADDRESS"
+
+    /** TCP-probe: мост готов принимать CONNECT, когда порт открылся. */
+    fun isListening(): Boolean = runCatching {
+        java.net.Socket().use { socket ->
+            socket.connect(java.net.InetSocketAddress("127.0.0.1", LISTEN_PORT), 300)
+        }
+        true
+    }.getOrDefault(false)
+
+    /**
+     * Поднимает мост и ждёт открытия порта. Opera запускается только после
+     * этого: без готового `-api-proxy` она уходит в прямой discover и падает.
+     */
+    fun startAndWait(context: Context, timeoutMs: Long = 1_500L): Boolean {
+        val status = startFromBundled(context)
+        if (!status.contains("\"running\":true")) return false
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (isListening()) return true
+            Thread.sleep(100)
+        }
+        return isListening()
+    }
 
     fun startFromBundled(context: Context): String {
         if (!BuildConfig.CF_PROXY_SLOT_ENABLED) {

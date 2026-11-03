@@ -266,6 +266,12 @@ object OperaProxyManager {
     private var managedEndpoint: String? = null
 
     @Volatile
+    private var managedBootstrapApiProxy: String? = null
+
+    @Volatile
+    private var managedBootstrapDialProxy: String? = null
+
+    @Volatile
     private var managedFakeSni: String? = null
 
     @Volatile
@@ -386,6 +392,10 @@ object OperaProxyManager {
         skipHostlessCandidate: Boolean = false,
         maskHostRotation: Int = 0,
         onAttemptState: ((Int, Int, String) -> Unit)? = null,
+        /** Stage 2: `-api-proxy` для запуска из MULTI (AWG SOCKS 1378). */
+        bootstrapApiProxy: String = "",
+        /** Stage 2: `-proxy` для туннеля Opera (DESYNC 1376). */
+        bootstrapDialProxy: String = "",
         shouldAbort: (() -> Boolean)? = null,
     ): ReadyState {
         return synchronized(startLock) {
@@ -427,6 +437,23 @@ object OperaProxyManager {
                 return ReadyState.FAILED
             }
             val persistedCountry = clientData.getOperaProxyCountry()
+            val requestedBootstrapProxy = bootstrapApiProxy.trim()
+            val requestedDialProxy = bootstrapDialProxy.trim()
+            if (
+                existingProcess?.let { ProcessCompat.isAlive(it) } == true &&
+                (
+                    (requestedBootstrapProxy.isNotEmpty() &&
+                        managedBootstrapApiProxy != requestedBootstrapProxy) ||
+                        (requestedDialProxy.isNotEmpty() &&
+                            managedBootstrapDialProxy != requestedDialProxy)
+                    )
+            ) {
+                // Процесс поднят раньше без моста/туннельного прокси: прямой API
+                // из RU не проходит, поэтому живой порт — не повод переиспользовать его.
+                launchLogger("Opera поднята с другими прокси-флагами — перезапускаем через Stage 2.")
+                stopManaged(launchLogger)
+                existingProcess = null
+            }
             if (
                 existingProcess?.let { ProcessCompat.isAlive(it) } == true &&
                 isLocalProxyOpen(bindPort) &&
@@ -559,6 +586,18 @@ object OperaProxyManager {
             val relayPaused = NovaRelay.isPaused()
             val apiRelays = if (relayPaused) emptyList() else apiRelays()
             val customApiProxy = resolveCustomApiProxy(clientData, launchLogger)
+            val bootstrapProxy = bootstrapApiProxy.trim()
+            val effectiveApiProxy = customApiProxy.ifEmpty {
+                if (bootstrapProxy.isNotEmpty()) {
+                    launchLogger(
+                        "Stage 2: API SurfEasy и туннель через один egress — " +
+                            describeApiRelay(bootstrapProxy) + "."
+                    )
+                    bootstrapProxy
+                } else {
+                    ""
+                }
+            }
             val launchPlans = buildList {
                 val seenPlans = linkedSetOf<String>()
                 fun appendPlan(
@@ -583,7 +622,7 @@ object OperaProxyManager {
                     // вариант: он падал на probe, исправный адрес уходил в cooldown, и
                     // Opera вставала лишь через полный discover (или не вставала вовсе).
                     val registrationRoutes = buildList {
-                        if (customApiProxy.isNotEmpty()) add("" to customApiProxy)
+                        if (effectiveApiProxy.isNotEmpty()) add("" to effectiveApiProxy)
                         // Один релей: сессия либо регистрируется через релей, либо нет —
                         // второй адрес того же релея лишь раздувал бы счётчик попыток.
                         apiRelays.firstOrNull()?.let { add(it to "") }
@@ -616,14 +655,16 @@ object OperaProxyManager {
                 }
                 // Прокси из настроек идёт раньше наших релеев: его задали руками
                 // и именно для этого, а релей — наш запасной путь.
-                if (customApiProxy.isNotEmpty()) {
+                if (effectiveApiProxy.isNotEmpty()) {
                     for (apiProfile in apiProfiles) {
-                        appendPlan("", null, apiProfile, apiProxy = customApiProxy)
+                        appendPlan("", null, apiProfile, apiProxy = effectiveApiProxy)
                     }
-                    launchLogger(
-                        "Вызовы API SurfEasy для $requestedCountry сначала пробуем через прокси из настроек " +
-                            "(${describeApiRelay(customApiProxy)}): туннель при этом набирается напрямую."
-                    )
+                    if (customApiProxy.isNotEmpty()) {
+                        launchLogger(
+                            "Вызовы API SurfEasy для $requestedCountry сначала пробуем через прокси из настроек " +
+                                "(${describeApiRelay(customApiProxy)}): туннель при этом набирается напрямую."
+                        )
+                    }
                 }
                 // Discover через свой релей идёт раньше прямого: из России прямой
                 // discover отдаёт набор endpoint'ов, до которых потом не дозвониться,
@@ -845,7 +886,18 @@ object OperaProxyManager {
                     // релею ради имени и TLS, а здесь ни того, ни другого нет.
                     args += listOf("-api-proxy", plan.apiProxy)
                 }
+                // Пользовательский API-прокси задаёт свой egress: навязывать ему
+                // наш туннель нельзя, иначе сессия регистрируется и выходит с разных IP.
+                val dialProxy = if (customApiProxy.isNotEmpty()) "" else bootstrapDialProxy.trim()
+                if (dialProxy.isNotEmpty()) {
+                    // Туннель Opera к 77.111.x режется DPI: прямой дозвон падает,
+                    // а WARP-плечо медленнее. DESYNC уже поднят как PRIMARY.
+                    args += listOf("-proxy", dialProxy)
+                }
 
+                if (dialProxy.isNotEmpty()) {
+                    launchLogger("Встроенный Opera proxy: туннель через ${describeApiRelay(dialProxy)}")
+                }
                 launchLogger("Поднимаем встроенный Opera proxy для $purposeLabel... попытка ${attemptIndex + 1}/${launchPlans.size}")
                 if (plan.apiRelay.isNotEmpty() || plan.apiProxy.isNotEmpty()) {
                     launchLogger("Opera bootstrap DNS: нет — имя API резолвит прокси")
@@ -865,8 +917,13 @@ object OperaProxyManager {
                     launchLogger("Встроенный Opera proxy: API SurfEasy через релей ${describeApiRelay(plan.apiRelay)}")
                 }
                 if (plan.apiProxy.isNotEmpty()) {
+                    val source = if (plan.apiProxy == bootstrapApiProxy.trim()) {
+                        "Stage 2 egress (DESYNC)"
+                    } else {
+                        "прокси из настроек"
+                    }
                     launchLogger(
-                        "Встроенный Opera proxy: API SurfEasy через прокси из настроек " +
+                        "Встроенный Opera proxy: API SurfEasy через $source " +
                             describeApiRelay(plan.apiProxy)
                     )
                 }
@@ -934,6 +991,8 @@ object OperaProxyManager {
                         managedPort = bindPort
                         managedFakeSni = fakeSni.takeIf { it.isNotBlank() }
                         managedApiProfileId = apiProfile.id
+                        managedBootstrapApiProxy = plan.apiProxy.takeIf { it.isNotBlank() }
+                        managedBootstrapDialProxy = bootstrapDialProxy.trim().takeIf { it.isNotBlank() }
                     }
                     clientData.setOperaInternalProxyPort(bindPort)
                     publishLocalProxyAddressToCore(bindPort, launchLogger)
@@ -1210,6 +1269,8 @@ object OperaProxyManager {
             managedEndpoint = null
             managedFakeSni = null
             managedApiProfileId = null
+            managedBootstrapApiProxy = null
+            managedBootstrapDialProxy = null
         }
         publishLocalProxyAddressToCore(null, logger)
         OperaApiRelayBridge.stop(logger)

@@ -3,6 +3,36 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
+## 2026-11-03 — SNI + автозапуск Opera (устройство RMX3370)
+
+```text
+MULTI: AWG SOCKS 127.0.0.1:1378 готов — слот cfproxy для Telegram.
+Stage 2: API SurfEasy и туннель через один egress — socks5h://127.0.0.1:1376.
+Встроенный Opera proxy готов на 127.0.0.1:34920.
+MULTI активен: router 127.0.0.1:1373 → PRIMARY1376 / Opera34920 / DIRECT
+
+ROUTER: 172.217.132.***:443 — ClientHello 1751 байт,
+        SNI "rr3---sn-5hne6nsk.googlevideo.com"
+ROUTER: 172.217.132.***:443 → secondary (SNI "rr3---sn-5hne6nsk.googlevideo.com")
+ROUTER: 149.154.167.***:443 → cfproxy (SNI "")
+ROUTER: 142.251.144.***:443 → secondary (SNI "i.ytimg.com")
+
+curl --proxy http://127.0.0.1:34920 https://cp.cloudflare.com/generate_204
+204 0.564
+curl --socks5-hostname 127.0.0.1:1373 https://www.youtube.com
+200 2.156
+```
+
+YouTube-приложение: лента с реальными карточками (названия и просмотры), Shorts
+играет — 0:08 из 0:48, разница кадров за 4 с — **45,8 %**. Telegram: список
+чатов загружен, MTProto-соединения `149.154.167.x:443 → cfproxy`. Chrome:
+`ya.ru`, `github.com`, `example.com` открываются (Chrome вне allow-list,
+идёт напрямую).
+
+Замечание: в MULTI остаётся цикл health-reconnect (`underlying networks`)
+каждые ~13 с, если периодический tunnel-probe не проходит; на воспроизведение
+это не влияет, но требует отдельного разбора.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS
 
 ```text
