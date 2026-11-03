@@ -96,3 +96,7 @@ Nova для Android: приложение с активной адаптацие
 - Не менять stock-источники профилей, подписок и встроенных узлов.
 - Не коммитить сборки, ключи и `local.properties`.
 - Не публиковать форк и не отправлять изменения в upstream.
+
+<!-- Added: 2026-11-03 -->
+## Versioning for OBNOVA releases
+Every subsequent release bumps the version: versionName 1.34.2, 1.34.3, ... and versionCode +1 (166, 167, ...) in app/build.gradle.kts. A release includes: bump versionName/versionCode, update docs/fork/CHANGELOG.md and docs/fork/VERIFICATION.md, rebuild arm64-v8a / armeabi-v7a / universal (release + debug) APKs, create a git tag vX.Y.Z, and publish a GitHub release with fresh SHA-256 values. Never reuse the previous version number for a changed build.
