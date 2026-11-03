@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net/netip"
 	"os"
 	"strings"
 )
@@ -21,6 +22,7 @@ type Slot struct {
 type Rule struct {
 	Name    string   `json:"name"`
 	Domains []string `json:"domains"`
+	CIDRs   []string `json:"cidrs,omitempty"`
 	Order   []string `json:"order"`
 }
 
@@ -79,26 +81,53 @@ func (c Config) validate() error {
 				return fmt.Errorf("правило %q ссылается на неизвестный слот %q", rule.Name, name)
 			}
 		}
+		for _, cidr := range rule.CIDRs {
+			if _, err := netip.ParsePrefix(cidr); err != nil {
+				return fmt.Errorf("правило %q: плохой CIDR %q: %w", rule.Name, cidr, err)
+			}
+		}
 	}
 	return nil
 }
 
-// OrderFor возвращает порядок слотов и имя правила для домена: первое
-// подходящее правило, иначе defaultOrder. Сравнение — по границе метки.
+// OrderFor возвращает порядок слотов: для IP-литерала проверяются CIDR-правила,
+// для имени — доменные. Раньше CIDR не поддерживался, и Cronet/YouTube,
+// приходящие с IP вместо hostname, всегда падали в defaultOrder (primary).
 func (c Config) OrderFor(host string) ([]string, string) {
 	normalized := normalizeHost(host)
+	addr, isIP := parseAddr(normalized)
 	for _, rule := range c.Rules {
+		if isIP {
+			for _, cidr := range rule.CIDRs {
+				prefix, err := netip.ParsePrefix(cidr)
+				if err == nil && prefix.Contains(addr) {
+					return rule.Order, ruleName(rule)
+				}
+			}
+			continue
+		}
 		for _, domain := range rule.Domains {
 			if matchDomain(normalized, domain) {
-				name := rule.Name
-				if name == "" {
-					name = "rule"
-				}
-				return rule.Order, name
+				return rule.Order, ruleName(rule)
 			}
 		}
 	}
 	return c.DefaultOrder, "default"
+}
+
+func parseAddr(host string) (netip.Addr, bool) {
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return addr.Unmap(), true
+}
+
+func ruleName(rule Rule) string {
+	if rule.Name != "" {
+		return rule.Name
+	}
+	return "rule"
 }
 
 func normalizeHost(host string) string {

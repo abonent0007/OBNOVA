@@ -101,6 +101,32 @@ class RouterConfigFactoryTest {
     }
 
     @Test
+    fun `ip literals use cidr rules for youtube and telegram`() {
+        val json = RouterConfigFactory.build(
+            input().copy(
+                youtubeIps = listOf("142.250.0.0/15", "172.217.0.0/16"),
+                telegramIps = listOf("149.154.160.0/20"),
+            ),
+            primaryPort = 1376,
+            operaPort = 1371,
+            cfProxyPort = 1378,
+        )
+        val youtubeIpAt = json.indexOf("\"name\":\"youtube-ip\"")
+        val telegramIpAt = json.indexOf("\"name\":\"telegram-ip\"")
+        val mainAt = json.indexOf("\"name\":\"ru\"")
+        assertTrue(youtubeIpAt in 0 until mainAt)
+        assertTrue(telegramIpAt in 0 until mainAt)
+        assertTrue(json.contains("\"cidrs\":[\"142.250.0.0/15\",\"172.217.0.0/16\"]"))
+        assertTrue(json.contains("\"cidrs\":[\"149.154.160.0/20\"]"))
+        assertTrue(json.contains("\"cfproxy\":{\"type\":\"socks5\",\"addr\":\"127.0.0.1:1378\"}"))
+        assertTrue(
+            json.contains(
+                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"cfproxy\",\"primary\"]"
+            )
+        )
+    }
+
+    @Test
     fun `telegram is pinned and never falls back to direct`() {
         assertEquals(
             listOf("primary", "spoof"),

@@ -10068,6 +10068,10 @@ class NovaVpnService : OperaNativeVpnService() {
                 return true
             }
 
+            if (BuildConfig.CF_PROXY_SLOT_ENABLED) {
+                val bridgeStatus = AwgSocksBridge.startFromBundled(this)
+                LogManager.log("MULTI: AWG SOCKS: $bridgeStatus")
+            }
             val vlessPort = startVlessSocksForMulti(clientData, connectGenerationId)
             multiVlessActive = vlessPort > 0
             val primaryPort = if (vlessPort > 0) vlessPort else desyncPort
@@ -10075,7 +10079,12 @@ class NovaVpnService : OperaNativeVpnService() {
             multiPrimaryPort = primaryPort
             multiSpoofPort = spoofPort
             multiOperaPort = operaPort
-            val config = buildMultiRouterConfig(primaryPort, operaPort, spoofPort)
+            val config = buildMultiRouterConfig(
+                primaryPort,
+                operaPort,
+                spoofPort,
+                cfProxyPort = if (BuildConfig.CF_PROXY_SLOT_ENABLED) 1378 else 0,
+            )
             val routerPort = RouterProcess.start(this, config, LogManager::log)
             if (routerPort == 0) {
                 DesyncProxyManager.stop(LogManager::log)
@@ -10175,6 +10184,7 @@ class NovaVpnService : OperaNativeVpnService() {
         primaryPort: Int,
         operaPort: Int,
         spoofPort: Int,
+        cfProxyPort: Int = 0,
     ): String {
         val lists = ListRepository.load(this)
         val routing = RoutingStore(this)
@@ -10189,6 +10199,8 @@ class NovaVpnService : OperaNativeVpnService() {
                 second = lists.secondDomains(),
                 ai = lists.aiDomains(),
                 youtube = lists.youtubeDomains(),
+                youtubeIps = lists.youtubeIps(),
+                telegramIps = lists.telegramIps(),
                 telegram = lists.telegramDomains(),
                 whatsapp = lists.whatsappDomains(),
                 discord = lists.discordDomains(),
@@ -10198,6 +10210,7 @@ class NovaVpnService : OperaNativeVpnService() {
             primaryPort = primaryPort,
             operaPort = operaPort,
             spoofPort = spoofPort,
+            cfProxyPort = cfProxyPort,
         )
     }
 
@@ -10213,7 +10226,12 @@ class NovaVpnService : OperaNativeVpnService() {
         val primaryPort = multiPrimaryPort
         if (primaryPort == 0 || !RouterProcess.isRunning()) return
         val oldPort = RouterProcess.port()
-        val config = buildMultiRouterConfig(primaryPort, multiOperaPort, multiSpoofPort)
+        val config = buildMultiRouterConfig(
+            primaryPort,
+            multiOperaPort,
+            multiSpoofPort,
+            cfProxyPort = if (BuildConfig.CF_PROXY_SLOT_ENABLED) 1378 else 0,
+        )
         val port = RouterProcess.start(
             this,
             config,

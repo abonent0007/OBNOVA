@@ -230,6 +230,44 @@ func TestHandshakeRoundTrip(t *testing.T) {
 	<-done
 }
 
+func TestOrderForMatchesCIDR(t *testing.T) {
+	cfg := Config{
+		Rules: []Rule{{
+			Name:  "youtube-ip",
+			CIDRs: []string{"142.250.0.0/15", "172.217.0.0/16"},
+			Order: []string{"secondary", "primary"},
+		}},
+		DefaultOrder: []string{"primary", "direct"},
+	}
+	if got := orderOf(cfg, "142.251.155.4"); got != "secondary,primary" {
+		t.Fatalf("youtube ip: %s", got)
+	}
+	if got := orderOf(cfg, "172.217.119.4"); got != "secondary,primary" {
+		t.Fatalf("google ip: %s", got)
+	}
+	if got := orderOf(cfg, "8.8.8.8"); got != "primary,direct" {
+		t.Fatalf("default ip: %s", got)
+	}
+	if got := orderOf(cfg, "www.youtube.com"); got != "primary,direct" {
+		t.Fatalf("domain must not match CIDR: %s", got)
+	}
+}
+
+func TestConfigValidationRejectsBrokenCIDR(t *testing.T) {
+	cfg := Config{
+		Slots:        map[string]Slot{"primary": {Type: SlotDirect}},
+		DefaultOrder: []string{"primary"},
+		Rules: []Rule{{
+			Name:  "bad-ip",
+			CIDRs: []string{"not-a-cidr"},
+			Order: []string{"primary"},
+		}},
+	}
+	if err := cfg.validate(); err == nil {
+		t.Fatal("ожидалась ошибка CIDR")
+	}
+}
+
 func TestConfigValidationRejectsBrokenSlots(t *testing.T) {
 	cfg := Config{
 		Slots:        map[string]Slot{"bad": {Type: "quic"}},

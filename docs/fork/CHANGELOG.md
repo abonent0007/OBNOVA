@@ -15,6 +15,15 @@
 - AAR пересобран (`nova-core-api24-stripped.aar`, `libgojni.so` для arm64 и
   armv7); источник профиля — актуальный `WarpVerifiedConfig` из ClientData,
   fallback — bundled seed. UI-кнопка Stage 2 скрыта за флагом.
+- **IP/CIDR-маршрутизация:** `nova-router` правила теперь содержат `cidrs`;
+  `ip/youtube.txt` и `ip/telegram.txt` (assets) задают Google/YouTube и
+  Telegram-диапазоны. Telegram IP уходит в `cfproxy`, YouTube IP — в `secondary`
+  (Opera). `RouterConfigFactory` и Go-тест покрывают порядок и матчинг.
+- **Проверено:** `149.154.167.50:443 → cfproxy`; `www.youtube.com:443 →
+  secondary` (200); `redirector.googlevideo.com → secondary` (404/данные).
+  Официальное YouTube-приложение всё ещё уходит в `primary` для части
+  IP-литералов: Opera-CONNECT на голый IP не всегда проходит, нужен следующий
+  разбор.
 - **Проверено:** `curl --socks5-hostname 127.0.0.1:1378
   https://cp.cloudflare.com/generate_204` → **204**; ручной
   `liboperaproxy.so -api-proxy socks5://127.0.0.1:1378` открыл `127.0.0.1:1371`

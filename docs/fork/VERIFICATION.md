@@ -21,12 +21,13 @@ yt-dlp --proxy http://127.0.0.1:13710 -f 269 jNQXAC9IVRw
 MULTI с уже слушающим Opera:
 MULTI активен: router 127.0.0.1:1373 → PRIMARY1376 / Opera1371 / DIRECT
 router youtube.com:443 → secondary (200), googlevideo.com:443 → secondary (404)
+router 149.154.167.50:443 → cfproxy
 ```
 
-Наблюдение: YouTube-приложение обращается к `142.251.x`/`172.217.x` по IP,
-поэтому доменные правила не срабатывают (`→ primary`). Нужны IP/CIDR-правила.
-`media_static` direct откатан: `i.ytimg.com` direct дал 000, через Opera — 404;
-превью должны идти тем же слотом, что и видео.
+Наблюдение: `youtubeIps=8`, `telegramIps=16`; Telegram IP уже матчится
+CIDR-правилом и уходит в `cfproxy`. Часть YouTube IP (`142.251.x`) всё ещё
+попадает в `primary`: Opera-CONNECT на голый IP не всегда проходит. Доменные
+`youtube.com`/`googlevideo.com` идут в `secondary` корректно.
 
 ## 2026-11-02 — lint: 0 errors
 

@@ -19,6 +19,8 @@ class RoutingListsSnapshot(
     private val cloudflareIps: Set<String> = emptySet(),
     private val cloudflareRanges: List<Ipv4Range> = emptyList(),
     private val localTlds: Set<String> = RoutingPolicy.LOCAL_TLDS,
+    private val youtubeIps: List<String> = emptyList(),
+    private val telegramIps: List<String> = emptyList(),
 ) : RoutingLists {
 
     override fun inExclude(host: String) = exclude.contains(host)
@@ -47,6 +49,8 @@ class RoutingListsSnapshot(
     fun telegramDomains(): List<String> = telegram.domains()
     fun whatsappDomains(): List<String> = whatsapp.domains()
     fun discordDomains(): List<String> = discord.domains()
+    fun youtubeIps(): List<String> = youtubeIps
+    fun telegramIps(): List<String> = telegramIps
 
     companion object {
         val EMPTY = RoutingListsSnapshot()

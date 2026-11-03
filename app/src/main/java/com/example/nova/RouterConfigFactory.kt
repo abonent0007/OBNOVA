@@ -13,6 +13,10 @@ object RouterConfigFactory {
         val second: List<String> = emptyList(),
         val ai: List<String> = emptyList(),
         val youtube: List<String> = emptyList(),
+        /** IP-литералы YouTube/Google: Cronet обходит доменные правила. */
+        val youtubeIps: List<String> = emptyList(),
+        /** IP-литералы Telegram: MTProto часто идёт по IP. */
+        val telegramIps: List<String> = emptyList(),
         val telegram: List<String> = emptyList(),
         val whatsapp: List<String> = emptyList(),
         val discord: List<String> = emptyList(),
@@ -33,24 +37,50 @@ object RouterConfigFactory {
         primaryPort: Int,
         operaPort: Int = 0,
         spoofPort: Int = 0,
+        cfProxyPort: Int = 0,
     ): String {
         require(primaryPort in 1..65535) { "primaryPort вне диапазона: $primaryPort" }
         val opera = operaPort in 1..65535
         val spoof = spoofPort in 1..65535
+        val cfProxy = cfProxyPort in 1..65535
         val killSwitch = input.killSwitch
         val rules = mutableListOf<RouterConfig.RuleSpec>()
 
-        // Порядок как в PAC: exclude → локальные TLD → доменные списки.
+        // Порядок как в PAC: exclude → локальные TLD → AI/EU → YouTube →
+        // RU(main) → сервисные. IP-правила стоят до доменных: Cronet/YouTube
+        // приходит с IP-литералом и иначе падает в defaultOrder.
         if (input.exclude.isNotEmpty()) {
             rules += RouterConfig.RuleSpec(input.exclude, listOf("direct"), "exclude")
         }
         if (input.localTlds.isNotEmpty()) {
             rules += RouterConfig.RuleSpec(input.localTlds.toList(), listOf("direct"), "local-tld")
         }
-        add(rules, input.main, order("ru", input.overrides, opera, spoof, killSwitch), "ru")
-        add(rules, input.second, order("eu", input.overrides, opera, spoof, killSwitch), "eu")
         add(rules, input.ai, order("ai", input.overrides, opera, spoof, killSwitch), "ai")
+        add(rules, input.second, order("eu", input.overrides, opera, spoof, killSwitch), "eu")
+        if (input.youtubeIps.isNotEmpty()) {
+            rules += RouterConfig.RuleSpec(
+                domains = emptyList(),
+                order = order("youtube", input.overrides, opera, spoof, killSwitch),
+                name = "youtube-ip",
+                cidrs = input.youtubeIps,
+            )
+        }
+        if (input.telegramIps.isNotEmpty()) {
+            val baseTelegramOrder = order("telegram", input.overrides, opera, spoof, killSwitch)
+            val telegramIpOrder = if (cfProxy && input.overrides["telegram"] == null) {
+                listOf("cfproxy") + baseTelegramOrder
+            } else {
+                baseTelegramOrder
+            }
+            rules += RouterConfig.RuleSpec(
+                domains = emptyList(),
+                order = telegramIpOrder,
+                name = "telegram-ip",
+                cidrs = input.telegramIps,
+            )
+        }
         add(rules, input.youtube, order("youtube", input.overrides, opera, spoof, killSwitch), "youtube")
+        add(rules, input.main, order("ru", input.overrides, opera, spoof, killSwitch), "ru")
         add(rules, input.telegram, order("telegram", input.overrides, opera, spoof, killSwitch), "telegram")
         add(rules, input.whatsapp, order("whatsapp", input.overrides, opera, spoof, killSwitch), "whatsapp")
         add(rules, input.discord, order("discord", input.overrides, opera, spoof, killSwitch), "discord")
@@ -64,6 +94,9 @@ object RouterConfigFactory {
         }
         if (opera) {
             slots["secondary"] = RouterConfig.SlotSpec("http", "127.0.0.1:$operaPort")
+        }
+        if (cfProxy) {
+            slots["cfproxy"] = RouterConfig.SlotSpec("socks5", "127.0.0.1:$cfProxyPort")
         }
 
         return RouterConfig.build(

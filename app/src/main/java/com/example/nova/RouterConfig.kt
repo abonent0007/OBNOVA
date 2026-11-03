@@ -15,6 +15,7 @@ object RouterConfig {
         val domains: List<String>,
         val order: List<String>,
         val name: String = "",
+        val cidrs: List<String> = emptyList(),
     )
 
     fun build(
@@ -48,7 +49,16 @@ object RouterConfig {
                 if (dIndex > 0) json.append(',')
                 json.append('"').append(escape(domain)).append('"')
             }
-            json.append("],\"order\":[")
+            json.append(']')
+            if (rule.cidrs.isNotEmpty()) {
+                json.append(",\"cidrs\":[")
+                rule.cidrs.forEachIndexed { cIndex, cidr ->
+                    if (cIndex > 0) json.append(',')
+                    json.append('"').append(escape(cidr)).append('"')
+                }
+                json.append(']')
+            }
+            json.append(",\"order\":[")
             rule.order.forEachIndexed { oIndex, slot ->
                 if (oIndex > 0) json.append(',')
                 json.append('"').append(escape(slot)).append('"')

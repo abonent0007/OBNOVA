@@ -47,6 +47,8 @@ object ListRepository {
                 discord = domains(app, "discord.txt"),
                 cloudflareRanges = ranges(app, "cloudflare_ips.txt"),
                 localTlds = tlds(app),
+                youtubeIps = cidrs(app, "youtube_ips.txt", "youtube.txt"),
+                telegramIps = cidrs(app, "telegram_ips.txt", "telegram.txt"),
             )
             snapshot = loaded
             snapshotSignature = signature
@@ -100,6 +102,26 @@ object ListRepository {
         val local = File(context.filesDir, "$ROUTING_DIR/$name")
         if (!local.exists()) return null
         return runCatching { local.readLines() }.getOrNull()
+    }
+
+    /**
+     * CIDR-список: сначала локальная синхронизированная копия, затем
+     * встроенный `assets/ip/<assetName>`. Возвращаем исходные строки, чтобы
+     * `RouterConfigFactory` отдал их Go-роутеру без потери префикса.
+     */
+    private fun cidrs(context: Context, localName: String, assetName: String): List<String> {
+        val local = readLocal(context, localName)
+        val fromLocal = local?.mapNotNull(::validCidr).orEmpty()
+        if (fromLocal.isNotEmpty()) return fromLocal
+        return runCatching {
+            context.assets.open("ip/$assetName").bufferedReader().use { it.readLines() }
+        }.getOrDefault(emptyList()).mapNotNull(::validCidr)
+    }
+
+    private fun validCidr(raw: String): String? {
+        val line = raw.substringBefore('#').trim()
+        if (line.isEmpty()) return null
+        return line.takeIf { Ipv4Range.parse(it) != null }
     }
 
     private fun assetLines(context: Context, name: String): List<String> =
