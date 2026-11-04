@@ -1,0 +1,896 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#04070D"
+    android:clipChildren="false"
+    android:clipToPadding="false"
+    tools:context=".MainActivity">
+
+    <com.example.nova.BackdropRevealImageView
+        android:id="@+id/iv_background_art"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="centerCrop"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.example.nova.NovaNetworkBackgroundView
+        android:id="@+id/nova_background_animation"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.example.nova.MatrixRainView
+        android:id="@+id/matrix_rain"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <com.example.nova.TronRingsView
+        android:id="@+id/tron_backdrop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!--
+        Граница колонок горизонтальной раскладки (`MainActivity.applyOrientationLayout`):
+        слева статус и кнопка, справа селектор, адреса и пинг. В портрете к ней
+        ничего не привязано.
+    -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guide_main_split"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.62" />
+
+    <!-- Правая граница колонки микро-лога в горизонтали; в портрете не используется. -->
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guide_main_log"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        app:layout_constraintGuide_percent="0.25" />
+
+    <!--
+        Status Text.
+
+        Отступы — поле под ореол букв (`StrokeTextView.fittedBlurRadius`); нижний
+        вместе с отступом до кнопки держит прежнее расстояние статус — кнопка. Микро-лог стоит над статусом (в горизонтали — колонкой слева),
+        а не между статусом и кнопкой: строки и бегущие точки над кнопкой читались
+        как часть кнопки, а «...» — как сломанный текст.
+    -->
+    <com.example.nova.StrokeTextView
+        android:id="@+id/tvStatus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:text="НЕ ПОДКЛЮЧЕНО"
+        android:textColor="#C62828"
+        android:textSize="16sp"
+        android:fontFamily="sans-serif-black"
+        android:textStyle="bold"
+        android:letterSpacing="0.082"
+        android:breakStrategy="balanced"
+        android:paddingTop="44dp"
+        android:paddingBottom="60dp"
+        android:layout_marginBottom="48dp"
+        app:layout_constraintBottom_toTopOf="@+id/btnConnect"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!--
+        Предупреждение под состоянием: DNS-канал измеренно держит 380/42 кбит/с,
+        и человек, ждущий от него обычной скорости, решит, что приложение
+        сломалось. Текст лежит ВНУТРИ нижнего отступа tvStatus, поэтому цепочка
+        ограничений ниже не сдвигается вовсе.
+    -->
+    <TextView
+        android:id="@+id/tv_dns_mode_notice"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:layout_marginBottom="30dp"
+        android:textColor="#CFE1F2"
+        android:alpha="0.82"
+        android:textSize="12sp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/tvStatus"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!--
+        Микро-лог: что сейчас происходит при подключении. Один контейнер, чтобы
+        раскладка переставляла его целиком: в портрете — над статусом, в
+        горизонтали — колонкой слева от статуса (`MainActivity.applyOrientationLayout`).
+        Порядок строк — от общего к частному: какой транспорт работает вместо
+        выбранного, выпуск профилей, номер попытки и бегущие точки ожидания.
+    -->
+    <LinearLayout
+        android:id="@+id/ll_micro_log"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        app:layout_constraintBottom_toTopOf="@+id/tvStatus"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent">
+
+        <!--
+            Фоновое событие: выпуск и обновление профилей Proton с шагом и итогом
+            (`MainActivity.renderMicroEvent`).
+        -->
+        <TextView
+            android:id="@+id/tv_micro_event"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2"
+            android:saveEnabled="false"
+            android:text=""
+            android:textColor="#9FD8FF"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <!-- Пояснение, когда работает не тот транспорт, который выбрал пользователь -->
+        <TextView
+            android:id="@+id/tv_transport_notice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="3"
+            android:saveEnabled="false"
+            android:text=""
+            android:textColor="#FFC46B"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <!--
+            Выпуск личных профилей Cloudflare. Отдельная строка, а не
+            `tvAttemptProgress`: тот занят счётчиком перебора и шагом выпуска
+            Proton. Выпуск идёт в процессе `:vpn`, поэтому текст берётся из файла
+            `warp_generated_state.json`, а не из синглтона (I2).
+        -->
+        <TextView
+            android:id="@+id/tv_profile_issue_progress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2"
+            android:saveEnabled="false"
+            android:text=""
+            android:textColor="#7EEA87"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tvAttemptProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:gravity="center"
+            android:maxLines="2"
+            android:text=""
+            android:textColor="#C8D4FF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:visibility="invisible" />
+
+        <com.example.nova.SlidingDotsIndicatorView
+            android:id="@+id/restricted_mobile_dots"
+            android:layout_width="74dp"
+            android:layout_height="11dp"
+            android:layout_marginTop="6dp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Main Button (Geometric Center) -->
+    <com.example.nova.GlowPillButton
+        android:id="@+id/btnConnect"
+        android:layout_width="236dp" 
+        android:layout_height="68dp"
+        android:text="ПОДКЛЮЧИТЬ"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#000000"
+        android:fontFamily="sans-serif-black"
+        android:letterSpacing="0.02"
+        android:shadowColor="#80FFFFFF"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="12"
+        android:stateListAnimator="@null"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.62"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!--
+        Подпись над кнопкой «&gt;». Без неё стрелка ничего не сообщала: на
+        устройстве её принимали за «вперёд» вообще. Видимость подписи обязана
+        меняться там же, где видимость самой кнопки, — иначе «след. профиль»
+        повисает над пустым местом.
+
+        Подпись шире кнопки, поэтому она выровнена по её правому краю, а не по
+        центру: по центру она уходила за край экрана в портрете и на чипы
+        селектора в горизонтали.
+    -->
+    <TextView
+        android:id="@+id/tv_next_profile_caption"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="2dp"
+        android:gravity="center"
+        android:text="след. профиль"
+        android:textColor="#B9C4D6"
+        android:textSize="10sp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toTopOf="@+id/btnNextProfile"
+        app:layout_constraintEnd_toEndOf="@+id/btnNextProfile" />
+
+    <com.example.nova.GlowPillButton
+        android:id="@+id/btnNextProfile"
+        android:layout_width="68dp"
+        android:layout_height="68dp"
+        android:text="&gt;"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:textColor="#000000"
+        android:fontFamily="sans-serif-black"
+        android:letterSpacing="0.02"
+        android:shadowColor="#80FFFFFF"
+        android:shadowDx="0"
+        android:shadowDy="0"
+        android:shadowRadius="12"
+        android:stateListAnimator="@null"
+        app:layout_constraintBottom_toBottomOf="@id/btnConnect"
+        app:layout_constraintTop_toTopOf="@id/btnConnect"
+        app:layout_constraintStart_toEndOf="@id/btnConnect"
+        app:layout_constraintEnd_toEndOf="parent" />
+
+    <!--
+        Плашка обновления. Вверху справа, а не под главной кнопкой: под кнопкой она
+        оттягивала внимание от единственного действия, ради которого экран открывают.
+    -->
+    <com.example.nova.UpdateChipView
+        android:id="@+id/btn_install_update"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:layout_marginEnd="2dp"
+        android:clipChildren="false"
+        android:clipToPadding="false"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="25dp"
+        android:paddingTop="22dp"
+        android:paddingEnd="27dp"
+        android:paddingBottom="22dp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <ImageView
+            android:id="@+id/iv_update_icon"
+            android:layout_width="19dp"
+            android:layout_height="19dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_update_chrome" />
+
+        <!--
+            Две строки, а не одна: во время загрузки на первой стоит статус, на
+            второй — проценты и единственное доступное действие. Вторая строка
+            скрыта, пока показывать в ней нечего, поэтому в покое плашка остаётся
+            прежней однострочной капсулой.
+        -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_update_caption"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.01"
+                android:text="Обновить"
+                android:textColor="#A9F2BF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_update_progress"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:letterSpacing="0.02"
+                android:textColor="#FFD166"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+    </com.example.nova.UpdateChipView>
+
+    <!-- Latency Label (Above Graph, Right side) -->
+    <TextView
+        android:id="@+id/tv_internet_label"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:gravity="end"
+        android:lineSpacingExtra="2dp"
+        android:text="Ping:&#10;---"
+        android:textColor="#FFFFFF"
+        android:shadowColor="#000000"
+        android:shadowDx="2"
+        android:shadowDy="2"
+        android:shadowRadius="4"
+        android:textSize="14sp"
+        android:layout_marginTop="0dp"
+        android:layout_marginEnd="8dp"
+        app:layout_constraintTop_toTopOf="@+id/btn_settings"
+        app:layout_constraintEnd_toStartOf="@+id/btn_settings" />
+
+    <TextView
+        android:id="@+id/tv_country_badge"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:saveEnabled="false"
+        android:layout_marginBottom="2dp"
+        android:background="@drawable/bg_country_badge"
+        android:paddingStart="10dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="6dp"
+        android:text="WARP: --"
+        android:textAllCaps="true"
+        android:textColor="#FFFFFF"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        android:layout_marginTop="10dp"
+        android:layout_marginEnd="0dp"
+        app:layout_constraintTop_toBottomOf="@+id/btn_settings"
+        app:layout_constraintEnd_toEndOf="@+id/btn_settings" />
+
+    <!--
+        Выбор протокола/региона прямо на главном экране.
+
+        Идентификаторы кнопок обязаны совпадать с `ConnectionSelectorPolicy.BUTTON_IDS`
+        и с одноимёнными кнопками в activity_settings.xml: оба экрана собирают
+        группу одним и тем же кодом, и порядок берут оттуда же. Разметки разные,
+        поэтому совпадение имён никого не путает — `findViewById` ищет в дереве
+        своего экрана.
+
+        Три смысловые полосы вместо прокручиваемой ленты: сначала всё, что идёт
+        через Cloudflare, потом зарубежные VPN, потом Tor. Разбиение задаёт
+        `ConnectionSelectorPolicy.ROWS`, а не разметка, — оно смысловое, и по
+        ширине его не восстановить. Прокрутка убрана намеренно: скрытая за краем
+        кнопка читается как отсутствующая.
+
+        Все шесть кнопок обязаны остаться **прямыми** детьми одной группы.
+        `RadioGroup` следит за взаимным исключением только у прямых детей, а
+        `check()` находит кнопку по всему дереву — вложенные строки дали бы две
+        зажжённые кнопки сразу и нажатия, которые ничего не делают (G95).
+    -->
+    <LinearLayout
+        android:id="@+id/sv_exit_region_main"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="12dp"
+        android:orientation="vertical"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnConnect"
+        app:layout_constraintBottom_toTopOf="@+id/btn_language"
+        app:layout_constraintVertical_bias="0">
+
+        <!--
+            Каждая полоса — ровно та, что назвал план; не поместившееся уезжает
+            вбок и прокручивается пальцем или пультом, а не переносится на
+            четвёртую строку. Прокрутка одна на все три полосы намеренно: три
+            независимых `HorizontalScrollView` разорвали бы группу, а `RadioGroup`
+            следит за единственным выбором только у **прямых** детей.
+        -->
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/bg_dock_panel"
+            android:fillViewport="true"
+            android:paddingStart="8dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp"
+            android:scrollbars="none">
+
+        <com.example.nova.FlowRadioGroup
+            android:id="@+id/rg_exit_region"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:orientation="horizontal">
+
+            <com.example.nova.DockRadioButton
+                android:id="@+id/rb_exit_auto"
+                style="@style/NovaDockChip"
+                android:text="AUTO"
+                app:dockIcon="@drawable/ic_node_auto" />
+
+            <com.example.nova.DockRadioButton
+                android:id="@+id/rb_exit_ru"
+                style="@style/NovaDockChip"
+                android:text="WARP"
+                app:dockIcon="@drawable/ic_node_warp" />
+
+            <com.example.nova.DockRadioButton
+                android:id="@+id/rb_exit_masque"
+                style="@style/NovaDockChip"
+                android:text="MASQUE"
+                app:dockIcon="@drawable/ic_node_masque" />
+
+            <com.example.nova.DockRadioButton
+                android:id="@+id/rb_exit_opera"
+                style="@style/NovaDockChip"
+                android:text="OPERA"
+                app:dockIcon="@drawable/ic_node_opera" />
+
+            <com.example.nova.DockRadioButton
+                android:id="@+id/rb_exit_proton"
+                style="@style/NovaDockChip"
+                android:text="PROTON"
+                app:dockIcon="@drawable/ic_node_proton" />
+
+            <com.example.nova.DockRadioButton
+                android:id="@+id/rb_exit_tor"
+                style="@style/NovaDockChip"
+                android:text="TOR"
+                app:dockIcon="@drawable/ic_node_tor" />
+
+            <com.example.nova.DockRadioButton
+                android:id="@+id/rb_exit_dns"
+                style="@style/NovaDockChip"
+                android:text="DNS"
+                app:dockIcon="@drawable/ic_node_dns" />
+        </com.example.nova.FlowRadioGroup>
+        </HorizontalScrollView>
+
+        <!--
+            Четвёртая строка: подрегион уже выбранного транспорта. Для OPERA это
+            «Регион: EU US», для PROTON — список стран, которые реально есть в
+            выпущенных профилях. Кнопки создаёт код: их число переменное.
+        -->
+        <LinearLayout
+            android:id="@+id/ll_exit_sub_region"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_dock_panel"
+            android:gravity="center_vertical|start"
+            android:orientation="horizontal"
+            android:paddingStart="8dp"
+            android:paddingTop="4dp"
+            android:paddingEnd="8dp"
+            android:paddingBottom="4dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tv_exit_sub_region_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="Регион:"
+                android:textColor="#B9C4D6"
+                android:textSize="11sp" />
+
+            <!--
+                Подсказка про системный «Частный DNS», и стоит она именно здесь —
+                рядом с выбором входа в Tor, а не в общей строке под селектором.
+                Причина простая: с включённым строгим DoT ни одно имя не
+                открывается вовсе, то есть выбирать вход бессмысленно, пока это
+                не выключено. Нажатие открывает объяснение целиком.
+            -->
+            <TextView
+                android:id="@+id/tv_exit_dot_hint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/bg_region_chip"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:maxLines="1"
+                android:paddingStart="10dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="4dp"
+                android:text="Отключите DoT"
+                android:textColor="#FFD166"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
+            <!--
+                Стран у Proton бывает десять, и в ширину они не помещаются. Список
+                прокручивается вбок, а не переносится: четвёртая полоса обязана
+                остаться одной полосой.
+            -->
+            <!--
+                Ширина по содержимому, без веса: с весом полоса занимала всю
+                оставшуюся ширину и подпись «Регион:» уезжала к левому краю, а
+                кнопки оставались посередине — пара переставала читаться как одна
+                строка. `wrap_content` внутри `match_parent` всё равно обрезается
+                мерной спецификацией родителя, и прокрутка при переполнении
+                остаётся.
+            -->
+            <HorizontalScrollView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:scrollbars="none">
+
+                <com.example.nova.FlowRadioGroup
+                    android:id="@+id/rg_exit_sub_region"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="center_vertical"
+                    android:orientation="horizontal" />
+            </HorizontalScrollView>
+        </LinearLayout>
+    </LinearLayout>
+
+    <!--
+        Строка под селектором: причина запрета, статус выпуска Proton, состояние
+        Tor. Скрыта, пока сказать нечего — пустая строка отнимала бы место у
+        кнопки подключения.
+
+        Кнопки «Конфигурации» здесь больше нет: владелец попросил её убрать.
+        Единственный вход в тот экран теперь — гамбургер в правом верхнем углу.
+    -->
+    <TextView
+        android:id="@+id/tv_exit_last"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:background="@drawable/bg_dock_panel"
+        android:gravity="center"
+        android:paddingStart="8dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="8dp"
+        android:paddingBottom="6dp"
+        android:textColor="#B9C4D6"
+        android:textSize="12sp"
+        android:visibility="gone"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/sv_exit_region_main" />
+
+    <!-- Settings Button: SVG hamburger in the top-right corner. -->
+    <ImageButton
+        android:id="@+id/btn_settings"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:layout_marginTop="0dp"
+        android:layout_marginEnd="12dp"
+        android:background="@drawable/bg_icon_button"
+        android:contentDescription="Настройки"
+        android:padding="4dp"
+        android:scaleType="centerInside"
+        android:src="@drawable/ic_menu_hamburger"
+        app:tint="#DFFFE7"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!--
+        Язык интерфейса — внизу слева, той же капсулой: SVG-глобус и код
+        выбранного языка. Нажатие открывает список языков; выбор применяется
+        сразу, без перезапуска.
+    -->
+    <TextView
+        android:id="@+id/btn_language"
+        android:layout_width="wrap_content"
+        android:layout_height="38dp"
+        android:layout_marginStart="0dp"
+        android:layout_marginBottom="2dp"
+        android:background="@drawable/bg_settings_button"
+        android:clickable="true"
+        android:drawableStart="@drawable/ic_globe"
+        android:drawablePadding="6dp"
+        android:drawableTint="#DFFFE7"
+        android:focusable="true"
+        android:gravity="center"
+        android:minWidth="64dp"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:text="RU"
+        android:textColor="#FFFFFF"
+        android:textSize="13sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toTopOf="@+id/tv_version"
+        app:layout_constraintStart_toStartOf="@+id/graph_latency" />
+
+    <!--
+        Строка адресов не заходит на пинг справа: ширина — по содержимому, но не дальше
+        левого края подписи «Ping» (`constrainedWidth`). Длинный IPv6 без нажатия
+        обрезается многоточием; раскрытый нажатием адрес показывается целиком и при
+        нехватке места сжимается по ширине (`MainActivity.fitIpAddressToPing`).
+    -->
+    <LinearLayout
+        android:id="@+id/ll_ip_row"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:layout_marginEnd="8dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintEnd_toStartOf="@+id/tv_internet_label"
+        app:layout_constraintHorizontal_bias="0"
+        app:layout_constraintStart_toStartOf="@+id/graph_latency">
+
+        <TextView
+            android:id="@+id/tv_ip_address"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:saveEnabled="false"
+            android:background="@drawable/bg_ip_label"
+            android:ellipsize="end"
+            android:gravity="start"
+            android:lineSpacingExtra="2dp"
+            android:maxLines="2"
+            android:minLines="2"
+            android:text="...&#10;..."
+            android:textColor="#50C878"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Latency Graph (Bottom) -->
+    <com.example.nova.LatencyGraphView
+        android:id="@+id/graph_latency"
+        android:layout_width="0dp"
+        android:layout_height="64dp"
+        android:layout_marginTop="8dp"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:background="@drawable/bg_latency_graph"
+        app:layout_constraintTop_toBottomOf="@+id/ll_ip_row"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent" />
+
+    <!--
+        Пояснение вместо пинга в режиме DNS.
+
+        Лежит ровно поверх шкалы, а не вместо неё: `graph_latency` держит на себе
+        и строку адресов сверху, и версию снизу, и если убрать его в `gone`, обе
+        уедут к краю экрана. Шкала в этом режиме остаётся пустой рамкой, внутри
+        которой и стоит текст.
+    -->
+    <TextView
+        android:id="@+id/tv_dns_ping_notice"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:gravity="center"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:saveEnabled="false"
+        android:textColor="#CFE1F2"
+        android:textSize="11sp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="@+id/graph_latency"
+        app:layout_constraintEnd_toEndOf="@+id/graph_latency"
+        app:layout_constraintStart_toStartOf="@+id/graph_latency"
+        app:layout_constraintTop_toTopOf="@+id/graph_latency" />
+
+    <TextView
+        android:id="@+id/tv_version"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="6dp"
+        android:layout_marginBottom="0dp"
+        android:text="v1.12"
+        android:textColor="#50C878"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="@+id/graph_latency" />
+
+    <!--
+        Лёд кладётся ПОСЛЕДНИМ ребёнком намеренно: он обязан лежать поверх всего,
+        иначе намерзает не на интерфейс, а под него. Касания сквозь него проходят
+        (см. FrostOverlayView.onTouchEvent).
+    -->
+    <com.example.nova.FrostOverlayView
+        android:id="@+id/frost_overlay"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:clickable="false"
+        android:focusable="false"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <!--
+        Верхнее информационное уведомление (выбор узла, переключение VPN).
+        Лежит поверх льда и не перехватывает касания: это короткая плашка,
+        которая не должна сдвигать IP/график и не должна уезжать вниз, как
+        системный Toast.
+    -->
+    <TextView
+        android:id="@+id/tv_top_notice"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="0dp"
+        android:layout_marginEnd="64dp"
+        android:background="@drawable/bg_top_notice"
+        android:clickable="false"
+        android:elevation="12dp"
+        android:focusable="false"
+        android:gravity="center"
+        android:accessibilityLiveRegion="polite"
+        android:maxLines="2"
+        android:ellipsize="end"
+        android:paddingStart="16dp"
+        android:paddingTop="5dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="5dp"
+        android:textColor="#DFFFE7"
+        android:textSize="12sp"
+        android:textStyle="bold"
+        android:visibility="gone"
+        app:layout_constrainedWidth="true"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.5"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+    <View
+        android:id="@+id/drawer_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#99000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="20dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+    <LinearLayout
+        android:id="@+id/drawer_panel"
+        android:layout_width="300dp"
+        android:layout_height="match_parent"
+        android:background="#F20B0F0C"
+        android:elevation="24dp"
+        android:orientation="vertical"
+        android:paddingStart="20dp"
+        android:paddingTop="56dp"
+        android:paddingEnd="20dp"
+        android:paddingBottom="24dp"
+        android:visibility="gone"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toTopOf="parent">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="NOVA"
+            android:textColor="#DFFFE7"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.18" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:layout_marginBottom="24dp"
+            android:text="маршруты и слоты"
+            android:textColor="#7FA98C"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/drawer_routes"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Маршруты"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/drawer_slots"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Слоты"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/drawer_strategy"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Стратегии"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/drawer_diagnostics"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Диагностика"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <TextView
+            android:id="@+id/drawer_logs"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Журналы"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:background="#1F2E23" />
+
+        <TextView
+            android:id="@+id/drawer_settings"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:gravity="center_vertical"
+            android:text="Настройки"
+            android:textColor="#DFFFE7"
+            android:textSize="17sp" />
+
+    </LinearLayout>
+
+</androidx.constraintlayout.widget.ConstraintLayout>

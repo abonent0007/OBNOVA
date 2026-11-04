@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.Nova" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Виды разметки переводят свой текст при показе (NovaLanguage, NovaViewInflater). -->
+        <item name="viewInflaterClass">com.example.nova.NovaViewInflater</item>
+        <!-- Primary brand color. -->
+        <item name="colorPrimary">#04070D</item>
+        <item name="colorPrimaryVariant">#04070D</item>
+        <item name="colorOnPrimary">@color/white</item>
+        <!-- Secondary brand color. -->
+        <item name="colorSecondary">#0D1118</item>
+        <item name="colorSecondaryVariant">#0D1118</item>
+        <item name="colorOnSecondary">@color/black</item>
+        <!-- Status bar color. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowTranslucentStatus">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowContentTransitions">false</item>
+        <item name="android:windowEnterTransition">@null</item>
+        <item name="android:windowExitTransition">@null</item>
+        <item name="android:windowReenterTransition">@null</item>
+        <item name="android:windowReturnTransition">@null</item>
+        <item name="android:activityOpenEnterAnimation">@anim/no_anim</item>
+        <item name="android:activityOpenExitAnimation">@anim/no_anim</item>
+        <item name="android:activityCloseEnterAnimation">@anim/no_anim</item>
+        <item name="android:activityCloseExitAnimation">@anim/no_anim</item>
+    </style>
+    
+    <!-- Settings Dialog Theme - Liquid Glass Aesthetic -->
+    <style name="Theme.Nova.Settings" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Виды разметки переводят свой текст при показе (NovaLanguage, NovaViewInflater). -->
+        <item name="viewInflaterClass">com.example.nova.NovaViewInflater</item>
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:windowContentTransitions">false</item>
+        <item name="android:windowEnterTransition">@null</item>
+        <item name="android:windowExitTransition">@null</item>
+        <item name="android:windowReenterTransition">@null</item>
+        <item name="android:windowReturnTransition">@null</item>
+        <!--
+            Умолчания словаря темы (values/attrs_nova_theme.xml). Совпадают с
+            «Aurora mint» — ближайшей к прежнему виду из семи. Нужны отдельно от
+            themes_nova.xml, чтобы экран, которому тему забыли поставить, получил
+            рабочую палитру, а не нули: атрибут без значения — это не «серый по
+            умолчанию», это исключение при раздувании разметки.
+        -->
+        <item name="android:windowBackground">@drawable/bg_nova_screen_aurora</item>
+        <item name="novaCardBackground">@drawable/bg_nova_card_aurora</item>
+        <item name="novaFieldBackground">@drawable/bg_nova_field_aurora</item>
+        <item name="novaDialogButton">@drawable/bg_nova_dialog_button_aurora</item>
+        <item name="novaDialogButtonPrimary">@drawable/bg_nova_dialog_button_primary_aurora</item>
+        <item name="android:alertDialogTheme">@style/Theme.Nova.Dialog.Auroramint</item>
+        <item name="alertDialogTheme">@style/Theme.Nova.Dialog.Auroramint</item>
+        <item name="colorAccent">@color/nova_aurora_accent</item>
+        <item name="android:colorAccent">@color/nova_aurora_accent</item>
+        <item name="colorControlActivated">@color/nova_aurora_accent</item>
+        <item name="android:colorControlActivated">@color/nova_aurora_accent</item>
+        <item name="colorControlNormal">@color/nova_aurora_text_value</item>
+        <item name="android:colorControlNormal">@color/nova_aurora_text_value</item>
+        <item name="android:textColorHint">@color/nova_aurora_text_hint</item>
+        <item name="novaAccent">@color/nova_aurora_accent</item>
+        <item name="novaAccentDim">@color/nova_aurora_accent_dim</item>
+        <item name="novaAccentOn">@color/nova_aurora_accent_on</item>
+        <item name="novaSeparator">@color/nova_aurora_separator</item>
+        <item name="novaTextGroupFrom">@color/nova_aurora_group_from</item>
+        <item name="novaTextGroupTo">@color/nova_aurora_group_to</item>
+        <item name="novaTextTitle">@color/nova_aurora_text_title</item>
+        <item name="novaTextValue">@color/nova_aurora_text_value</item>
+        <item name="novaTextHint">@color/nova_aurora_text_hint</item>
+        <item name="novaSwitchOn">@color/nova_aurora_switch_on</item>
+        <item name="novaSwitchOff">@color/nova_aurora_switch_off</item>
+        <item name="novaSwitchThumbOn">@color/nova_aurora_thumb_on</item>
+        <item name="novaSwitchThumbOff">@color/nova_aurora_thumb_off</item>
+        <item name="novaIconTint">@color/nova_aurora_icon_tint</item>
+        <item name="novaCardFill">@color/nova_aurora_card_fill</item>
+        <item name="novaCardStroke">@color/nova_aurora_card_stroke</item>
+        <item name="switchStyle">@style/LiquidGlassSwitch</item>
+        <item name="android:switchStyle">@style/LiquidGlassSwitch</item>
+        <item name="android:activityOpenEnterAnimation">@anim/no_anim</item>
+        <item name="android:activityOpenExitAnimation">@anim/no_anim</item>
+        <item name="android:activityCloseEnterAnimation">@anim/no_anim</item>
+        <item name="android:activityCloseExitAnimation">@anim/no_anim</item>
+    </style>
+
+    <!--
+        Переключатель задан целиком своими размерами и своими состояниями.
+
+        Так он выглядел раньше: крупный и без подписи. Обновление appcompat до
+        1.7.0 и material до 1.12.0 в этой серии поменяло умолчания библиотеки —
+        переключатели стали мелкими, а внутри бегунка появилось «ВКЛ»/«ВЫКЛ».
+        Полагаться на умолчания больше нельзя: следующая версия поменяет их снова.
+        `showText` выключен в обоих пространствах имён, потому что `<Switch>` в
+        разметке разворачивается в `SwitchCompat`, и он читает атрибут без
+        префикса `android:`, а платформенный `Switch` — с префиксом.
+    -->
+    <style name="LiquidGlassSwitch" parent="Widget.MaterialComponents.CompoundButton.Switch">
+        <item name="android:thumb">@drawable/switch_thumb_liquid</item>
+        <item name="track">@drawable/switch_track_liquid</item>
+        <item name="android:track">@drawable/switch_track_liquid</item>
+        <item name="thumbTint">@color/switch_thumb_tint_liquid</item>
+        <item name="android:thumbTint">@color/switch_thumb_tint_liquid</item>
+        <item name="trackTint">@color/switch_track_tint_liquid</item>
+        <item name="android:trackTint">@color/switch_track_tint_liquid</item>
+        <item name="showText">false</item>
+        <item name="android:showText">false</item>
+        <item name="android:textOn"></item>
+        <item name="android:textOff"></item>
+        <item name="android:switchMinWidth">52dp</item>
+        <item name="android:minWidth">52dp</item>
+        <item name="android:minHeight">29dp</item>
+        <item name="android:thumbTextPadding">0dp</item>
+        <item name="android:background">@null</item>
+    </style>
+
+    <!--
+        Кнопка селектора протокола/региона на главном экране.
+
+        Кружок радиокнопки убран (`android:button="@null"`), а выбор показывает
+        обводка — та же зелёная рамка, что у бейджа страны (`bg_region_chip.xml`).
+        Так попросил владелец, и заодно это снимает старую жалобу: кружок с
+        подписью не читался как одна кнопка.
+
+        Отступы больше не нулевые: рамка вокруг текста без внутреннего поля
+        упирается в буквы. Внешний отступ снизу нужен трём полосам — без него
+        строки слипаются.
+    -->
+    <style name="NovaMainRegionChip">
+        <item name="android:layout_width">wrap_content</item>
+        <!--
+            Высота фиксирована, а не `wrap_content`. Так попросил владелец, и это
+            же снимает мелкую неровность: подпись «MASQUE» выше подписи «EU» на
+            пару пикселей, и ряды выглядели ступенькой. Фиксированная высота
+            заодно делает форму предсказуемо овальной — радиус скругления в
+            `bg_region_chip.xml` равен её половине.
+        -->
+        <item name="android:layout_height">36dp</item>
+        <item name="android:layout_marginEnd">8dp</item>
+        <item name="android:layout_marginBottom">5dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:button">@null</item>
+        <item name="android:background">@drawable/bg_region_chip</item>
+        <item name="android:gravity">center</item>
+        <item name="android:minWidth">72dp</item>
+        <item name="android:paddingStart">14dp</item>
+        <item name="android:paddingEnd">14dp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!--
+        Кнопка канала в dock-режиме главного экрана.
+
+        В покое это точка; подпись рисует сам DockRadioButton над точкой, когда
+        палец/курсор приближается. Ширина фиксирована, чтобы появление подписи
+        не двигало соседние точки. 44dp × 56dp — компромисс: семь точек
+        помещаются в ряд на типичной 360dp-ширине, а «MASQUE»/«PROTON» влезают
+        в подпись без обрезки.
+    -->
+    <style name="NovaDockChip" parent="NovaMainRegionChip">
+        <item name="android:layout_width">44dp</item>
+        <item name="android:layout_height">56dp</item>
+        <item name="android:layout_marginEnd">1dp</item>
+        <item name="android:layout_marginBottom">0dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">0dp</item>
+        <item name="android:paddingEnd">0dp</item>
+        <item name="android:background">@null</item>
+        <item name="android:textSize">9sp</item>
+    </style>
+
+    <!--
+        Кнопка подрегиона в строке под селектором: «Регион: EU US» для Opera и
+        список стран для Proton. Высота та же, что у основной кнопки — владелец
+        попросил одинаковые; отличается только шириной, потому что подписи короче.
+    -->
+    <!--
+        Чип на экране «Оформление».
+
+        Тот же вид, что у выбора региона, но крупнее: там чипов шесть и они стоят
+        под большой кнопкой, а здесь их двадцать семь подряд, и в размере главного
+        экрана они читались как мелкая сыпь. Высота 44dp — тот же размер пальца,
+        что у строки настроек; радиус снова равен половине высоты, иначе форма
+        перестаёт быть овальной.
+    -->
+    <style name="NovaAppearanceChip" parent="NovaMainRegionChip">
+        <item name="android:layout_height">104dp</item>
+        <item name="android:layout_marginEnd">10dp</item>
+        <item name="android:layout_marginBottom">10dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:paddingStart">26dp</item>
+        <item name="android:paddingEnd">26dp</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:background">@drawable/bg_appearance_chip</item>
+    </style>
+
+    <style name="NovaSubRegionChip" parent="NovaMainRegionChip">
+        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:minWidth">52dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+    </style>
+</resources>

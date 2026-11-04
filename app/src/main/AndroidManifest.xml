@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Нужно только чтобы вернуть раздачу после перезагрузки, если её включил пользователь. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!--
+        Нужно, чтобы уведомление «Nova обновлена» могло само открыть экран.
+        Без этого разрешения полноэкранное намерение молча понижается до обычного
+        уведомления, и после самообновления приложение не запускается. На Android 14+
+        разрешение выдаётся не всем, поэтому уведомление остаётся запасным путём.
+    -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+
+    <uses-feature
+        android:name="android.hardware.touchscreen"
+        android:required="false" />
+    <uses-feature
+        android:name="android.software.leanback"
+        android:required="false" />
+
+    <application
+        android:allowBackup="false"
+        android:extractNativeLibs="true"
+        android:banner="@drawable/tv_app_banner"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:description="@string/app_description"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Nova"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="31">
+
+        <meta-data
+            android:name="com.example.nova.AUTHOR_NAME"
+            android:value="@string/app_author_name" />
+        <meta-data
+            android:name="com.example.nova.AUTHOR_CONTACT"
+            android:value="@string/app_author_contact" />
+        <meta-data
+            android:name="com.example.nova.COPYRIGHT"
+            android:value="@string/app_copyright" />
+        <meta-data
+            android:name="com.example.nova.PRODUCT_NAME"
+            android:value="@string/app_name" />
+        
+        <!--
+            В диагностической сборке главный экран выключен целиком: в лаунчере
+            остаётся один значок — «Nova диагностика». Иначе человек открывает
+            привычную иконку, падение случается до нашей строки перенаправления
+            (её выполняет `onCreate` уже после `super.onCreate`, а именно там и
+            разворачивается тема AppCompat), и он снова видит белый экран.
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:banner="@drawable/tv_app_banner"
+            android:configChanges="keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:enabled="${novaMainEnabled}"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        
+        <!--
+            Самодиагностика. Включается только сборкой с `-PnovaDiagnostics`; в
+            обычных сборках компонент выключен и в лаунчере не виден.
+
+            Всё здесь выбрано против одного и того же симптома — белого экрана.
+            Тема системная, а не `Theme.Nova`: экран рисуется, даже когда ломается
+            именно наша тема. Процесс `:diag` не поднимает провайдеров основного
+            процесса, поэтому открывается и при падении приложения на старте.
+            Аппаратное ускорение выключено: на прошивке с неисправным GPU-драйвером
+            остальные окна остаются белыми, а это — нет.
+        -->
+        <activity
+            android:name=".DiagnosticsActivity"
+            android:banner="@drawable/tv_app_banner"
+            android:enabled="${novaDiagnosticsEnabled}"
+            android:exported="true"
+            android:hardwareAccelerated="false"
+            android:label="Nova диагностика"
+            android:process=":diag"
+            android:theme="@android:style/Theme.Black.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            Провайдер создаётся до Application.onCreate, поэтому обработчик
+            падений успевает встать раньше кода, который падает.
+        -->
+        <provider
+            android:name=".DiagnosticsCrashCatcher"
+            android:authorities="${applicationId}.diagnostics"
+            android:enabled="${novaDiagnosticsEnabled}"
+            android:exported="false"
+            android:initOrder="1000" />
+
+        <activity
+            android:name=".SettingsActivity"
+            android:label="Настройки"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings"/>
+
+        <activity
+            android:name=".ParityScreenActivity"
+            android:label="OBNOVA"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".RoutesActivity"
+            android:label="Маршруты"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".SlotsActivity"
+            android:label="Слоты"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".DiagnosticsReportActivity"
+            android:label="Диагностика"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".StrategiesActivity"
+            android:label="Стратегии"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".DnsSettingsActivity"
+            android:label="Настройка DNS"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".SniMaskSettingsActivity"
+            android:label="SNI маскировка"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".ThemeSettingsActivity"
+            android:label="Оформление"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".TunnelMtuActivity"
+            android:label="MTU туннеля"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".BackgroundSettingsActivity"
+            android:label="Фон главного экрана"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".NotificationSettingsActivity"
+            android:exported="false"
+            android:label="Уведомление"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".DomainBypassActivity"
+            android:exported="false"
+            android:label="Обход по доменам"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".DirectFlowActivity"
+            android:exported="false"
+            android:label="Прямой поток"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".LogsActivity"
+            android:label="Логи"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".WarpConfigsActivity"
+            android:label="WARP конфигурации"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <activity
+            android:name=".LocalProxyActivity"
+            android:label="Раздача через Nova"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Nova.Settings" />
+
+        <service
+            android:name=".NovaVpnService"
+            android:process=":vpn"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse"
+            android:stopWithTask="false"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="VPN service for secure connectivity" />
+            <!--
+                Явно подтверждаем поддержку Always-on VPN. Без этой мета-даты
+                система считает поддержку включённой, но с ней Nova корректно
+                показывается в списке «Постоянный VPN» и переживает kill
+                силами самой ОС, а не только нашего AlarmManager.
+            -->
+            <meta-data
+                android:name="android.net.VpnService.SUPPORTS_ALWAYS_ON"
+                android:value="true" />
+        </service>
+
+        <!--
+            Служба tor объявлена ещё раз ради одного атрибута: она обязана жить в
+            том же процессе `:vpn`, что и туннель. В процессе приложения её
+            SOCKS-порт был бы недостижим для tun2proxy, а obfs4 из ядра Go живёт
+            именно здесь — оба конца цепочки должны быть в одном процессе.
+        -->
+        <service
+            android:name="org.torproject.jni.TorService"
+            android:process=":vpn"
+            android:exported="false" />
+
+        <service
+            android:name=".NovaTileService"
+            android:icon="@drawable/ic_qs_nova"
+            android:label="OBNOVA"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+            <meta-data android:name="android.service.quicksettings.SETTINGS_ACTIVITY"
+                android:value="com.example.nova.MainActivity" />
+        </service>
+
+        <receiver
+            android:name=".UpdateActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.DOWNLOAD_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            Виджет рабочего стола. `exported="true"` обязателен: нажатия приходят
+            от лаунчера, то есть из чужого процесса. Собственные действия виджета
+            адресованы по классу, поэтому чужое приложение их подделать не может,
+            а `VPN_STATE` уходит с `setPackage` — снаружи в этот фильтр не попасть.
+        -->
+        <receiver
+            android:name=".NovaWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.nova.VPN_STATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_nova_info" />
+        </receiver>
+
+        <!--
+            Кнопки уведомления. Не экспортирован намеренно: намерение приходит
+            только от нашего же уведомления, и давать чужим приложениям способ
+            погасить туннель одной посылкой незачем. Процесс не указан — значит
+            основной, а он тут обязателен: останов снимает признаки через
+            SharedPreferences, а они кэшируются попроцессно (I2).
+        -->
+        <receiver
+            android:name=".NovaNotificationActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.nova.notification.DISCONNECT" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".NovaBootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:directBootAware="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.brent.nova.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>

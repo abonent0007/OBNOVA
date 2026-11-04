@@ -1,0 +1,267 @@
+### Метаданные F-Droid для Nova.
+#
+# Это документированный оригинал. В форк fdroiddata уезжает копия без
+# комментариев: их полностью вычищает `fdroid rewritemeta`, а их CI сравнивает
+# свой прогон rewritemeta с файлом из merge request. Правим здесь, значения
+# переносим в metadata/com.brent.nova.yml форка.
+#
+# Подано: gitlab.com/fdroid/fdroiddata/-/merge_requests/46057, ветка
+# com.brent.nova в форке cryptolab.net/fdroiddata.
+#
+# ЛЮБОЙ ТЕГ в публичном репозитории обязан содержать:
+#   * settings.gradle.kts без плагина
+#     `org.gradle.toolchains.foojay-resolver-convention` — сканер F-Droid считает
+#     его «usual suspect» (плагин умеет докачивать JDK) и останавливает сборку;
+#   * каталог `fastlane/metadata/android/<локаль>/` — тексты каталог забирает из
+#     дерева собираемого тега, а не из ветки по умолчанию.
+# Тег из-за этого переставлялся; проверочные прогоны делались на нём.
+#
+# После слияния запись о новой версии каталог добавляет сам (`AutoUpdateMode`), а
+# `Binaries` заставляет его скачать `Nova_<версия>-fdroid.apk` из релиза этого
+# тега. Отсюда правило: тег без эталонного APK в релизе — это красная сборка, и
+# никакой merge request об этом уже не спросит.
+#
+# ЧТО ПРОВЕРЕНО ЛОКАЛЬНО:
+#   * лицензия GPL-3.0 (дословный текст FSF);
+#   * flavor `fdroid` собирается и в нём выключен встроенный загрузчик обновлений
+#     (BuildConfig.UPDATER_ENABLED=false), при этом flavor `github` не изменился;
+#   * libtun2proxy_jni.so собирается из src/main/cpp для обеих ABI;
+#   * liboperaproxy.so собирается из Alexey71/opera-proxy@v1.30.0 (как у Nova PC)
+#     (tools/build_opera_proxy.sh) и проверен на устройстве: режим Opera EU
+#     поднялся, выходной IP сменился на нидерландский;
+#   * libtun2proxy.so собирается из tun2proxy/tun2proxy@v0.7.21
+#     (tools/build_tun2proxy.sh), режим Opera EU проверен на устройстве.
+#
+# ПРОВЕРЕНО ПОЛНЫМ ПРОГОНОМ НА LINUX (WSL, Ubuntu 26.04, fdroidserver 2.4.3):
+#   * `fdroid lint com.brent.nova` — чисто, код возврата 0;
+#   * `fdroid build -l` (без `-t -f`) — «1 build succeeded»: checkout тега,
+#     удаление семи бинарников по `rm`, `scandelete`, local.properties, чистка
+#     подписи, `prebuild`, все четыре шага `build` и `assembleFdroidRelease`;
+#   * на выходе неподписанный `com.brent.nova_149.apk`, 60,4 МБ: versionCode
+#     149, versionName 1.30, только arm64-v8a и armeabi-v7a, 12 нативных
+#     библиотек — все собраны в этом же прогоне, x86 в APK нет.
+#
+# БЛОК `sudo` ПРОВЕРЕН ОТДЕЛЬНО, в чистой Ubuntu 26.04 (fdroidserver выполняет
+# его только с `--on-server`): команды склеены через «; » и прогнаны одной
+# строкой через `bash -e -u -o pipefail -x -c`, как это делает fdroidserver,
+# код возврата 0. Результат: gomobile и gobind поставлены, у пользователя
+# `vagrant` — rustc 1.97.1 с целями aarch64-linux-android и armv7-linux-androideabi
+# и cargo-ndk 4.1.2, а `sdkmanager` от root положил cmake 3.22.1 (с ninja),
+# platform-35 и build-tools 35.0.1 в SDK, которым root владеет — ровно как на их
+# buildserver.
+#
+# НЕ ПРОВЕРЕНА строка `apt-get install -y -t trixie-backports golang-go`: этого
+# выпуска нет ни в Ubuntu, где идут наши прогоны, ни где-либо ещё под рукой. Что
+# известно точно: в trixie-backports лежит golang-1.26-go 1.26.5, и эталонный APK
+# собран ровно этой версией (upstream go1.26.5) — компилятор входит в результат.
+#
+# ЧТО НЕ ПРОВЕРЕНО:
+#   * прогон целиком именно на их buildserver (`fdroid build --on-server`):
+#     локально он покупается ценой `dpkg --purge sudo` и блокировки root.
+#   * шаги prebuild/build выполняются в каталоге `subdir`, то есть в `app/`, а не
+#     в корне проекта. Переменной `$$SRC$$` в fdroidserver нет: `$$name$$` —
+#     это подстановка srclib, и произвольное имя превращается в мусор вида
+#     `17374SRC17374`.
+
+Categories:
+  - VPN & Proxy
+
+License: GPL-3.0-only
+
+AuthorName: confeden
+SourceCode: https://github.com/confeden/Nova-Android
+IssueTracker: https://github.com/confeden/Nova-Android/issues
+
+# Приложение работает через несвободные сетевые службы (Cloudflare WARP/MASQUE,
+# прокси Opera). Ярлык-предупреждение, а не отказ во включении; указываем сами.
+# Пояснение к ярлыку обязательно (замечание рецензента): без него в каталоге
+# видно только «NonFreeNet», и непонятно, что именно несвободно.
+AntiFeatures:
+  NonFreeNet:
+    en-US: The built-in transports connect to Cloudflare WARP/MASQUE and Opera's proxy
+      servers, whose server side is not free software. Profiles imported by the user
+      go to servers of their own choosing.
+
+AutoName: Nova
+
+# Summary/description здесь нет намеренно: рецензент F-Droid просит держать в
+# fdroiddata только метаданные сборки, а тексты — в структуре fastlane нашего
+# репозитория (`fastlane/metadata/android/<локаль>/`), откуда каталог забирает
+# их сам. Так их правит владелец без merge request в fdroiddata.
+
+RepoType: git
+Repo: https://github.com/confeden/Nova-Android.git
+
+# Воспроизводимая сборка. `Binaries` — адрес эталонного APK в релизе GitHub:
+# F-Droid соберёт своё, сравнит с ним и опубликует эталон, подписанный ключом
+# владельца, а `AllowedAPKSigningKeys` закрепляет отпечаток этого сертификата
+# (`apksigner verify --print-certs`). Режим выбирается один раз навсегда: перейти
+# потом на подпись ключом F-Droid нельзя — у пользователей сменилась бы подпись,
+# и обновления перестали бы ставиться.
+#
+# Ссылка ведёт на отдельный файл `-fdroid`, а не на основной APK релиза. Причин
+# две, обе проверены сравнением: основной собран из варианта `github` со
+# встроенным загрузчиком обновлений, а F-Droid собирает вариант `fdroid`; и в
+# основном лежат секреты владельца (подпись WSS, пароль релея Opera), которых у
+# стороннего сборщика нет и быть не должно — они попадают в classes.dex. Эталон
+# `-fdroid` — это ровно то, что делает этот рецепт, только подписанное ключом
+# владельца через `apksigner`.
+#
+# Чтобы сравнение проходило, понадобилось (каждое — измеренная причина, не
+# перестраховка):
+#   * `-trimpath` в gomobile и `--remap-path-prefix` в Rust — иначе в .so
+#     попадают абсолютные пути каталога сборки;
+#   * свой `Cargo.lock` для tun2proxy: upstream держит его в .gitignore, версии
+#     зависимостей разрешались заново на каждой сборке;
+#   * патч `build.rs` tun2proxy: он зашивал в бинарник `chrono::Utc::now()`;
+#   * `vcsInfo.include = false` в Gradle: AGP кладёт в APK снимок состояния git
+#     той машины, где шла сборка.
+Binaries: https://github.com/confeden/Nova-Android/releases/download/v%v/Nova_%v-fdroid.apk
+AllowedAPKSigningKeys: 8440f6c63f26d461fefa6f7556303dac762768f9daeb31de01598ff55dc9336f
+
+Builds:
+  # Кавычки вокруг versionName обязательны. «1.30» — правильное число в YAML, и
+  # без кавычек оно читается как 1.3: сборка проходит целиком и падает в самом
+  # конце на сверке версий («Unexpected version/version code in output; APK:
+  # '1.30' / '149', Expected: '1.3' / '149'»). У «1.29.4» этой беды не было —
+  # три точки числом не разбираются, поэтому ловушка ждала именно этот выпуск.
+  - versionName: '1.30.1'
+    versionCode: 150
+    # Полный хеш, а не тег (замечание рецензента): тег можно переставить, хеш —
+    # нет, и вход сборки перестаёт зависеть от состояния ссылок в репозитории.
+    commit: cb9e9c1e8608ef6bdab3d4edfc592668aed0871e
+    subdir: app
+    gradle:
+      - fdroid
+
+    # Собранных бинарников в сборке быть не должно. Каталог сносится целиком
+    # (замечание рецензента): перечисление по одному оставляло в дереве те .so,
+    # которые в список забыли внести. Если какой-то шаг ниже отвалится, сборка
+    # упадёт, а не подсунет готовый файл.
+    rm:
+      - app/src/main/jniLibs
+      - app/libs/nova-core-api24-stripped.aar
+
+    # NDK закреплён: этой же версией собирается Go-ядро, расхождение даёт
+    # несовместимости, заметные только на устройстве.
+    ndk: 27.2.12479018
+
+    # gvisor держит в своём дереве готовые бинарники «sentry» — образы VDSO и
+    # sighandler под amd64/arm64. Nova берёт из gvisor только сетевой стек
+    # (pkg/tcpip), sentry не собирается и в APK не попадает, поэтому каталог
+    # удаляется до сканирования: в дереве сборки готовых бинарников не остаётся
+    # вообще. Каталог появляется на шаге prebuild, до сканирования.
+    scandelete:
+      - build/deps/gvisor/pkg/sentry
+
+    sudo:
+      - apt-get update
+      - apt-get install -y curl build-essential pkg-config unzip
+      # Go 1.26 из официального архива Debian (замечание рецензента: ставить из
+      # репозитория, а не скачивать tarball). В stable его нет — там 1.24, а
+      # закреплённые зависимости требуют стандартной библиотеки 1.26: gvisor
+      # использует WaitReasonSemacquire из рантайма, xray-core — постквантовые
+      # кривые tls.SecP256r1MLKEM768/SecP384r1MLKEM1024. В trixie-backports есть
+      # golang-1.26-go 1.26.5, этой версией собран и эталонный APK: компилятор
+      # входит в результат, и разойдись версии — сверка `Binaries` не сойдётся.
+      - apt-get install -y -t trixie-backports golang-go
+      # Rust нужен для tun2proxy, и ставится он тоже из Debian (замечание
+      # рецензента): пакет `rustup` есть в trixie, 1.27.1. Сам `rustc` из Debian
+      # не годится — в нём нет стандартной библиотеки под Android, а её ставит
+      # rustup. Toolchain и цели ставятся уже в prebuild, от сборщика.
+      - apt-get install -y rustup
+      # Единственное, что осталось в `sudo` кроме apt, и это спрошено в MR:
+      # выполнить от сборщика нельзя, каталог `cmake` внутри SDK создаёт только
+      # root — см. ниже.
+      #
+      # CMake из SDK. В их образе его нет вообще: из apt ставятся только JDK,
+      # apksigner, curl, git, unzip, patch, rsync и sdkmanager, а внутри SDK
+      # запись для сборщика открыта намеренно только в `build-tools` и
+      # `platforms` (их provision-android-sdk: «allow gradle to install newer
+      # build-tools and platforms»), то есть каталог `cmake` создать некому.
+      # Nova без него не собирается: JNI-слой к tun2proxy идёт через CMake, и
+      # версия закреплена в app/build.gradle.kts. Ставим их же `sdkmanager` от
+      # root. Platform и build-tools указаны явно, чтобы не зависеть от того,
+      # что догрузит сам Gradle: собирается ровно то, на чём проверено.
+      # Подгружать /etc/profile.d/bsenv.sh ради ANDROID_HOME не нужно —
+      # замечание рецензента, в их образе переменная уже задана.
+      - sdkmanager "cmake;3.22.1" "platforms;android-35" "build-tools;35.0.1"
+
+    prebuild:
+      # Go-зависимости ядра: пять проектов подключены через `replace` по путям на
+      # диске, три из них пропатчены. Скрипт тянет закреплённые коммиты и
+      # накладывает патчи из tools/deps/patches — то есть сборка воспроизводима.
+      #
+      # Скрипты запускаются через `bash`, а не напрямую: в репозитории они лежат
+      # с режимом 100644 (собираются на Windows, где git не хранит бит +x), и
+      # прямой вызов на Linux даёт «Permission denied».
+      #
+      # `cd` — отдельным шагом. Весь список исполняет одна оболочка, поэтому
+      # смена каталога переносится на следующие шаги; склеивать команды через
+      # «&&» нельзя (замечание рецензента), а отдельный `cd` заодно честнее:
+      # неудачный `cd` внутри «&&»-списка `set -e` не считает и молча оставляет
+      # остальные шаги работать не в том каталоге.
+      - cd ..
+      - bash tools/deps/fetch_go_deps.sh
+      # Инструменты, которым root не нужен, ставит сам сборщик (замечание
+      # рецензента: в `sudo` остаётся только apt).
+      #
+      # Ядро собирается `gomobile bind`. Версия та же, что у golang.org/x/mobile
+      # в nova-core/go.mod: bind-код и рантайм должны быть из одной ревизии.
+      # `$HOME/go/bin` — каталог сборщика, шаг `build` добавляет его в PATH.
+      - GOBIN=$HOME/go/bin go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20260120165949-40bd9ace6ce4
+      - GOBIN=$HOME/go/bin go install golang.org/x/mobile/cmd/gobind@v0.0.0-20260120165949-40bd9ace6ce4
+      # Версии Rust закреплены: `stable` и «последний cargo-ndk» переезжают со
+      # временем, и та же сборка через месяц дала бы другой libtun2proxy.so —
+      # воспроизводимость сломалась бы молча.
+      - rustup toolchain install 1.97.1 --profile minimal
+      - rustup default 1.97.1
+      - rustup target add aarch64-linux-android armv7-linux-androideabi
+      - cargo install cargo-ndk --version 4.1.2 --locked
+      # Иначе Gradle сам ищет JVM по системе и может взять для toolchain любую,
+      # включая JRE без компилятора: локальный прогон падал на «Toolchain
+      # installation … does not provide the required capabilities:
+      # [JAVA_COMPILER]». С выключенным поиском берётся JVM, на которой запущен
+      # сам Gradle, то есть результат не зависит от набора JVM на машине сборки.
+      # Свойство читается только из gradle.properties: через `gradleprops` оно
+      # уезжает как `-P`, а такие настройки Gradle из `-P` не берёт — проверено.
+      # `printf` с переводом строки в начале обязателен: gradle.properties в
+      # репозитории заканчивается без перевода строки, и `echo >>` приклеивает
+      # строку к `org.gradle.workers.max=8`, ломая обе.
+      - printf '\norg.gradle.java.installations.auto-detect=false\n' >> gradle.properties
+
+    # Каждый шаг — одна команда. Список исполняет одна оболочка, поэтому смена
+    # каталога переносится дальше по списку, и `cd` стоит отдельными шагами.
+    # Начинается список в каталоге `subdir`, то есть в `app/`, — отсюда первый
+    # `cd ..`; шаги `prebuild` и `build` исполняются разными оболочками, так что
+    # каталог для `build` надо задавать заново.
+    build:
+      - cd ..
+      # 1. Ядро nova-core (libgojni.so + .aar). gomobile лежит в $HOME/go/bin,
+      # куда его положил prebuild. ANDROID_NDK_HOME не задаём: fdroidserver
+      # выставляет его сам по полю `ndk` (замечание рецензента).
+      - PATH=$HOME/go/bin:$PATH bash tools/build_nova_core_aar.sh
+      # 2. Ядро Xray для VLESS+REALITY (libnovaxray.so, libnovaxrayjni.so).
+      - cd nova-xray
+      - bash build.sh
+      - cd ..
+      # 3. opera-proxy: клонируется по закреплённому тегу и собирается на месте.
+      - bash tools/build_opera_proxy.sh
+      # 4. tun2proxy: тег закреплён на последней версии с нужным нам C-API.
+      - PATH=$HOME/.cargo/bin:$PATH bash tools/build_tun2proxy.sh
+      # 5. Клиент DNS-туннеля семейства StormDNS/CottenDNS (libstormdns.so):
+      # коммит закреплён, лицензия MIT. Это исполняемый файл, а не библиотека, —
+      # Nova запускает его процессом, как opera-proxy.
+      - bash tools/build_stormdns_client.sh
+
+    # Секрет подписи WSS есть только у владельца; стороннему сборщику запрет не
+    # нужен и снимается явным флагом. Работают при этом все транспорты, кроме
+    # релея Telegram через собственные поддомены. Флага `env` в fdroidserver нет
+    # (поймано `fdroid lint`), поэтому значение идёт свойством Gradle.
+    gradleprops:
+      - novaAllowUnsignedRelease=true
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: '1.30.1'
+CurrentVersionCode: 150

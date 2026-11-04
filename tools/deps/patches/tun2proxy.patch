@@ -1,0 +1,39 @@
+diff --git a/build.rs b/build.rs
+index a628cef..83e140e 100644
+--- a/build.rs
++++ b/build.rs
+@@ -5,7 +5,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     }
+ 
+     // Get the build time
+-    let build_time = chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
++    println!("cargo:rerun-if-env-changed=BUILD_TIME");
++    let build_time = std::env::var("BUILD_TIME")
++        .unwrap_or_else(|_| chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string());
+     println!("cargo:rustc-env=BUILD_TIME={build_time}");
+ 
+     #[cfg(target_os = "windows")]
+diff --git a/Cargo.toml b/Cargo.toml
+index 1111111..2222222 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -78,5 +78,17 @@
+ chrono = "0.4.44"
+ serde_json = "1.0.149"
+ 
+-# [profile.release]
+-# strip = "symbols"
++# Профиль выпуска: upstream держит его закомментированным, мы включаем.
++#
++# Отсюда убраны два очевидных рычага, и намеренно. `opt-level = "z"` жмёт код за
++# счёт скорости, а через эту библиотеку идёт **каждый пакет** режимов Opera и
++# VLESS — размер APK не стоит пропускной способности туннеля. `panic = "abort"`
++# меняет поведение: паника внутри cdylib убивала бы процесс `:vpn` целиком.
++#
++# Оставшиеся три и жмут, и обычно ускоряют: межмодульная оптимизация видит весь
++# граф, единственная единица кодогенерации не мешает ей, а символы в
++# библиотеке на устройстве не нужны никому.
++[profile.release]
++strip = "symbols"
++lto = "fat"
++codegen-units = 1
