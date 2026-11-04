@@ -2,8 +2,6 @@ package com.example.nova
 
 import android.content.Context
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 
 /**
@@ -24,7 +22,20 @@ object ListSync {
     private const val STAGING = ".staging"
     private const val MAX_BYTES = 4 * 1024 * 1024
     private const val TIMEOUT_MS = 12_000
-    private const val CLOUDFLARE_IPS = "ip/cloudflare.txt"
+
+    /**
+     * IP-списки фида; имя файла на устройстве задаёт `ListManifest`.
+     *
+     * Раньше здесь был только Cloudflare, а `youtube_ips.txt` и
+     * `telegram_ips.txt` искались в том же каталоге и никогда не обновлялись:
+     * манифест их публиковал, но синхронизация проходила мимо. Теперь список
+     * один, а соответствие «путь в фиде → имя файла» живёт в одном месте.
+     */
+    private val IP_ASSETS = listOf(
+        "ip/cloudflare.txt",
+        "ip/youtube.txt",
+        "ip/telegram.txt",
+    )
 
     data class Result(
         val ok: Boolean,
@@ -67,16 +78,21 @@ object ListSync {
                 File(staging, destination).writeBytes(body)
             }
 
-            val cloudflareExpected = manifest.shaFor(CLOUDFLARE_IPS)
-            if (cloudflareExpected != null) {
-                val cloudflare = fetchVerified(
-                    "${ExternalSources.LIST_BASE}/$CLOUDFLARE_IPS",
-                    cloudflareExpected,
+            for (relativePath in IP_ASSETS) {
+                val expected = manifest.shaFor(relativePath) ?: continue
+                val destinationName = ListManifest.destinationName(relativePath)
+                    ?: run {
+                        failures += relativePath
+                        continue
+                    }
+                val body = fetchVerified(
+                    "${ExternalSources.LIST_BASE}/$relativePath",
+                    expected,
                 )
-                if (cloudflare != null) {
-                    File(staging, "cloudflare_ips.txt").writeBytes(cloudflare)
+                if (body != null) {
+                    File(staging, destinationName).writeBytes(body)
                 } else {
-                    failures += CLOUDFLARE_IPS
+                    failures += relativePath
                 }
             }
 
@@ -168,23 +184,14 @@ object ListSync {
         return null
     }
 
-    private fun httpGet(url: String): ByteArray {
-        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = TIMEOUT_MS
-            readTimeout = TIMEOUT_MS
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "OBNOVA-Android")
-            instanceFollowRedirects = true
-        }
-        try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                error("HTTP ${connection.responseCode}")
-            }
-            return connection.inputStream.use { it.readBytes() }
-        } finally {
-            connection.disconnect()
-        }
-    }
+    private fun httpGet(url: String): ByteArray = FeedHttp.bytes(
+        url,
+        FeedHttp.Policy(
+            connectTimeoutMs = TIMEOUT_MS,
+            readTimeoutMs = TIMEOUT_MS,
+            maxBytes = MAX_BYTES,
+        ),
+    )
 
     private fun sha256(data: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(data)

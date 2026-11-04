@@ -631,6 +631,23 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
   Chrome открыл `habr.com/ru/feed/`.
 - После теста флаг выключен, устройство возвращено на WARP (`tun0 172.16.0.2`),
   посторонних процессов router/desync нет; crash-буфер пуст.
+
+### Статический анализ и регрессия (2026-11-04)
+
+- `gradlew testGithubDebugUnitTest`: **621/0/9** (было 610/0/9).
+- `gradlew lintGithubDebug`: BUILD SUCCESSFUL, **0 ошибок**, 892 предупреждения
+  (HardcodedText 273, UseKtx 188, UnusedResources 98 — все существовавшие).
+- `go vet ./...` в `nova-router`: чисто. `nova-core` на Windows не проверяется:
+  `syscall.Dup`/`AF_PACKET` есть только в Linux-сборке.
+- Скан импортов по 181 Kotlin-файлу: неиспользуемых **0** (удалены
+  `kotlin.math.min` и `android.content.Context`).
+- Скан сетевых вызовов: 67 площадок, **0 без try/catch**; все HTTP-загрузки —
+  через `FeedHttp` с тайм-аутами; 22 сокета без тайм-аута в окне — это
+  `ServerSocket`-слушатели либо `connect(..., timeout)`, проверено вручную.
+- Тесты обновления данных: `FeedHttpTest` (200/404/потолок/политика),
+  `ExternalSourcesTest` (зеркала raw→Pages, HTTPS), `DnsRulesTest`
+  (legacy geohide по адресу, идемпотентность, чужой id).
+
 - Списки и ручные маршруты подключены к конфигу роутера: на устройстве
   `nova-router` поднялся с **9 правилами** (exclude, локальные TLD, main,
   second, ai, youtube, telegram, whatsapp, discord) и 2 слотами; трафик шёл

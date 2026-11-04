@@ -11,8 +11,6 @@ import androidx.work.Worker
 import androidx.work.WorkerParameters
 import org.json.JSONObject
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -81,10 +79,7 @@ object DnsServerFeed {
         record = "TXT",
     )
 
-    private val FEED_URLS = listOf(
-        "https://raw.githubusercontent.com/confeden/nova_updates/main/nova_android/dns_tunnel.json",
-        "https://confeden.github.io/nova_updates/nova_android/dns_tunnel.json",
-    )
+    private val FEED_URLS = ExternalSources.updateFeedMirrors(ExternalSources.DNS_TUNNEL_FEED)
 
     private const val FILE_NAME = "dns_server_feed.json"
     private const val WORK_NAME = "nova-dns-server-feed"
@@ -96,7 +91,7 @@ object DnsServerFeed {
     private const val RETRY_AFTER_FAILURE_MS = 15L * 60L * 1000L
 
     /** Потолок ленты: она весит сотни байт, 64 КБ — запас с избытком. */
-    private const val FEED_LIMIT_CHARS = 64 * 1024
+    private const val FEED_LIMIT_BYTES = 64 * 1024
 
     private const val CONNECT_TIMEOUT_MS = 3000
     private const val READ_TIMEOUT_MS = 3000
@@ -265,33 +260,14 @@ object DnsServerFeed {
         return state.syncedAt !in (now - FRESH_WINDOW_MS)..now
     }
 
-    private fun fetch(url: String): String {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        return try {
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.instanceFollowRedirects = true
-            connection.useCaches = false
-            connection.setRequestProperty("User-Agent", "NovaAndroid/${BuildConfig.VERSION_NAME}")
-            val code = connection.responseCode
-            if (code != HttpURLConnection.HTTP_OK) throw IllegalStateException("HTTP $code")
-            // Читается ровно потолок, а не «всё, потом обрежем»: `readText()`
-            // сначала собрал бы в память столько, сколько отдаст дальний конец,
-            // и только потом узнал бы, что нам нужны первые 64 КБ.
-            connection.inputStream.bufferedReader().use { reader ->
-                val buffer = CharArray(FEED_LIMIT_CHARS)
-                var read = 0
-                while (read < buffer.size) {
-                    val n = reader.read(buffer, read, buffer.size - read)
-                    if (n < 0) break
-                    read += n
-                }
-                String(buffer, 0, read)
-            }
-        } finally {
-            connection.disconnect()
-        }
-    }
+    private fun fetch(url: String): String = FeedHttp.text(
+        url,
+        FeedHttp.Policy(
+            connectTimeoutMs = CONNECT_TIMEOUT_MS,
+            readTimeoutMs = READ_TIMEOUT_MS,
+            maxBytes = FEED_LIMIT_BYTES,
+        ),
+    )
 
     private data class State(val server: Server?, val syncedAt: Long, val attemptAt: Long)
 

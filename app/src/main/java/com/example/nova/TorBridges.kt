@@ -662,12 +662,7 @@ object TorBridgeManager {
      * GitHub Pages, jsDelivr и Statically раздают те же файлы через другую
      * инфраструктуру, поэтому хотя бы один обычно доступен.
      */
-    private val MIRROR_BASES = listOf(
-        "https://raw.githubusercontent.com/center2055/OnionHop-Bridges-Collector/main/bridge/",
-        "https://center2055.github.io/OnionHop-Bridges-Collector/bridge/",
-        "https://cdn.jsdelivr.net/gh/center2055/OnionHop-Bridges-Collector@main/bridge/",
-        "https://cdn.statically.io/gh/center2055/OnionHop-Bridges-Collector@main/bridge/",
-    )
+    private val MIRROR_BASES = ExternalSources.TOR_BRIDGE_MIRROR_BASES
 
     /**
      * Запасной сборщик.
@@ -676,18 +671,15 @@ object TorBridgeManager {
      * 38-44 % живых против 100 % у `OnionHop`. Поэтому он спрашивается только
      * после основного и только для `obfs4`.
      */
-    private val FALLBACK_BASES = listOf(
-        "https://raw.githubusercontent.com/Delta-Kronecker/Tor-Bridges-Collector/main/bridge/",
-        "https://cdn.jsdelivr.net/gh/Delta-Kronecker/Tor-Bridges-Collector@main/bridge/",
-    )
+    private val FALLBACK_BASES = ExternalSources.TOR_BRIDGE_FALLBACK_BASES
 
     /** Файлы у обоих сборщиков называются одинаково. */
     private val LIST_FILES = listOf("obfs4_tested.txt", "webtunnel_tested.txt", "vanilla_tested.txt")
 
     private const val FALLBACK_FILE = "obfs4_tested.txt"
 
-    private const val MOAT_SETTINGS_URL = "https://bridges.torproject.org/moat/circumvention/settings"
-    private const val MOAT_BUILTIN_URL = "https://bridges.torproject.org/moat/circumvention/builtin"
+    private const val MOAT_SETTINGS_URL = ExternalSources.TOR_MOAT_SETTINGS_URL
+    private const val MOAT_BUILTIN_URL = ExternalSources.TOR_MOAT_BUILTIN_URL
 
     /**
      * Сколько мостов **каждого вида** проверять живостью.

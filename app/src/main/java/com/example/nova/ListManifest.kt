@@ -63,6 +63,8 @@ object ListManifest {
     fun destinationName(relativePath: String): String? = when {
         isListPath(relativePath) -> relativePath.removePrefix("list/")
         relativePath == "ip/cloudflare.txt" -> "cloudflare_ips.txt"
+        relativePath == "ip/youtube.txt" -> "youtube_ips.txt"
+        relativePath == "ip/telegram.txt" -> "telegram_ips.txt"
         else -> null
     }
 }

@@ -363,8 +363,12 @@ object DnsRulesStore {
      * 4 — версия, в которой у правила появился свой транспорт. Файл версии 4
      * старая сборка прочитает без вреда: незнакомый ключ `fromJson` пропускает,
      * а `migrate` видит `4 >= 3` и не трогает список.
+     *
+     * 5 — версия, в которой снятый `geohide.ru` заменяется парой `us`/`eu`.
+     * Шаг версионный, а не «при каждом чтении»: иначе адрес, вручную возвращённый
+     * пользователем в список, молча заменялся бы на каждом запуске.
      */
-    private const val VERSION = 4
+    private const val VERSION = 5
 
     private val writeLock = Any()
 
@@ -481,29 +485,40 @@ object DnsRulesStore {
         if (rules.isEmpty()) {
             return DnsRuleSet(defaults(), DnsRouteMode.parse(json.optString("route_mode")), enabled)
         }
-        val migrated = migrate(json.optInt("version", 1), rules)
-        return DnsRuleSet(migrateGeohideLegacy(migrated), DnsRouteMode.parse(json.optString("route_mode")), enabled)
+        val version = json.optInt("version", 1)
+        val migrated = migrate(version, rules)
+        if (version < 5 && rules.any { it.value.equals(LEGACY_GEOHIDE_URL, ignoreCase = true) }) {
+            LogManager.log("DNS-правила: geohide.ru заменён на us/eu.geohide.ru в начале приоритета.")
+        }
+        return DnsRuleSet(migrated, DnsRouteMode.parse(json.optString("route_mode")), enabled)
     }
 
     private const val LEGACY_GEOHIDE_URL = "https://geohide.ru/dns-query"
 
     /**
      * Старый `geohide.ru` снят: его адрес больше не обслуживается. Сохранённое
-     * правило с этим id и старым URL заменяем парой us/eu и ставим её в начало
-     * приоритета — иначе после обновления в списке остался бы мёртвый резолвер.
+     * правило с этим URL заменяем парой us/eu и ставим её в начало приоритета —
+     * иначе после обновления в списке остался бы мёртвый резолвер.
+     *
+     * Срабатывание — по **адресу**, а не по id: правило могло быть добавлено
+     * вручную или импортировано под другим именем. Пару берём из текущих
+     * умолчаний, поэтому её адреса не расходятся с тем, что видит новый
+     * пользователь. Строки с id пары удаляются целиком: id — ключ адаптера, и
+     * оставлять рядом пользовательскую правку с тем же id значило бы получить
+     * два правила-двойника.
+     *
+     * Функция чистая и идемпотентная: после замены legacy-адреса в списке нет,
+     * повторный вызов ничего не меняет. Журнал пишет вызывающий — так функция
+     * остаётся проверяемой без Android-рантайма.
      */
-    private fun migrateGeohideLegacy(rules: List<DnsRule>): List<DnsRule> {
-        val hasLegacy = rules.any {
-            it.id == "geohide" && it.value.equals(LEGACY_GEOHIDE_URL, ignoreCase = true)
-        }
+    internal fun migrateGeohideLegacy(rules: List<DnsRule>): List<DnsRule> {
+        val hasLegacy = rules.any { it.value.equals(LEGACY_GEOHIDE_URL, ignoreCase = true) }
         if (!hasLegacy) return rules
         val pair = defaults().filter { it.id == "geohide" || it.id == "geohide-eu" }
+        val pairIds = pair.map { it.id }.toSet()
         val kept = rules.filterNot {
-            it.id == "geohide" ||
-                it.id == "geohide-eu" ||
-                it.value.equals(LEGACY_GEOHIDE_URL, ignoreCase = true)
+            it.value.equals(LEGACY_GEOHIDE_URL, ignoreCase = true) || it.id in pairIds
         }
-        LogManager.log("DNS-правила: geohide.ru заменён на us/eu.geohide.ru в начале приоритета.")
         return pair + kept
     }
 
@@ -519,6 +534,7 @@ object DnsRulesStore {
         var current = rules
         if (version < 3) current = migrateToV3(current)
         if (version < 4) current = migrateToV4(current)
+        if (version < 5) current = migrateGeohideLegacy(current)
         return current
     }
 

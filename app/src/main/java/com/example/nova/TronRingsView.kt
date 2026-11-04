@@ -13,7 +13,6 @@ import android.view.View
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.min
 
 /**
  * Волны подключения: круги, расходящиеся из кнопки, и созвездие, которое они зажигают.

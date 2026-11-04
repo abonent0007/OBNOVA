@@ -1,8 +1,6 @@
 package com.example.nova
 
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
@@ -30,10 +28,7 @@ object OperaEndpointFeed {
      * Два адреса той же ленты, что у обновлений: raw и GitHub Pages. Один и тот
      * же файл в одном репозитории — если один хост недоступен, второй обычно жив.
      */
-    private val FEED_URLS = listOf(
-        "https://raw.githubusercontent.com/confeden/nova_updates/main/opera_endpoints.json",
-        "https://confeden.github.io/nova_updates/opera_endpoints.json",
-    )
+    private val FEED_URLS = ExternalSources.updateFeedMirrors(ExternalSources.OPERA_ENDPOINTS_FEED)
 
     /** Пока лента моложе этого возраста, ходить за ней незачем. */
     private const val FRESH_WINDOW_MS = 3L * 60L * 60L * 1000L
@@ -49,6 +44,9 @@ object OperaEndpointFeed {
 
     /** Общий предел на весь опрос: два адреса подряд не должны стоить больше. */
     private const val TOTAL_BUDGET_MS = 6000L
+
+    /** Потолок тела: список адресов весит килобайты, 256 КБ — с запасом. */
+    private const val FEED_LIMIT_BYTES = 256 * 1024
 
     /** Регионы, которые понимает `opera-proxy`. Всё прочее из ленты игнорируем. */
     private val KNOWN_REGIONS = setOf("EU", "AM", "AS")
@@ -185,21 +183,14 @@ object OperaEndpointFeed {
         return lastSync !in (nowMs - FRESH_WINDOW_MS)..nowMs
     }
 
-    private fun fetch(url: String): String {
-        val connection = URL(url).openConnection() as HttpURLConnection
-        return try {
-            connection.connectTimeout = CONNECT_TIMEOUT_MS
-            connection.readTimeout = READ_TIMEOUT_MS
-            connection.instanceFollowRedirects = true
-            connection.useCaches = false
-            connection.setRequestProperty("User-Agent", "NovaAndroid/${BuildConfig.VERSION_NAME}")
-            val code = connection.responseCode
-            if (code != HttpURLConnection.HTTP_OK) throw IllegalStateException("HTTP $code")
-            connection.inputStream.bufferedReader().use { it.readText() }
-        } finally {
-            connection.disconnect()
-        }
-    }
+    private fun fetch(url: String): String = FeedHttp.text(
+        url,
+        FeedHttp.Policy(
+            connectTimeoutMs = CONNECT_TIMEOUT_MS,
+            readTimeoutMs = READ_TIMEOUT_MS,
+            maxBytes = FEED_LIMIT_BYTES,
+        ),
+    )
 
     private fun normalizeRegion(value: String?): String {
         return when (value?.trim()?.uppercase(Locale.US)) {

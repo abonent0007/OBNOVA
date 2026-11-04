@@ -55,6 +55,8 @@ class ListManifestTest {
     fun `destination names match ListRepository expectations`() {
         assertEquals("main.txt", ListManifest.destinationName("list/main.txt"))
         assertEquals("cloudflare_ips.txt", ListManifest.destinationName("ip/cloudflare.txt"))
+        assertEquals("youtube_ips.txt", ListManifest.destinationName("ip/youtube.txt"))
+        assertEquals("telegram_ips.txt", ListManifest.destinationName("ip/telegram.txt"))
         assertNull(ListManifest.destinationName("other/file.txt"))
     }
 

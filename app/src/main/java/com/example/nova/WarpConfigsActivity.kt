@@ -90,8 +90,10 @@ class WarpConfigsActivity : AppCompatActivity() {
     )
 
     private companion object {
-        const val DEFAULT_WARP_SUBSCRIPTION_URL =
-            "https://raw.githubusercontent.com/confeden/auto-warp-config/refs/heads/main/config.txt"
+        const val DEFAULT_WARP_SUBSCRIPTION_URL = ExternalSources.WARP_CONFIGS_FEED
+        const val FALLBACK_CONNECT_TIMEOUT_MS = 15_000
+        const val FALLBACK_READ_TIMEOUT_MS = 15_000
+        const val FALLBACK_MAX_BYTES = 8 * 1024 * 1024
         const val MAX_ARCHIVE_BYTES = 64L * 1024L * 1024L
         const val MAX_ARCHIVE_ENTRIES = 512
         const val MAX_CONFIG_TEXT_BYTES = 2L * 1024L * 1024L
@@ -1361,13 +1363,36 @@ class WarpConfigsActivity : AppCompatActivity() {
                 outcome is VlessSubscriptionManager.Outcome.NoVlessFound
             ) {
                 // Ссылок VLESS не нашлось — тело перечитываем как обычный текст.
-                val text = runCatching {
-                    java.net.URL(cleanUrl).openStream().bufferedReader().use { it.readText() }
-                }.getOrNull().orEmpty()
-                val result = importConfigsFromText(text)
+                // Тайм-ауты и потолок обязательны: прежний `openStream()` без них
+                // держал поток и диалог прогресса, пока дальний конец не закроет
+                // соединение. Ошибка теперь доходит до пользователя, а не
+                // превращается в «конфигураций не найдено».
+                val fetched = runCatching {
+                    FeedHttp.text(
+                        cleanUrl,
+                        FeedHttp.Policy(
+                            connectTimeoutMs = FALLBACK_CONNECT_TIMEOUT_MS,
+                            readTimeoutMs = FALLBACK_READ_TIMEOUT_MS,
+                            maxBytes = FALLBACK_MAX_BYTES,
+                        ),
+                    )
+                }
+                val text = fetched.getOrNull()
+                val result = text?.let(::importConfigsFromText)
                 runOnUiThread {
                     progressDialog.dismiss()
-                    finishUrlImport(result, sourceHost)
+                    if (result == null) {
+                        val suffix = if (sourceHost.isNotBlank()) " с $sourceHost" else ""
+                        val reason = fetched.exceptionOrNull()?.message?.ifBlank { null }
+                            ?: "пустой ответ"
+                        Toast.makeText(
+                            this,
+                            "Подписка$suffix не загрузилась: $reason",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    } else {
+                        finishUrlImport(result, sourceHost)
+                    }
                 }
                 return@Thread
             }

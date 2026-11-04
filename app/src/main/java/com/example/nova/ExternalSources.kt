@@ -21,6 +21,43 @@ object ExternalSources {
     const val LIST_BASE = "nova_pc"
     const val LIST_MANIFEST = "$LIST_BASE/manifest.json"
 
+    /** Лента собственного DNS-туннеля Nova (домен, NS, метод, ключ). */
+    const val DNS_TUNNEL_FEED = "nova_android/dns_tunnel.json"
+
+    /** Опубликованный список рабочих адресов Opera. */
+    const val OPERA_ENDPOINTS_FEED = "opera_endpoints.json"
+
+    /** Манифест версии APK для встроенного (выключенного в форке) обновления. */
+    const val APP_UPDATE_FEED = "apk_version.json"
+
+    /** Резервный канал обновлений: релизы upstream напрямую через GitHub API. */
+    const val GITHUB_LATEST_RELEASE_API =
+        "https://api.github.com/repos/confeden/Nova-Android/releases/latest"
+
+    /** Подписка AWG/WARP по умолчанию в экране «Конфигурации». */
+    const val WARP_CONFIGS_FEED =
+        "https://raw.githubusercontent.com/confeden/auto-warp-config/refs/heads/main/config.txt"
+
+    /**
+     * Сборщики мостов Tor: основной `OnionHop` и запасной `Delta-Kronecker`.
+     * Зеркала запрашиваются наперегонки — см. `TorBridges`.
+     */
+    val TOR_BRIDGE_MIRROR_BASES = listOf(
+        "https://raw.githubusercontent.com/center2055/OnionHop-Bridges-Collector/main/bridge/",
+        "https://center2055.github.io/OnionHop-Bridges-Collector/bridge/",
+        "https://cdn.jsdelivr.net/gh/center2055/OnionHop-Bridges-Collector@main/bridge/",
+        "https://cdn.statically.io/gh/center2055/OnionHop-Bridges-Collector@main/bridge/",
+    )
+
+    val TOR_BRIDGE_FALLBACK_BASES = listOf(
+        "https://raw.githubusercontent.com/Delta-Kronecker/Tor-Bridges-Collector/main/bridge/",
+        "https://cdn.jsdelivr.net/gh/Delta-Kronecker/Tor-Bridges-Collector@main/bridge/",
+    )
+
+    /** MOAT (Tor Project): настройки и встроенные мосты. */
+    const val TOR_MOAT_SETTINGS_URL = "https://bridges.torproject.org/moat/circumvention/settings"
+    const val TOR_MOAT_BUILTIN_URL = "https://bridges.torproject.org/moat/circumvention/builtin"
+
     /**
      * Публичная подписка VLESS из стокового PC-форка. Узлы свободные и
      * нестабильные; приложение проверяет каждый профиль по HTTPS и уводит
@@ -37,5 +74,17 @@ object ExternalSources {
         "https://raw.githubusercontent.com/$LIST_REPO/main/$relativePath",
         "https://cdn.jsdelivr.net/gh/$LIST_REPO@main/$relativePath",
         "https://raw.githack.com/$LIST_REPO/main/$relativePath",
+    )
+
+    /**
+     * Два адреса лент `nova_updates`: raw и GitHub Pages.
+     *
+     * Один и тот же файл в одном репозитории; если один хост недоступен,
+     * второй обычно жив. Порядок фиксирован тестом: raw обновляется первым,
+     * Pages — следом.
+     */
+    fun updateFeedMirrors(relativePath: String): List<String> = listOf(
+        "https://raw.githubusercontent.com/$LIST_REPO/main/$relativePath",
+        "https://confeden.github.io/nova_updates/$relativePath",
     )
 }

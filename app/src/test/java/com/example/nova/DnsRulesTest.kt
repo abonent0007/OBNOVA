@@ -344,4 +344,76 @@ class DnsRulesTest {
             )?.transport,
         )
     }
+
+    /** Снятый geohide.ru: правило заменяется парой us/eu в начале списка. */
+    @Test
+    fun `the retired geohide is replaced by the us and eu pair first`() {
+        val legacy = DnsRule(
+            id = "geohide",
+            kind = DnsRule.Kind.DOH,
+            value = "https://geohide.ru/dns-query",
+            transport = DnsRule.Transport.ANY,
+        )
+        val user = DnsRule(
+            id = "mine",
+            kind = DnsRule.Kind.DOH,
+            value = "https://dns.example/dns-query",
+        )
+        val migrated = DnsRulesStore.migrateGeohideLegacy(listOf(user, legacy))
+        assertEquals(
+            listOf("geohide", "geohide-eu", "mine"),
+            migrated.map { it.id },
+        )
+        assertEquals(
+            listOf("https://us.geohide.ru/dns-query", "https://eu.geohide.ru/dns-query"),
+            migrated.take(2).map { it.value },
+        )
+        // Пользовательское правило не потерялось и не переехало в начало.
+        assertEquals(user, migrated.last())
+    }
+
+    /**
+     * Триггер — адрес, а не id: правило могло быть добавлено вручную или
+     * импортировано под другим именем.
+     */
+    @Test
+    fun `a legacy url under a foreign id still migrates`() {
+        val imported = DnsRule(
+            id = "imported-geohide",
+            kind = DnsRule.Kind.DOH,
+            value = "https://geohide.ru/dns-query",
+        )
+        val migrated = DnsRulesStore.migrateGeohideLegacy(listOf(imported))
+        assertEquals(
+            listOf("geohide", "geohide-eu"),
+            migrated.map { it.id },
+        )
+    }
+
+    /** Повторный вызов ничего не меняет: в списке больше нет legacy-адреса. */
+    @Test
+    fun `geohide migration is idempotent`() {
+        val source = listOf(
+            DnsRule(
+                id = "geohide",
+                kind = DnsRule.Kind.DOH,
+                value = "https://geohide.ru/dns-query",
+            ),
+            DnsRule(id = "mine", kind = DnsRule.Kind.PLAIN, value = "192.0.2.1"),
+        )
+        val once = DnsRulesStore.migrateGeohideLegacy(source)
+        val twice = DnsRulesStore.migrateGeohideLegacy(once)
+        assertEquals(once, twice)
+        assertEquals(once.size, once.map { it.id }.distinct().size)
+    }
+
+    /** Без legacy-адреса список не трогается вовсе. */
+    @Test
+    fun `a list without the retired resolver is returned untouched`() {
+        val rules = listOf(
+            DnsRule(id = "mine", kind = DnsRule.Kind.DOT, value = "tls://dns.quad9.net"),
+            DnsRule(id = "geohide-eu", kind = DnsRule.Kind.DOH, value = "https://eu.geohide.ru/dns-query"),
+        )
+        assertEquals(rules, DnsRulesStore.migrateGeohideLegacy(rules))
+    }
 }

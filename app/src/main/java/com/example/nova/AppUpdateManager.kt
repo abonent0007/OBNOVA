@@ -105,12 +105,8 @@ data class ManualUpdateCheckResult(
 
 object AppUpdateManager {
 
-    private val UPDATE_URLS = listOf(
-        "https://raw.githubusercontent.com/confeden/nova_updates/main/apk_version.json",
-        "https://confeden.github.io/nova_updates/apk_version.json",
-    )
-    private const val GITHUB_LATEST_RELEASE_URL =
-        "https://api.github.com/repos/confeden/Nova-Android/releases/latest"
+    private val UPDATE_URLS = ExternalSources.updateFeedMirrors(ExternalSources.APP_UPDATE_FEED)
+    private const val GITHUB_LATEST_RELEASE_URL = ExternalSources.GITHUB_LATEST_RELEASE_API
     private const val PERIODIC_WORK_NAME = "nova_update_check_periodic"
     private const val REPAIR_WORK_NAME = "nova_update_repair"
     private const val CHANNEL_ID = "nova_updates"
