@@ -380,6 +380,22 @@ object DnsRulesStore {
      * но лучше отвечать через них, чем не отвечать вовсе.
      */
     fun defaults(): List<DnsRule> = listOf(
+        // GeoHide US/EU — первые в приоритете: старый geohide.ru снят,
+        // а эти два адреса отвечают из разных регионов и страхуют друг друга.
+        DnsRule(
+            id = "geohide",
+            kind = DnsRule.Kind.DOH,
+            value = "https://us.geohide.ru/dns-query",
+            bootstrap = listOf("193.233.112.67", "193.233.112.68", "46.8.158.6"),
+            transport = DnsRule.Transport.ANY,
+        ),
+        DnsRule(
+            id = "geohide-eu",
+            kind = DnsRule.Kind.DOH,
+            value = "https://eu.geohide.ru/dns-query",
+            bootstrap = listOf("193.233.112.67", "193.233.112.68", "46.8.158.6"),
+            transport = DnsRule.Transport.ANY,
+        ),
         // Наш резолвер — один строкой, транспорт выберет замер: 443 и 853
         // блокируют порознь, и какой из них сегодня жив, знает только сеть.
         DnsRule(
@@ -402,13 +418,6 @@ object DnsRulesStore {
             kind = DnsRule.Kind.DOH,
             value = "https://dns.comss.one/dns-query",
             bootstrap = listOf("83.220.169.155", "212.109.195.93", "195.133.25.16"),
-            transport = DnsRule.Transport.ANY,
-        ),
-        DnsRule(
-            id = "geohide",
-            kind = DnsRule.Kind.DOH,
-            value = "https://geohide.ru/dns-query",
-            bootstrap = listOf("193.233.112.67", "193.233.112.68", "46.8.158.6"),
             transport = DnsRule.Transport.ANY,
         ),
         DnsRule(
@@ -473,7 +482,29 @@ object DnsRulesStore {
             return DnsRuleSet(defaults(), DnsRouteMode.parse(json.optString("route_mode")), enabled)
         }
         val migrated = migrate(json.optInt("version", 1), rules)
-        return DnsRuleSet(migrated, DnsRouteMode.parse(json.optString("route_mode")), enabled)
+        return DnsRuleSet(migrateGeohideLegacy(migrated), DnsRouteMode.parse(json.optString("route_mode")), enabled)
+    }
+
+    private const val LEGACY_GEOHIDE_URL = "https://geohide.ru/dns-query"
+
+    /**
+     * Старый `geohide.ru` снят: его адрес больше не обслуживается. Сохранённое
+     * правило с этим id и старым URL заменяем парой us/eu и ставим её в начало
+     * приоритета — иначе после обновления в списке остался бы мёртвый резолвер.
+     */
+    private fun migrateGeohideLegacy(rules: List<DnsRule>): List<DnsRule> {
+        val hasLegacy = rules.any {
+            it.id == "geohide" && it.value.equals(LEGACY_GEOHIDE_URL, ignoreCase = true)
+        }
+        if (!hasLegacy) return rules
+        val pair = defaults().filter { it.id == "geohide" || it.id == "geohide-eu" }
+        val kept = rules.filterNot {
+            it.id == "geohide" ||
+                it.id == "geohide-eu" ||
+                it.value.equals(LEGACY_GEOHIDE_URL, ignoreCase = true)
+        }
+        LogManager.log("DNS-правила: geohide.ru заменён на us/eu.geohide.ru в начале приоритета.")
+        return pair + kept
     }
 
     /**

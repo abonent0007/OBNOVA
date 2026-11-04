@@ -146,17 +146,22 @@ class DnsRulesTest {
      * апстрим ровно тогда, когда предыдущий не ответил.
      */
     @Test
-    fun `the defaults start with the owner and end with the provider`() {
+    fun `the defaults start with geohide and end with the provider`() {
         val defaults = DnsRulesStore.defaults()
-        assertEquals(DnsRule.Kind.AUTO, defaults.first().kind)
-        assertEquals(PriorityDns.HOST, defaults.first().value)
-        assertEquals(PriorityDns.KNOWN_ADDRESSES, defaults.first().bootstrap)
+        assertEquals("geohide", defaults.first().id)
+        assertEquals("https://us.geohide.ru/dns-query", defaults.first().value)
+        assertEquals("geohide-eu", defaults[1].id)
+        assertEquals("https://eu.geohide.ru/dns-query", defaults[1].value)
+        val owner = defaults.first { it.id == "owner" }
+        assertEquals(DnsRule.Kind.AUTO, owner.kind)
+        assertEquals(PriorityDns.HOST, owner.value)
+        assertEquals(PriorityDns.KNOWN_ADDRESSES, owner.bootstrap)
         assertEquals(DnsRule.Kind.PROVIDER, defaults.last().kind)
         assertEquals(DnsRulesStore.PROVIDER_RULE_ID, defaults.last().id)
         // Провайдерский — единственный незашифрованный во всём списке.
         assertEquals(1, defaults.count { !it.encrypted })
         assertEquals(
-            listOf("owner", "comss", "geohide", "xbox", "cloudflare", "google", "provider"),
+            listOf("geohide", "geohide-eu", "owner", "comss", "xbox", "cloudflare", "google", "provider"),
             defaults.map { it.id },
         )
     }
@@ -182,7 +187,7 @@ class DnsRulesTest {
     /** Наш резолвер раскрывается в тот транспорт, который назвала служба. */
     @Test
     fun `the owner rule can be pointed at either transport`() {
-        val rule = DnsRulesStore.defaults().first()
+        val rule = DnsRulesStore.defaults().first { it.id == "owner" }
         assertEquals(
             "${PriorityDns.DOH_URL}|192.144.59.14|186.246.49.127",
             rule.toUpstream(DnsRouteMode.DIRECT, PriorityDns.DOH_URL),
@@ -232,7 +237,7 @@ class DnsRulesTest {
     @Test
     fun `the shipped resolvers ask on whichever transport answers first`() {
         assertEquals(
-            listOf("owner", "comss", "geohide", "xbox", "cloudflare", "google"),
+            listOf("geohide", "geohide-eu", "owner", "comss", "xbox", "cloudflare", "google"),
             DnsRulesStore.defaults()
                 .filter { it.transport == DnsRule.Transport.ANY }
                 .map { it.id },
