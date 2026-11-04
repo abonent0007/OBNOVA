@@ -3,6 +3,16 @@
 > Формат: дата → что изменено → где → чем проверено. Все пути от корня
 > `C:\Users\User\Documents\Nova-Android-Fork`.
 
+## 2026-11-04 — 1.34.2 / versionCode 166
+
+- **DoH:** старый `https://geohide.ru/dns-query` снят. В умолчаниях первыми
+  идут **`https://us.geohide.ru/dns-query`** и **`https://eu.geohide.ru/dns-query`**
+  (оба с автовыбором DoH/DoT). Сохранённое правило с legacy-URL миграция
+  заменяет парой us/eu и ставит её в начало приоритета.
+- **UI:** бейдж страны/режима (`tv_country_badge`) смещён под гамбургер
+  (`btn_settings`) — больше не накладывается на кнопку меню.
+- Тесты: JVM 610/0/9 (обновлены ожидания порядка DNS-умолчаний).
+
 ## 2026-11-03 — SNI для IP-литералов и автозапуск Opera
 
 - `nova-router/sni.go`: ClientHello читается **после** SOCKS-reply (Cronet
