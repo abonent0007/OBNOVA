@@ -20,6 +20,10 @@ type Slot struct {
 	Addr   string `json:"addr,omitempty"`
 	URL    string `json:"url,omitempty"`
 	Secret string `json:"secret,omitempty"`
+	// Via — необязательный SOCKS5-адрес, через который открывается WSS.
+	// Так реле Telegram идёт через MASQUE (127.0.0.1:1379), как на ПК
+	// (warp-socks), а не напрямую с телефона.
+	Via string `json:"via,omitempty"`
 }
 
 type Rule struct {

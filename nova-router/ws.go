@@ -11,6 +11,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,7 +33,7 @@ type wsConn struct {
 }
 
 // dialWebSocket открывает WSS-соединение и проверяет 101 Switching Protocols.
-func dialWebSocket(rawURL, secret string) (*wsConn, error) {
+func dialWebSocket(rawURL, secret string, via string) (*wsConn, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, fmt.Errorf("плохой URL реле: %w", err)
@@ -46,10 +47,22 @@ func dialWebSocket(rawURL, secret string) (*wsConn, error) {
 		port = "443"
 	}
 	addr := net.JoinHostPort(host, port)
-	dialer := &net.Dialer{Timeout: wsDialTimeout}
-	raw, err := dialer.Dial("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("реле %s: %w", addr, err)
+	var raw net.Conn
+	if strings.TrimSpace(via) != "" {
+		portNum, convErr := strconv.Atoi(port)
+		if convErr != nil {
+			return nil, fmt.Errorf("плохой порт реле %q", port)
+		}
+		raw, err = dialSocks5(strings.TrimSpace(via), host, portNum)
+		if err != nil {
+			return nil, fmt.Errorf("реле через %s: %w", via, err)
+		}
+	} else {
+		dialer := &net.Dialer{Timeout: wsDialTimeout}
+		raw, err = dialer.Dial("tcp", addr)
+		if err != nil {
+			return nil, fmt.Errorf("реле %s: %w", addr, err)
+		}
 	}
 	tlsConn := tls.Client(raw, &tls.Config{
 		ServerName: host,

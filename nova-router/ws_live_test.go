@@ -15,7 +15,7 @@ func TestLiveRelayHandshake(t *testing.T) {
 	if relayURL == "" || secret == "" {
 		t.Skip("нет OBNOVA_RELAY_URL/OBNOVA_RELAY_SECRET")
 	}
-	conn, err := dialWebSocket(relayURL+"?dc=2", secret)
+	conn, err := dialWebSocket(relayURL+"?dc=2", secret, "")
 	if err != nil {
 		t.Fatalf("реле не открылось: %v", err)
 	}

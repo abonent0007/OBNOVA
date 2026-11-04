@@ -14,6 +14,7 @@ object RouterConfig {
         val addr: String = "",
         val url: String = "",
         val secret: String = "",
+        val via: String = "",
     )
 
     data class RuleSpec(
@@ -43,6 +44,9 @@ object RouterConfig {
             }
             if (slot.secret.isNotEmpty()) {
                 json.append(",\"secret\":\"").append(escape(slot.secret)).append('"')
+            }
+            if (slot.via.isNotEmpty()) {
+                json.append(",\"via\":\"").append(escape(slot.via)).append('"')
             }
             json.append('}')
         }

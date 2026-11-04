@@ -103,13 +103,12 @@ object RouterConfigFactory {
         }
         if (input.telegramIps.isNotEmpty()) {
             val baseTelegramOrder = order("telegram", input.overrides, opera, spoof, killSwitch)
-            // MASQUE-слот первым: QUIC/443 проходит там, где UDP WireGuard
-            // и прямое TCP к DC режутся. WSS-реле — второй, Opera — третий.
-            // При ручном override не вмешиваемся.
+            // Как на ПК: Telegram идёт через WSS-реле, а реле — через MASQUE
+            // (via). Прямой cfproxy ниже остаётся запасом, затем Opera.
             val telegramIpOrder = if (input.overrides["telegram"] == null) {
                 buildList {
-                    if (cfProxy) add("cfproxy")
                     if (input.telegramRelayUrl.isNotBlank()) add("ws")
+                    if (cfProxy) add("cfproxy")
                     if (opera) add("secondary")
                     add("primary")
                 }
@@ -147,6 +146,9 @@ object RouterConfigFactory {
                 type = "ws",
                 url = input.telegramRelayUrl,
                 secret = input.telegramRelaySecret,
+                // Как на ПК (warp-socks): WSS открывается через MASQUE, а не
+                // напрямую с телефона — так реле идёт тем же egress, что primary.
+                via = if (cfProxy) "127.0.0.1:$cfProxyPort" else "",
             )
         }
 
