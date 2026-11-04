@@ -76,7 +76,8 @@ func (c *tgRelayConn) Write(p []byte) (int, error) {
 			c.mu.Unlock()
 			return len(p), nil
 		}
-		info, err := parseTGInit(c.clientBuf[:64], fallbackDCForIP(c.host))
+		fallbackDC, fallbackMedia := fallbackDCForIP(c.host)
+		info, err := parseTGInit(c.clientBuf[:64], fallbackDC, fallbackMedia)
 		if err != nil {
 			c.err = err
 			c.signalReady()
@@ -250,7 +251,7 @@ func (c *tgRelayConn) dialRelay(info *tgInit, first []byte) (*wsConn, []byte, er
 func (c *tgRelayConn) candidates(info *tgInit) []string {
 	dc := info.dc
 	if dc < 1 || dc > 5 {
-		if fallback := fallbackDCForIP(c.host); fallback > 0 {
+		if fallback, _ := fallbackDCForIP(c.host); fallback > 0 {
 			dc = fallback
 		} else {
 			dc = 2

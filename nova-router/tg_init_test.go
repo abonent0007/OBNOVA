@@ -35,7 +35,7 @@ func buildInit(t *testing.T, tag uint32, dc int16) (init []byte, clientStream ci
 
 func TestParseTGInitAbridged(t *testing.T) {
 	init, _ := buildInit(t, tgTagAbridged, 2)
-	info, err := parseTGInit(init, 0)
+	info, err := parseTGInit(init, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +46,7 @@ func TestParseTGInitAbridged(t *testing.T) {
 
 func TestParseTGInitMediaAndDCFromIP(t *testing.T) {
 	init, _ := buildInit(t, tgTagIntermediate, -4)
-	info, err := parseTGInit(init, 0)
+	info, err := parseTGInit(init, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestParseTGInitMediaAndDCFromIP(t *testing.T) {
 
 func TestParseTGInitPatchesZeroDC(t *testing.T) {
 	init, _ := buildInit(t, tgTagAbridged, 0)
-	info, err := parseTGInit(init, 3)
+	info, err := parseTGInit(init, 3, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,12 +65,30 @@ func TestParseTGInitPatchesZeroDC(t *testing.T) {
 		t.Fatalf("dc=%d", info.dc)
 	}
 	// Патч должен читаться тем же способом, что и у KWS.
-	patched, err := parseTGInit(info.raw, 0)
+	patched, err := parseTGInit(info.raw, 0, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if patched.dc != 3 {
 		t.Fatalf("после патча dc=%d", patched.dc)
+	}
+}
+
+func TestParseTGInitMediaFallbackPatchesNegativeDC(t *testing.T) {
+	init, _ := buildInit(t, tgTagAbridged, 0)
+	info, err := parseTGInit(init, 2, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.dc != 2 || !info.media {
+		t.Fatalf("dc=%d media=%v", info.dc, info.media)
+	}
+	patched, err := parseTGInit(info.raw, 0, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if patched.dc != 2 || !patched.media {
+		t.Fatalf("после патча dc=%d media=%v", patched.dc, patched.media)
 	}
 }
 

@@ -36,7 +36,7 @@ const (
 	tgTagPadded       = 0xDDDDDDDD
 )
 
-func parseTGInit(init []byte, fallbackDC int) (*tgInit, error) {
+func parseTGInit(init []byte, fallbackDC int, fallbackMedia bool) (*tgInit, error) {
 	if len(init) < 64 {
 		return nil, fmt.Errorf("init короче 64 байт: %d", len(init))
 	}
@@ -78,9 +78,15 @@ func parseTGInit(init []byte, fallbackDC int) (*tgInit, error) {
 	raw := append([]byte(nil), init[:64]...)
 	if (dc < 1 || dc > 5) && fallbackDC >= 1 && fallbackDC <= 5 {
 		dc = fallbackDC
+		media = fallbackMedia
 		// Патчим зашифрованный DC в init: C' = C ^ P_old ^ P_new.
+		// Для media DC знак отрицательный — KWS различает kwsN и kwsN-1.
+		signed := int16(dc)
+		if media {
+			signed = -signed
+		}
 		newPlain := make([]byte, 2)
-		binary.LittleEndian.PutUint16(newPlain, uint16(dc))
+		binary.LittleEndian.PutUint16(newPlain, uint16(signed))
 		raw[60] ^= plain[4] ^ newPlain[0]
 		raw[61] ^= plain[5] ^ newPlain[1]
 	}
@@ -94,6 +100,7 @@ type tgSplitter struct {
 	proto     tgProto
 	cipherBuf []byte
 	plainBuf  []byte
+	scratch   []byte
 	disabled  bool
 }
 
@@ -118,7 +125,10 @@ func (s *tgSplitter) split(chunk []byte) [][]byte {
 		return [][]byte{append([]byte(nil), chunk...)}
 	}
 	s.cipherBuf = append(s.cipherBuf, chunk...)
-	plain := make([]byte, len(chunk))
+	if cap(s.scratch) < len(chunk) {
+		s.scratch = make([]byte, len(chunk))
+	}
+	plain := s.scratch[:len(chunk)]
 	s.stream.XORKeyStream(plain, chunk)
 	s.plainBuf = append(s.plainBuf, plain...)
 
@@ -182,35 +192,85 @@ func (s *tgSplitter) peek() (int, int) {
 	return 0, 2
 }
 
+// tgExactTargets — адреса Telegram, где media-флаг известен точно
+// (таблица из tgrelay, совпадает с публичными DC-адресами).
+var tgExactTargets = map[string]struct {
+	dc    int
+	media bool
+}{
+	"149.154.175.50": {1, false},
+	"149.154.175.51": {1, false},
+	"149.154.175.53": {1, false},
+	"149.154.175.54": {1, false},
+	"149.154.175.55": {1, false},
+	"149.154.175.59": {1, false},
+	"149.154.175.52": {1, true},
+	"149.154.167.35": {2, false},
+	"149.154.167.36": {2, false},
+	"149.154.167.41": {2, false},
+	"149.154.167.50": {2, false},
+	"149.154.167.51": {2, false},
+	"149.154.167.220": {2, false},
+	"95.161.76.100":  {2, false},
+	"149.154.162.123": {2, true},
+	"149.154.167.151": {2, true},
+	"149.154.167.222": {2, true},
+	"149.154.167.223": {2, true},
+	"149.154.167.99": {2, true},
+	"149.154.175.100": {3, false},
+	"149.154.175.101": {3, false},
+	"149.154.175.102": {3, true},
+	"149.154.164.250": {4, true},
+	"149.154.165.111": {4, true},
+	"149.154.166.120": {4, true},
+	"149.154.166.121": {4, true},
+	"149.154.167.91": {4, false},
+	"149.154.167.92": {4, false},
+	"149.154.167.118": {4, true},
+	"91.108.56.100": {5, false},
+	"91.108.56.101": {5, false},
+	"91.108.56.102": {5, true},
+	"91.108.56.116": {5, false},
+	"91.108.56.126": {5, false},
+	"91.108.56.128": {5, true},
+	"91.108.56.123": {5, true},
+	"91.108.56.151": {5, true},
+	"149.154.171.5": {5, false},
+	"91.105.192.100": {203, false},
+}
+
 // fallbackDCForIP — таблица DC по адресу, если клиент прислал dc=0.
-func fallbackDCForIP(host string) int {
+func fallbackDCForIP(host string) (int, bool) {
+	if exact, ok := tgExactTargets[host]; ok {
+		return exact.dc, exact.media
+	}
 	ip := net.ParseIP(host)
 	if ip == nil {
-		return 0
+		return 0, false
 	}
 	v4 := ip.To4()
 	if v4 == nil {
-		return 0
+		return 0, false
 	}
 	switch {
 	case v4[0] == 149 && v4[1] == 154 && v4[2] == 167:
 		switch {
 		case v4[3] >= 91 && v4[3] <= 92:
-			return 4
+			return 4, false
 		case v4[3] >= 40 && v4[3] <= 51:
-			return 2
+			return 2, false
 		}
 	case v4[0] == 149 && v4[1] == 154 && v4[2] == 175:
 		if v4[3] >= 50 && v4[3] <= 59 {
-			return 1
+			return 1, false
 		}
 		if v4[3] == 100 {
-			return 3
+			return 3, false
 		}
 	case v4[0] == 91 && v4[1] == 108 && v4[2] == 56:
-		return 5
+		return 5, false
 	case v4[0] == 149 && v4[1] == 154 && v4[2] == 171:
-		return 5
+		return 5, false
 	}
-	return 0
+	return 0, false
 }
