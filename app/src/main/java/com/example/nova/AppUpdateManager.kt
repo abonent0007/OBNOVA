@@ -105,7 +105,6 @@ data class ManualUpdateCheckResult(
 
 object AppUpdateManager {
 
-    private val UPDATE_URLS = ExternalSources.updateFeedMirrors(ExternalSources.APP_UPDATE_FEED)
     private const val GITHUB_LATEST_RELEASE_URL = ExternalSources.GITHUB_LATEST_RELEASE_API
     private const val PERIODIC_WORK_NAME = "nova_update_check_periodic"
     private const val REPAIR_WORK_NAME = "nova_update_repair"
@@ -136,10 +135,10 @@ object AppUpdateManager {
     /**
      * Через сколько захваченный признак считается протухшим.
      *
-     * Честная проверка укладывается заметно быстрее: [UPDATE_URLS] и релиз на
-     * GitHub опрашиваются по очереди с `connectTimeout` и `readTimeout` по 6 с,
-     * то есть худший **правильный** случай это около полуминуты. Полторы минуты
-     * оставляют запас на медленную сеть и всё равно возвращают экран к жизни.
+     * Честная проверка укладывается заметно быстрее: релиз на GitHub
+     * опрашивается с `connectTimeout` и `readTimeout` по 6 с, то есть худший
+     * **правильный** случай это около десяти секунд. Полторы минуты оставляют
+     * запас на медленную сеть и всё равно возвращают экран к жизни.
      */
     private const val CHECK_STALE_AFTER_MS = 90_000L
 
@@ -460,7 +459,7 @@ object AppUpdateManager {
             return false
         }
         getReadyDownloadedUpdate(appContext, clientData)
-        val metadata = fetchMetadata(appContext) ?: return false
+        val metadata = fetchMetadata() ?: return false
         clientData.setLastUpdateCheckAt(System.currentTimeMillis())
         clientData.setLastUpdateVersion(metadata.version)
         clientData.setLastUpdateUrl(metadata.url)
@@ -533,7 +532,7 @@ object AppUpdateManager {
                 )
             }
 
-            val metadata = fetchMetadata(appContext)
+            val metadata = fetchMetadata()
                 ?: return ManualUpdateCheckResult(
                     kind = ManualUpdateCheckResult.Kind.FAILED,
                     message = "Не удалось проверить обновление",
@@ -955,43 +954,19 @@ object AppUpdateManager {
         }
     }
 
-    private fun fetchMetadata(context: Context): ApkUpdateMetadata? {
-        for (updateUrl in UPDATE_URLS) {
-            try {
-                val connection = URL(updateUrl).openConnection() as HttpURLConnection
-                connection.connectTimeout = 6000
-                connection.readTimeout = 6000
-                connection.instanceFollowRedirects = true
-                connection.useCaches = false
-                connection.setRequestProperty("User-Agent", "NovaAndroidUpdater/1.12")
-                val body = connection.inputStream.bufferedReader().use { it.readText() }
-                val json = JSONObject(body)
-                val metadata = ApkUpdateMetadata(
-                    version = json.optString("version").trim(),
-                    url = json.optString("url").trim(),
-                    sha256 = json.optString("sha256").trim(),
-                ).takeIf { it.version.isNotBlank() && it.url.isNotBlank() }
-                if (metadata != null) {
-                    LogManager.log("Метаданные обновления получены из: $updateUrl")
-                    return metadata
-                }
-            } catch (_: Exception) {
-                continue
-            }
-        }
-        return fetchLatestGithubRelease()
-    }
+    private fun fetchMetadata(): ApkUpdateMetadata? = fetchLatestGithubRelease()
 
     /**
-     * Спрашивает последний релиз публичного репозитория напрямую.
+     * Спрашивает последний релиз **нашего** репозитория напрямую.
      *
-     * Запасной путь к `apk_version.json`: репозиторий исходников публичный, и релиз
-     * появляется в нём раньше, чем кто-либо обновит ленту, — а если лента отстанет
-     * или окажется недоступна, обновление иначе не найдётся вовсе.
+     * Ленты `apk_version.json` upstream здесь больше нет: она описывает чужие
+     * сборки, подписанные другим ключом, и предлагала бы установку, которая
+     * гарантированно не встанет поверх личной. Единственный источник —
+     * `ExternalSources.RELEASES_REPO`.
      *
      * Контрольной суммы у релиза нет, и это осознанный размен: без неё проверка
      * скачанного APK опирается на имя пакета, версию и подпись самого Android при
-     * установке. Лента с `sha256` остаётся первой по очереди именно поэтому.
+     * установке.
      */
     private fun fetchLatestGithubRelease(): ApkUpdateMetadata? {
         return try {
@@ -1002,24 +977,35 @@ object AppUpdateManager {
             connection.useCaches = false
             connection.setRequestProperty("User-Agent", "NovaAndroidUpdater/1.12")
             connection.setRequestProperty("Accept", "application/vnd.github+json")
+            val code = connection.responseCode
+            if (code != HttpURLConnection.HTTP_OK) {
+                // Приватный репозиторий отвечает 404 без токена. Токен в APK не
+                // кладём: это был бы секрет в каждом экземпляре сборки.
+                LogManager.log(
+                    "Релизы GitHub: ${ExternalSources.RELEASES_REPO} недоступны без авторизации " +
+                        "(HTTP $code). Обновление — вручную из релизов."
+                )
+                return null
+            }
             val body = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(body)
             if (json.optBoolean("draft") || json.optBoolean("prerelease")) return null
             val version = json.optString("tag_name").trim().removePrefix("v").removePrefix("V")
-            val assets = json.optJSONArray("assets")
-            var apkUrl = ""
-            if (assets != null) {
-                for (index in 0 until assets.length()) {
-                    val asset = assets.optJSONObject(index) ?: continue
+            val assetsJson = json.optJSONArray("assets")
+            val assets = if (assetsJson == null) {
+                emptyList()
+            } else {
+                (0 until assetsJson.length()).mapNotNull { index ->
+                    val asset = assetsJson.optJSONObject(index) ?: return@mapNotNull null
                     val name = asset.optString("name").trim()
-                    if (!name.endsWith(".apk", ignoreCase = true)) continue
-                    apkUrl = asset.optString("browser_download_url").trim()
-                    if (apkUrl.isNotBlank()) break
+                    val url = asset.optString("browser_download_url").trim()
+                    if (name.isBlank() || url.isBlank()) null else name to url
                 }
             }
-            if (version.isBlank() || apkUrl.isBlank()) return null
-            LogManager.log("Метаданные обновления взяты из релизов GitHub: $version")
-            ApkUpdateMetadata(version = version, url = apkUrl, sha256 = "")
+            val selected = UpdateAssetSelector.pick(assets, Build.SUPPORTED_ABIS.toList())
+            if (version.isBlank() || selected == null) return null
+            LogManager.log("Метаданные обновления взяты из релизов GitHub: $version, ${selected.first}")
+            ApkUpdateMetadata(version = version, url = selected.second, sha256 = "")
         } catch (error: Exception) {
             LogManager.log("Релизы GitHub недоступны: ${error.message}")
             null

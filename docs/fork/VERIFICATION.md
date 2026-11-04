@@ -634,7 +634,7 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
 
 ### Статический анализ и регрессия (2026-11-04)
 
-- `gradlew testGithubDebugUnitTest`: **621/0/9** (было 610/0/9).
+- `gradlew testGithubDebugUnitTest`: **629/0/9** (было 610/0/9).
 - `gradlew lintGithubDebug`: BUILD SUCCESSFUL, **0 ошибок**, 892 предупреждения
   (HardcodedText 273, UseKtx 188, UnusedResources 98 — все существовавшие).
 - `go vet ./...` в `nova-router`: чисто. `nova-core` на Windows не проверяется:
@@ -645,8 +645,9 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
   через `FeedHttp` с тайм-аутами; 22 сокета без тайм-аута в окне — это
   `ServerSocket`-слушатели либо `connect(..., timeout)`, проверено вручную.
 - Тесты обновления данных: `FeedHttpTest` (200/404/потолок/политика),
-  `ExternalSourcesTest` (зеркала raw→Pages, HTTPS), `DnsRulesTest`
-  (legacy geohide по адресу, идемпотентность, чужой id).
+  `ExternalSourcesTest` (зеркала raw→Pages, HTTPS, репозиторий релизов),
+  `DnsRulesTest` (legacy geohide по адресу, идемпотентность, чужой id),
+  `UpdateAssetSelectorTest` (ABI, universal, отказ от debug).
 
 - Списки и ручные маршруты подключены к конфигу роутера: на устройстве
   `nova-router` поднялся с **9 правилами** (exclude, локальные TLD, main,

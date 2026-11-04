@@ -27,12 +27,22 @@ object ExternalSources {
     /** Опубликованный список рабочих адресов Opera. */
     const val OPERA_ENDPOINTS_FEED = "opera_endpoints.json"
 
-    /** Манифест версии APK для встроенного (выключенного в форке) обновления. */
-    const val APP_UPDATE_FEED = "apk_version.json"
+    /**
+     * Репозиторий релизов **этого форка**, а не upstream.
+     *
+     * Обновление обязано смотреть сюда: upstream-релизы подписаны другим ключом
+     * и не встают поверх личной сборки. Если репозиторий приватный, GitHub API
+     * отвечает 404 без токена — `AppUpdateManager` пишет это в журнал и
+     * обновление остаётся ручным.
+     */
+    const val RELEASES_REPO = "abonent0007/OBNOVA"
 
-    /** Резервный канал обновлений: релизы upstream напрямую через GitHub API. */
+    /** Последний релиз форка напрямую через GitHub API. */
     const val GITHUB_LATEST_RELEASE_API =
-        "https://api.github.com/repos/confeden/Nova-Android/releases/latest"
+        "https://api.github.com/repos/$RELEASES_REPO/releases/latest"
+
+    /** Страница релизов для кнопки «Скачать последнюю версию». */
+    const val RELEASES_PAGE_URL = "https://github.com/$RELEASES_REPO/releases"
 
     /** Подписка AWG/WARP по умолчанию в экране «Конфигурации». */
     const val WARP_CONFIGS_FEED =

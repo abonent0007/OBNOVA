@@ -43,10 +43,22 @@ class ExternalSourcesTest {
             ExternalSources.LIST_MANIFEST,
             ExternalSources.DNS_TUNNEL_FEED,
             ExternalSources.OPERA_ENDPOINTS_FEED,
-            ExternalSources.APP_UPDATE_FEED,
         )
         assertTrue(paths.all { !it.startsWith("/") && it.isNotBlank() })
         assertEquals(paths.size, paths.distinct().size)
+    }
+
+    @Test
+    fun `updates point at the fork repository, not upstream`() {
+        assertEquals("abonent0007/OBNOVA", ExternalSources.RELEASES_REPO)
+        assertEquals(
+            "https://api.github.com/repos/abonent0007/OBNOVA/releases/latest",
+            ExternalSources.GITHUB_LATEST_RELEASE_API,
+        )
+        assertEquals(
+            "https://github.com/abonent0007/OBNOVA/releases",
+            ExternalSources.RELEASES_PAGE_URL,
+        )
     }
 
     @Test

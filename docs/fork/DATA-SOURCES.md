@@ -13,7 +13,7 @@
 | IP-списки Cloudflare/YouTube/Telegram | `ListSync` (`IP_ASSETS`), `ListRepository.cidrs` | `nova_pc/ip/*.txt` из манифеста | вместе со списками | прошлые `*_ips.txt`, затем `assets/ip/*` |
 | Сервер DNS-туннеля Nova | `DnsServerFeed` | `nova_android/dns_tunnel.json`, raw + Pages | 8 ч и при подключении | `SEED` в коде и прошлое состояние в файле |
 | Адреса Opera | `OperaEndpointFeed` | `opera_endpoints.json`, raw + Pages | 3 ч / перед запуском | кэш `discover`, затем собственный discover |
-| Версия APK | `AppUpdateManager` | `apk_version.json` + GitHub Releases API | периодически (в форке выключено) | GitHub API, затем «нет обновления» |
+| Версия APK | `AppUpdateManager` | GitHub Releases API **`abonent0007/OBNOVA`** (не upstream) | периодически (в форке выключено) | нет: приватный репозиторий без токена отвечает 404 → ручное обновление |
 | Мосты Tor | `TorBridges` | OnionHop (4 зеркала) + Delta (2), MOAT | при запросе | встроенные мосты и прошлый файл |
 | Конфигурации WARP по умолчанию | `WarpConfigsActivity` | `confeden/auto-warp-config` | по кнопке | уже импортированные конфиги |
 | VLESS-подписка | `RoutesActivity` | `iboxz/free-v2ray-collector` | по кнопке | нет: это seed, не гарантия живых узлов |
@@ -40,3 +40,13 @@
 3. У каждого вызова — зеркало, кэш или встроенный seed.
 4. Ответ проверяется до записи: JSON/формат/`sha256`, как у `ListSync`.
 5. Ошибка видна в журнале и, если действие ручное, в интерфейсе.
+
+## Обновления: важное ограничение
+
+Релизы форка лежат в **приватном** `abonent0007/OBNOVA`. GitHub API без токена
+отвечает на такой репозиторий `404`, поэтому встроенная проверка обновлений
+(она и так выключена: `BuildConfig.UPDATER_ENABLED = false`) не может найти
+новую версию — журнал пишет «недоступны без авторизации». Токен в APK не
+кладём. Рабочие варианты: публичный репозиторий только с релизами (без
+исходников), собственный публичный `apk_version.json` + APK, либо ручное
+обновление из приватного репозитория.
