@@ -25,11 +25,20 @@ import (
 
 const wsDialTimeout = 10 * time.Second
 
+// Сколько ждать первый ответ реле после того, как клиент отправил данные.
+// Telegram DC отвечает за 0.3–1 с; молчание дольше — пустой WSS-маршрут.
+const wsFirstReplyTimeout = 6 * time.Second
+
 type wsConn struct {
 	conn    net.Conn
 	reader  *bufio.Reader
 	pending []byte
 	writeMu sync.Mutex
+	// firstWriteOnce — сторож пустого ответа: после первых данных клиента
+	// ждём ответ реле не дольше wsFirstReplyTimeout. Если реле промолчало
+	// (в логах ПК это «WSS empty response»), соединение закрывается, и
+	// Telegram переподключается — вместо бесконечного «Соединение...».
+	firstWriteOnce sync.Once
 }
 
 // dialWebSocket открывает WSS-соединение и проверяет 101 Switching Protocols.
@@ -154,6 +163,9 @@ func (c *wsConn) Write(p []byte) (int, error) {
 	if err := writeWSFrame(c.conn, 0x2, p); err != nil {
 		return 0, err
 	}
+	c.firstWriteOnce.Do(func() {
+		_ = c.conn.SetReadDeadline(time.Now().Add(wsFirstReplyTimeout))
+	})
 	return len(p), nil
 }
 
@@ -173,6 +185,8 @@ func (c *wsConn) Read(p []byte) (int, error) {
 			if len(payload) == 0 {
 				continue
 			}
+			// Первый ответ пришёл — снимаем сторож пустого маршрута.
+			_ = c.conn.SetReadDeadline(time.Time{})
 			n := copy(p, payload)
 			if n < len(payload) {
 				c.pending = payload[n:]
