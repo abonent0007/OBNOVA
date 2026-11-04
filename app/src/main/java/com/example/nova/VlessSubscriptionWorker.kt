@@ -19,12 +19,21 @@ class VlessSubscriptionWorker(
     override fun doWork(): Result {
         LogManager.setAppContext(applicationContext)
         val url = ClientData(applicationContext).getVlessSubscription()?.url.orEmpty()
-        if (url.isBlank()) return Result.success()
-        return when (VlessSubscriptionManager.refresh(applicationContext, url)) {
+        // Своя подписка и публичные источники обновляются одним проходом.
+        var userOk = true
+        if (url.isNotBlank()) {
+            userOk = VlessSubscriptionManager.refresh(applicationContext, url) !is
+                VlessSubscriptionManager.Outcome.Failed
+        }
+        if (PublicSubscriptions.isActivated(applicationContext)) {
+            PublicSubscriptions.sync(applicationContext)
+        }
+        return if (userOk) {
+            Result.success()
+        } else {
             // Неудача сети — обычное дело в фоне: повторим по расписанию WorkManager,
             // а не с нуля при следующем запуске приложения.
-            is VlessSubscriptionManager.Outcome.Failed -> Result.retry()
-            else -> Result.success()
+            Result.retry()
         }
     }
 }

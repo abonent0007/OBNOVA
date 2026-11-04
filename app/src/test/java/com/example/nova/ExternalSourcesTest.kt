@@ -17,8 +17,22 @@ class ExternalSourcesTest {
     }
 
     @Test
-    fun `public subscription is an absolute https url`() {
-        assertTrue(ExternalSources.PUBLIC_VLESS_SUBSCRIPTION_URL.startsWith("https://"))
+    fun `public subscriptions match the four sources from the PC registry`() {
+        val sources = ExternalSources.PUBLIC_VLESS_SOURCES
+        assertEquals(4, sources.size)
+        assertEquals(
+            listOf(
+                "https://iboxz.github.io/free-v2ray-collector/main/vless.txt",
+                "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/main/config/reality/reality.txt",
+                "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/protocols/vless.txt",
+                "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/vless.txt",
+            ),
+            sources.map { it.url },
+        )
+        assertTrue(sources.all { it.url.startsWith("https://") })
+        assertTrue(sources.all { it.name.isNotBlank() })
+        assertEquals(sources.size, sources.map { it.url }.distinct().size)
+        assertEquals(sources.first().url, ExternalSources.PUBLIC_VLESS_SUBSCRIPTION_URL)
         assertTrue(ExternalSources.NEUTRAL_HTTPS_PROBE_HOST.contains('.'))
     }
 
@@ -83,6 +97,24 @@ class ExternalSourcesTest {
         )
         assertTrue(!ExternalSources.PUBLIC_VLESS_SUBSCRIPTION_URL.contains("abonent0007"))
         assertTrue(!ExternalSources.WARP_CONFIGS_FEED.contains("abonent0007"))
+    }
+
+    @Test
+    fun `github subscription mirrors follow the PC order`() {
+        val raw = "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/main/config/reality/reality.txt"
+        val mirrors = ExternalSources.subscriptionMirrors(raw)
+        assertEquals(3, mirrors.size)
+        assertEquals(
+            "https://raw.githack.com/Delta-Kronecker/V2ray-Config/main/config/reality/reality.txt",
+            mirrors[0],
+        )
+        assertEquals(raw, mirrors[1])
+        assertEquals(
+            "https://cdn.jsdelivr.net/gh/Delta-Kronecker/V2ray-Config@main/config/reality/reality.txt",
+            mirrors[2],
+        )
+        val iboxz = "https://iboxz.github.io/free-v2ray-collector/main/vless.txt"
+        assertEquals(listOf(iboxz), ExternalSources.subscriptionMirrors(iboxz))
     }
 
     @Test

@@ -178,19 +178,19 @@ class RoutesActivity : AppCompatActivity() {
             card.addView(subButton)
         }
 
-        // Публичная подписка из стокового PC-форка. Это те же данные, что
-        // `profiles/subscriptions.json` у PC: список свободных VLESS-узлов.
-        // Кнопка нужна, когда своей подписки ещё нет: без профилей VLESS
-        // MULTI остаётся на DESYNC и не может обойти блокировку YouTube.
+        // Публичные подписки из стокового PC-форка: четыре источника
+        // (`profiles/subscriptions.json`), как в PC. Кнопка нужна, когда своей
+        // подписки ещё нет: без профилей VLESS MULTI остаётся на DESYNC и не
+        // может обойти блокировку YouTube.
         val publicStatus = TextView(this).apply {
-            text = "Публичная подписка VLESS (сток PC, узлы нестабильны)"
+            text = "Публичные подписки VLESS (4 источника, сток PC, узлы нестабильны)"
             setTextColor(0xFF7FA98C.toInt())
             textSize = 11f
             setPadding(0, dp(10), 0, 0)
         }
         card.addView(publicStatus)
         val publicButton = TextView(this).apply {
-            text = "Загрузить публичную подписку"
+            text = "Загрузить публичные подписки"
             textSize = 13f
             setTextColor(0xFF50C878.toInt())
             setPadding(0, dp(6), 0, 0)
@@ -200,34 +200,36 @@ class RoutesActivity : AppCompatActivity() {
         publicButton.setOnClickListener {
             if (!publicButton.isEnabled) return@setOnClickListener
             publicButton.isEnabled = false
-            publicStatus.text = "Загружаем публичную подписку…"
+            publicStatus.text = "Загружаем публичные подписки…"
             Thread({
-                val outcome = VlessSubscriptionManager.refresh(
-                    this,
-                    ExternalSources.PUBLIC_VLESS_SUBSCRIPTION_URL,
+                val result = PublicSubscriptions.sync(
+                    context = this,
                     force = true,
+                    progress = { kept, charsRead ->
+                        runOnUiThread {
+                            if (!isFinishing) {
+                                publicStatus.text = "Публичные подписки: $kept профилей, $charsRead символов…"
+                            }
+                        }
+                    },
                 )
                 runOnUiThread {
-                    publicStatus.text = when (outcome) {
-                        is VlessSubscriptionManager.Outcome.Updated ->
-                            "VLESS: +${outcome.added} / −${outcome.removed}, всего ${outcome.total}. Переподключите VPN."
-                        is VlessSubscriptionManager.Outcome.Unchanged ->
-                            "VLESS уже загружен (${outcome.total}). Переподключите VPN."
-                        VlessSubscriptionManager.Outcome.NoVlessFound ->
-                            "В подписке нет VLESS-ссылок"
-                        is VlessSubscriptionManager.Outcome.Failed ->
-                            "Ошибка публичной подписки: ${outcome.message}"
+                    publicStatus.text = if (result.okSources > 0) {
+                        "VLESS: +${result.added} / −${result.removed}, всего ${result.total}. " +
+                            "Источников: ${result.okSources}/" +
+                            "${ExternalSources.PUBLIC_VLESS_SOURCES.size}. Переподключите VPN."
+                    } else {
+                        "Ошибка публичных подписок: ${result.message}"
                     }
                     publicButton.isEnabled = true
                     LogManager.log("VLESS: ${publicStatus.text}")
-                    if (outcome is VlessSubscriptionManager.Outcome.Updated ||
-                        outcome is VlessSubscriptionManager.Outcome.Unchanged
-                    ) {
+                    if (result.okSources > 0 && result.total > 0) {
                         Toast.makeText(
                             this@RoutesActivity,
-                            "Подписка VLESS сохранена. Переподключите VPN.",
+                            "Публичные подписки сохранены. Переподключите VPN.",
                             Toast.LENGTH_LONG,
                         ).show()
+                        VlessSubscriptionManager.syncSchedule(this@RoutesActivity)
                         // Карточка перестраивается, чтобы появилась кнопка
                         // «Обновить подписку»: до импорта подписки её не было.
                         renderRows()

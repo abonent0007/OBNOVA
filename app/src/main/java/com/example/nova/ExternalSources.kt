@@ -73,13 +73,39 @@ object ExternalSources {
     const val TOR_MOAT_SETTINGS_URL = "https://bridges.torproject.org/moat/circumvention/settings"
     const val TOR_MOAT_BUILTIN_URL = "https://bridges.torproject.org/moat/circumvention/builtin"
 
-    /**
-     * Публичная подписка VLESS из стокового PC-форка. Узлы свободные и
-     * нестабильные; приложение проверяет каждый профиль по HTTPS и уводит
-     * нерабочие вниз списка.
-     */
+    /** Публичная подписка VLESS из стокового PC-форка (первый источник). */
     const val PUBLIC_VLESS_SUBSCRIPTION_URL =
         "https://iboxz.github.io/free-v2ray-collector/main/vless.txt"
+
+    /** Один публичный источник подписок: имя для экрана и адрес обновления. */
+    data class VlessSource(val name: String, val url: String)
+
+    /**
+     * Все публичные источники VLESS из PC-версии
+     * (`resources/nova_subscriptions.py`, `DEFAULT_SOURCES`).
+     *
+     * Порядок важен: iboxz идёт первым, потому что `github.io` отвечает из
+     * России без обхода; остальные три — независимые пулы, которые PC опрашивает
+     * с тем же интервалом 12 ч.
+     */
+    val PUBLIC_VLESS_SOURCES = listOf(
+        VlessSource(
+            name = "iboxz",
+            url = PUBLIC_VLESS_SUBSCRIPTION_URL,
+        ),
+        VlessSource(
+            name = "Delta-Kronecker REALITY",
+            url = "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/main/config/reality/reality.txt",
+        ),
+        VlessSource(
+            name = "0xRadikal VLESS",
+            url = "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/protocols/vless.txt",
+        ),
+        VlessSource(
+            name = "barry-far VLESS",
+            url = "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/vless.txt",
+        ),
+    )
 
     /** Нейтральный адрес: по нему проверяется, что узел пропускает TLS. */
     const val NEUTRAL_HTTPS_PROBE_HOST = "example.com"
@@ -103,6 +129,29 @@ object ExternalSources {
         "https://cdn.jsdelivr.net/gh/$DATA_REPO@main/$relativePath",
         "https://raw.githack.com/$DATA_REPO/main/$relativePath",
     )
+
+    /**
+     * Зеркала произвольной GitHub-подписки в порядке PC-версии:
+     * `raw.githack.com` (быстрее всего отвечает из РФ), исходный raw, jsDelivr.
+     *
+     * Для не-GitHub ссылки возвращается она сама: подменять чужой адрес
+     * зеркалом нельзя.
+     */
+    fun subscriptionMirrors(url: String): List<String> {
+        val prefix = "https://raw.githubusercontent.com/"
+        if (!url.startsWith(prefix, ignoreCase = true)) return listOf(url)
+        val parts = url.removePrefix(prefix).split('/', limit = 4)
+        if (parts.size < 4 || parts[3].isBlank()) return listOf(url)
+        val owner = parts[0]
+        val repo = parts[1]
+        val ref = parts[2]
+        val path = parts[3]
+        return listOf(
+            "https://raw.githack.com/$owner/$repo/$ref/$path",
+            url,
+            "https://cdn.jsdelivr.net/gh/$owner/$repo@$ref/$path",
+        )
+    }
 
     /**
      * Два адреса лент `nova_updates`: raw и GitHub Pages.

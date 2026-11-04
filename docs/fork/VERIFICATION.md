@@ -634,7 +634,7 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
 
 ### Статический анализ и регрессия (2026-11-04)
 
-- `gradlew testGithubDebugUnitTest`: **634/0/9** (было 610/0/9).
+- `gradlew testGithubDebugUnitTest`: **635/0/9** (было 610/0/9).
 - `gradlew lintGithubDebug`: BUILD SUCCESSFUL, **0 ошибок**, 892 предупреждения
   (HardcodedText 273, UseKtx 188, UnusedResources 98 — все существовавшие).
 - `go vet ./...` в `nova-router`: чисто. `nova-core` на Windows не проверяется:

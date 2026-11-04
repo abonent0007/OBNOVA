@@ -164,17 +164,21 @@ object VlessSubscriptionManager {
         }
     }
 
-    /** Ставит или снимает периодическое обновление в зависимости от наличия подписки. */
+    /** Ставит или снимает периодическое обновление подписок. */
     fun syncSchedule(context: Context) {
         val appContext = context.applicationContext
         val workManager = WorkManager.getInstance(appContext)
         val subscription = ClientData(appContext).getVlessSubscription()
-        if (subscription == null) {
+        // Публичные подписки обновляются тем же worker'ом, что и своя: иначе
+        // после кнопки «Загрузить публичные подписки» они оставались бы
+        // статичными до следующего ручного нажатия.
+        val publicActive = PublicSubscriptions.isActivated(appContext)
+        if (subscription == null && !publicActive) {
             workManager.cancelUniqueWork(PERIODIC_WORK_NAME)
             return
         }
-        val hours = subscription.updateIntervalHours
-            .takeIf { it > 0 }
+        val hours = subscription?.updateIntervalHours
+            ?.takeIf { it > 0 }
             ?.toLong()
             ?.coerceIn(MIN_INTERVAL_HOURS, MAX_INTERVAL_HOURS)
             ?: DEFAULT_INTERVAL_HOURS
