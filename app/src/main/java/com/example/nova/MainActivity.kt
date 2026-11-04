@@ -1484,6 +1484,10 @@ class MainActivity : AppCompatActivity() {
             set.connect(R.id.btn_install_update, end, split, start, dp(16))
             set.clear(R.id.tv_country_badge, bottom)
             set.connect(R.id.tv_country_badge, top, R.id.btnConnect, bottom, dp(10))
+            // В портрете пинг стоит слева от бейджа страны; в горизонтали бейдж
+            // уезжает в среднюю колонку, поэтому пинг возвращаем к графику.
+            set.connect(R.id.tv_internet_label, top, R.id.ll_ip_row, top, 0)
+            set.connect(R.id.tv_internet_label, end, R.id.graph_latency, end, 0)
             set.connect(R.id.graph_latency, start, logEdge, start, landscapeInsetLeft + dp(12))
             set.connect(R.id.graph_latency, end, split, start, dp(16))
             set.constrainHeight(R.id.graph_latency, dp(48))

@@ -5,7 +5,7 @@
 
 ## 1. Текущее состояние
 
-- Ветка: `personal`, версия **1.34.2** / `versionCode 166` (OBNOVA).
+- Ветка: `personal`, версия **1.34.3** / `versionCode 167` (OBNOVA).
 - Официальный апдейтер APK выключен (`UPDATER_ENABLED = false`), UI обновлений
   скрыт. Облачные профили и подписки не тронуты.
 - Тема по умолчанию — **Matrix** с `MatrixRainView` (цифровой дождь).
@@ -61,7 +61,7 @@
 - Android SDK: `ANDROID_HOME=C:\Android`; AVD — `Pixel_7_Pro`.
 - Эмулятор: `& "$env:ANDROID_HOME\emulator\emulator.exe" -avd Pixel_7_Pro`
   (MCP `android-emulator` в глобальном конфиге выключен; используем adb/emulator).
-- Установка: `adb install -r app\build\outputs\apk\github\release\OBNOVA_1.34.1-arm64-v8a.apk`.
+- Установка: `adb install -r app\build\outputs\apk\github\release\OBNOVA_<версия>-arm64-v8a.apk`.
 - Логи: `adb logcat -s Nova:* AndroidRuntime:E`.
 
 ## 3. Где что менять
