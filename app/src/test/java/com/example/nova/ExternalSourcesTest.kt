@@ -61,6 +61,30 @@ class ExternalSourcesTest {
         )
     }
 
+    /**
+     * Подписки и списки остаются стоковыми: наш репозиторий — только канал
+     * обновления APK. Иначе пользователь получал бы чужие/локальные узлы.
+     */
+    @Test
+    fun `subscriptions and data feeds stay on the upstream sources`() {
+        assertTrue(ExternalSources.PUBLIC_VLESS_SUBSCRIPTION_URL.startsWith("https://iboxz.github.io/"))
+        assertTrue(
+            ExternalSources.WARP_CONFIGS_FEED.startsWith(
+                "https://raw.githubusercontent.com/confeden/auto-warp-config/",
+            ),
+        )
+        assertTrue(
+            ExternalSources.listMirrors("nova_pc/list/main.txt")
+                .all { it.contains("confeden/nova_updates") },
+        )
+        assertTrue(
+            ExternalSources.updateFeedMirrors("opera_endpoints.json")
+                .all { it.contains("confeden/nova_updates") || it.contains("confeden.github.io") },
+        )
+        assertTrue(!ExternalSources.PUBLIC_VLESS_SUBSCRIPTION_URL.contains("abonent0007"))
+        assertTrue(!ExternalSources.WARP_CONFIGS_FEED.contains("abonent0007"))
+    }
+
     @Test
     fun `warp configs and tor mirrors are https`() {
         assertTrue(ExternalSources.WARP_CONFIGS_FEED.startsWith("https://"))

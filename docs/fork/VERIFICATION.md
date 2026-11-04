@@ -634,20 +634,54 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
 
 ### Статический анализ и регрессия (2026-11-04)
 
-- `gradlew testGithubDebugUnitTest`: **629/0/9** (было 610/0/9).
+- `gradlew testGithubDebugUnitTest`: **630/0/9** (было 610/0/9).
 - `gradlew lintGithubDebug`: BUILD SUCCESSFUL, **0 ошибок**, 892 предупреждения
   (HardcodedText 273, UseKtx 188, UnusedResources 98 — все существовавшие).
 - `go vet ./...` в `nova-router`: чисто. `nova-core` на Windows не проверяется:
   `syscall.Dup`/`AF_PACKET` есть только в Linux-сборке.
 - Скан импортов по 181 Kotlin-файлу: неиспользуемых **0** (удалены
   `kotlin.math.min` и `android.content.Context`).
-- Скан сетевых вызовов: 67 площадок, **0 без try/catch**; все HTTP-загрузки —
+- Скан сетевых вызовов: 66 площадок, **0 без try/catch**; все HTTP-загрузки —
   через `FeedHttp` с тайм-аутами; 22 сокета без тайм-аута в окне — это
   `ServerSocket`-слушатели либо `connect(..., timeout)`, проверено вручную.
 - Тесты обновления данных: `FeedHttpTest` (200/404/потолок/политика),
   `ExternalSourcesTest` (зеркала raw→Pages, HTTPS, репозиторий релизов),
   `DnsRulesTest` (legacy geohide по адресу, идемпотентность, чужой id),
   `UpdateAssetSelectorTest` (ABI, universal, отказ от debug).
+- Публичность репозитория (2026-11-04): анонимный
+  `GET /repos/abonent0007/OBNOVA` → 200 `private=false`;
+  `releases/latest` → `v1.34.3`, 6 ассетов; HEAD
+  `OBNOVA_1.34.3-arm64-v8a.apk` → 200, 38 113 907 байт.
+  Перед публикацией проверены дерево (2162 файла) и 2 коммита: `local.properties`,
+  `keystore.properties`, `*.jks`/`*.keystore` отсутствуют, ключей и токенов нет
+  (совпадения — только тестовые пароли в vendored `tools/xray-core`).
+
+### Устройство: 1.34.4 / 168 (2026-11-04)
+
+- Установка поверх 1.34.3: `adb install -r OBNOVA_1.34.4-arm64-v8a.apk` →
+  `Success`; `versionName=1.34.4`, `versionCode=168`, crash-буфер пуст.
+- Правый верхний угол (1080×2400): `btn_settings [948,116][1044,212]`,
+  `tv_internet_label [774,116][924,228]`, `tv_country_badge [786,242][1044,327]`
+  — без пересечений, как в 1.34.3.
+- DNS-правила: экран показал 8 строк, первые две — `https://eu.geohide.ru/dns-query`
+  и `https://us.geohide.ru/dns-query`, обе включены; сводка
+  `DNS: eu.geohide.ru + ещё 7, автовыбор пути`. Версия файла 5 читается без
+  потери списка.
+- Списки: «Обновить списки» → `Обновлено … загружено файлов: 12,
+  generated=1793716251`. Проверка манифеста: `ip/*` в нём нет, поэтому
+  встроенные CIDR остаются; код готов к их публикации.
+- MULTI подключён: `ROUTER: 149.154.167.x:443 → ws`, `:5222 → ws`,
+  `youtubei.googleapis.com → secondary`; `tun2proxy` фиксирует двусторонний
+  обмен. Проверка сервисов: RU `ya.ru` 302/230 мс, US `cnn.com` 302/576 мс,
+  YouTube 302/679 мс, Telegram 200/650 мс.
+- Ошибочная подписка: `https://example.invalid/nope.txt` → журнал
+  `Подписка с example.invalid не загрузилась: Unable to resolve host…`;
+  видимая ошибка вместо «конфигураций не найдено».
+- Апдейтер в сборке выключен (`UPDATER_ENABLED=false`), поэтому кнопка
+  «Скачать последнюю версию» скрыта, а проверка обновлений не запускается.
+  Публичный API релизов проверен с хоста: `v1.34.3`, 6 ассетов, HEAD arm64 —
+  200. Подписки (VLESS `iboxz`, WARP `confeden/auto-warp-config`) остаются
+  стоковыми.
 
 - Списки и ручные маршруты подключены к конфигу роутера: на устройстве
   `nova-router` поднялся с **9 правилами** (exclude, локальные TLD, main,

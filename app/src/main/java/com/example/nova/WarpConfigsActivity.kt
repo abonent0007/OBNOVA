@@ -1385,11 +1385,9 @@ class WarpConfigsActivity : AppCompatActivity() {
                         val suffix = if (sourceHost.isNotBlank()) " с $sourceHost" else ""
                         val reason = fetched.exceptionOrNull()?.message?.ifBlank { null }
                             ?: "пустой ответ"
-                        Toast.makeText(
-                            this,
-                            "Подписка$suffix не загрузилась: $reason",
-                            Toast.LENGTH_LONG,
-                        ).show()
+                        val message = "Подписка$suffix не загрузилась: $reason"
+                        LogManager.log(message)
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
                     } else {
                         finishUrlImport(result, sourceHost)
                     }

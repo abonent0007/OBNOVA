@@ -44,7 +44,12 @@ object ExternalSources {
     /** Страница релизов для кнопки «Скачать последнюю версию». */
     const val RELEASES_PAGE_URL = "https://github.com/$RELEASES_REPO/releases"
 
-    /** Подписка AWG/WARP по умолчанию в экране «Конфигурации». */
+    /**
+     * Подписка AWG/WARP по умолчанию в экране «Конфигурации».
+     *
+     * Источник — стоковый PC-форк; на наш релизный репозиторий его не менять:
+     * обновления APK и подписки — разные каналы.
+     */
     const val WARP_CONFIGS_FEED =
         "https://raw.githubusercontent.com/confeden/auto-warp-config/refs/heads/main/config.txt"
 
