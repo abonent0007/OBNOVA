@@ -686,6 +686,10 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
   Три `raw.githubusercontent.com` источника прошли через зеркало
   `raw.githack.com`, iboxz — напрямую. Состояние сохранено в
   `public_subscriptions.json`, worker запланирован.
+- Иконка 1.34.5: после установки и перезапуска launcher
+  (`am force-stop com.android.launcher`) поиск «OBNOVA» показывает новый знак —
+  тёмный скруглённый квадрат с зелёной рамкой и тремя узлами; старая звезда
+  больше не отображается.
 - Ошибочная подписка: `https://example.invalid/nope.txt` → журнал
   `Подписка с example.invalid не загрузилась: Unable to resolve host…`;
   видимая ошибка вместо «конфигураций не найдено».
