@@ -111,6 +111,20 @@
   `PrepareTlsConfig`/`EnrollKey`/`ConnectTunnel`). Резерв регионов Opera:
   `EU → AS → AM`; в селекторе появился `AS`.
 
+## 2026-11-04 — Telegram через KWS без прокси в Telegram
+
+- `nova-router`: слот `ws` стал **транспортным терминатором** obfuscated2 по
+  образцу `tgrelay` из Kaliopa. `tg_init.go` разбирает init (ключ `[8:40]`,
+  IV `[40:56]`, keystream после 64 нулей, тег/DC в зашифрованном хвосте
+  `[56:64]`), патчит `dc=0` по IP; `tg_relay.go` режет ciphertext на пакеты и
+  шлёт в KWS **по одному пакету на кадр**, первым кадром — ровно 64 байта init.
+- Маршруты: `kws{dc}` и `kws{dc}-1` (media), гонка, победа только после
+  **первого ответного кадра** (5 с); egress — через `cfproxy` (MASQUE 1379).
+- Приёмка на устройстве: Telegram **без прокси**, `proxy_lines=0`,
+  `ROUTER: 149.154.x:443 → ws`, `tun2proxy` отдаёт реальные байты
+  (`Ok(828), Ok(5013)`, `Ok(1502), Ok(725)`), чат открывается.
+- Тесты: Go — init/DC/патч/abridged/intermediate; JVM — 610/0/9.
+
 ## 2026-11-02 — Stage 2: AWG SOCKS-мост
 
 - Новый `nova-core/engine/awg_socks.go`: отдельный userspace-экземпляр

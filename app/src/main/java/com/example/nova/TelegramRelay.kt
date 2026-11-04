@@ -1,20 +1,16 @@
 package com.example.nova
 
 /**
- * Прозрачное WSS-реле для Telegram.
+ * Прозрачный WSS-релей Telegram (как TgRelay в Kaliopa).
  *
- * `nova-router` открывает WebSocket к Cloudflare Worker, тот поднимает
- * соединение к `kwsN.web.telegram.org`, и MTProto идёт как обычный трафик
- * дата-центра. Приложение Telegram об этом не знает: прокси в нём не нужен.
- *
- * URL и секрет — от Worker'а `nova-connect`. Пустой URL выключает слот.
+ * `{dc}` подставляет номер дата-центра; роутер сам добавляет вариант `-1`
+ * для media и гоняет маршруты. Секрет не нужен: это официальные KWS-хосты
+ * Telegram. Egress — через cfproxy (MASQUE 127.0.0.1:1379).
  */
 object TelegramRelay {
-    // Пока реле не подтвердило передачу MTProto, слот выключен: пустой URL
-    // убирает его из конфигурации, и Telegram идёт проверенным путём.
-    const val URL = "wss://nova-connect.yurentiy-avd.workers.dev/tcp"
-    const val SECRET = "2cf81934c6674643ab5a1d5243d021ee1b4677b5f92349d19ed9202804da150b"
+    const val URL = "wss://kws{dc}.web.telegram.org/apiws"
+    const val SECRET = ""
 
     val isConfigured: Boolean
-        get() = URL.startsWith("wss://") && SECRET.isNotBlank()
+        get() = URL.startsWith("wss://") && URL.contains("{dc}")
 }

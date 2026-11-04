@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -79,8 +78,9 @@ func dialSlot(slot Slot, host string, port int, sni string) (net.Conn, error) {
 		}
 		return dialHTTPConnect(slot.Addr, targetHost, port)
 	case SlotWS:
-		relayURL := slot.URL + "?host=" + url.QueryEscape(host) + "&port=" + strconv.Itoa(port)
-		return dialWebSocket(relayURL, slot.Secret, slot.Via)
+		// Прозрачный Telegram-релей: init+пакеты уходят в KWS покадрово,
+		// соединение открывается лениво, когда клиент прислал первый пакет.
+		return newTGRelayConn(slot, host, port), nil
 	default:
 		return nil, fmt.Errorf("неизвестный тип слота %q", slot.Type)
 	}
