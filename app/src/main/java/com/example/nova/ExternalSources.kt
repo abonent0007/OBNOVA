@@ -92,6 +92,19 @@ object ExternalSources {
     )
 
     /**
+     * Оригинальный репозиторий PC-версии: там лежат `ip/`-списки, которых нет
+     * в опубликованном манифесте `nova_updates` (только `list/`).
+     */
+    const val DATA_REPO = "confeden/Nova"
+
+    /** Зеркала данных `confeden/Nova`: raw, jsDelivr, raw.githack. */
+    fun dataMirrors(relativePath: String): List<String> = listOf(
+        "https://raw.githubusercontent.com/$DATA_REPO/main/$relativePath",
+        "https://cdn.jsdelivr.net/gh/$DATA_REPO@main/$relativePath",
+        "https://raw.githack.com/$DATA_REPO/main/$relativePath",
+    )
+
+    /**
      * Два адреса лент `nova_updates`: raw и GitHub Pages.
      *
      * Один и тот же файл в одном репозитории; если один хост недоступен,

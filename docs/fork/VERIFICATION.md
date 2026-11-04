@@ -634,7 +634,7 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
 
 ### Статический анализ и регрессия (2026-11-04)
 
-- `gradlew testGithubDebugUnitTest`: **630/0/9** (было 610/0/9).
+- `gradlew testGithubDebugUnitTest`: **634/0/9** (было 610/0/9).
 - `gradlew lintGithubDebug`: BUILD SUCCESSFUL, **0 ошибок**, 892 предупреждения
   (HardcodedText 273, UseKtx 188, UnusedResources 98 — все существовавшие).
 - `go vet ./...` в `nova-router`: чисто. `nova-core` на Windows не проверяется:
@@ -667,21 +667,29 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
   и `https://us.geohide.ru/dns-query`, обе включены; сводка
   `DNS: eu.geohide.ru + ещё 7, автовыбор пути`. Версия файла 5 читается без
   потери списка.
-- Списки: «Обновить списки» → `Обновлено … загружено файлов: 12,
-  generated=1793716251`. Проверка манифеста: `ip/*` в нём нет, поэтому
-  встроенные CIDR остаются; код готов к их публикации.
+- Списки: «Обновить списки» → `Обновлено … обновлено файлов: 14`
+  (+2 IP-файла из `confeden/Nova`). Журнал:
+  `LISTS: cloudflare_ips.txt — 15 строк из confeden/Nova, всего 15`,
+  `LISTS: telegram_ips.txt — 10 строк из confeden/Nova, всего 16` (6 диапазонов
+  сохранены из встроенного asset). `youtube_ips.txt` остаётся встроенным: в
+  PC-репозитории его нет.
 - MULTI подключён: `ROUTER: 149.154.167.x:443 → ws`, `:5222 → ws`,
   `youtubei.googleapis.com → secondary`; `tun2proxy` фиксирует двусторонний
   обмен. Проверка сервисов: RU `ya.ru` 302/230 мс, US `cnn.com` 302/576 мс,
   YouTube 302/679 мс, Telegram 200/650 мс.
+- Telegram (`org.telegram.messenger.web`): чат-лист открылся с аватарами и
+  непрочитанными, `tgnet` пишет `config write ok` и handshake; соединения
+  `149.154.167.41:443` и `:5222` идут через `ws`. Прокси внутри Telegram не
+  настраивался.
 - Ошибочная подписка: `https://example.invalid/nope.txt` → журнал
   `Подписка с example.invalid не загрузилась: Unable to resolve host…`;
   видимая ошибка вместо «конфигураций не найдено».
-- Апдейтер в сборке выключен (`UPDATER_ENABLED=false`), поэтому кнопка
-  «Скачать последнюю версию» скрыта, а проверка обновлений не запускается.
-  Публичный API релизов проверен с хоста: `v1.34.3`, 6 ассетов, HEAD arm64 —
-  200. Подписки (VLESS `iboxz`, WARP `confeden/auto-warp-config`) остаются
-  стоковыми.
+- Апдейтер включён (`UPDATER_ENABLED=true`, github): в настройках видны
+  «Автообновление», «Проверить обновление» и «Скачать последнюю версию». Ручная
+  проверка: `Метаданные обновления взяты из релизов GitHub: 1.34.3,
+  OBNOVA_1.34.3-arm64-v8a.apk` — источник наш репозиторий, ABI выбран верно;
+  обновления нет, потому что установлена 1.34.4. Подписки (VLESS `iboxz`,
+  WARP `confeden/auto-warp-config`) остаются стоковыми.
 
 - Списки и ручные маршруты подключены к конфигу роутера: на устройстве
   `nova-router` поднялся с **9 правилами** (exclude, локальные TLD, main,

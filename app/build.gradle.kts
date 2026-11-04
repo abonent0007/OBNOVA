@@ -218,13 +218,13 @@ android {
         create("github") {
             dimension = "distribution"
             isDefault = true
-            // Личный форк: официальный апдейтер выключен для обоих вариантов.
-            // Код AppUpdateManager остаётся ради helper'ов foreground-уведомления,
-            // но все сетевые входы и UI обновлений заглушены.
-            buildConfigField("boolean", "UPDATER_ENABLED", "false")
+            // Форк публикует релизы в abonent0007/OBNOVA: встроенный апдейтер
+            // включён и читает именно этот репозиторий (см. ExternalSources).
+            buildConfigField("boolean", "UPDATER_ENABLED", "true")
         }
         create("fdroid") {
             dimension = "distribution"
+            // F-Droid запрещает приложению самому тянуть исполняемые файлы.
             buildConfigField("boolean", "UPDATER_ENABLED", "false")
         }
     }

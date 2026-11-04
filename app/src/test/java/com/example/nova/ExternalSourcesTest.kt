@@ -86,6 +86,17 @@ class ExternalSourcesTest {
     }
 
     @Test
+    fun `ip data comes from the original PC repository`() {
+        assertEquals("confeden/Nova", ExternalSources.DATA_REPO)
+        val mirrors = ExternalSources.dataMirrors("ip/telegram.txt")
+        assertEquals(3, mirrors.size)
+        assertTrue(mirrors[0].startsWith("https://raw.githubusercontent.com/confeden/Nova/main/"))
+        assertTrue(mirrors[1].startsWith("https://cdn.jsdelivr.net/gh/confeden/Nova@main/"))
+        assertTrue(mirrors[2].startsWith("https://raw.githack.com/confeden/Nova/main/"))
+        assertTrue(mirrors.all { it.endsWith("/ip/telegram.txt") })
+    }
+
+    @Test
     fun `warp configs and tor mirrors are https`() {
         assertTrue(ExternalSources.WARP_CONFIGS_FEED.startsWith("https://"))
         assertTrue(ExternalSources.TOR_BRIDGE_MIRROR_BASES.isNotEmpty())

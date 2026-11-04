@@ -28,14 +28,32 @@ object ListSync {
      *
      * Раньше здесь был только Cloudflare, а `youtube_ips.txt` и
      * `telegram_ips.txt` читались из того же каталога, но синхронизировать их
-     * было нечем. Манифест upstream на 2026-11-04 публикует только каталог
-     * `list/`, так что сейчас работают встроенные CIDR; как только файлы `ip/`
-     * появятся в фиде, они доедут без новой версии приложения.
+     * было нечем. Манифест upstream публикует только каталог `list/`, поэтому
+     * IP-списки берём напрямую из оригинального `confeden/Nova`
+     * ([UPSTREAM_IP_FILES]).
      */
     private val IP_ASSETS = listOf(
         "ip/cloudflare.txt",
         "ip/youtube.txt",
         "ip/telegram.txt",
+    )
+
+    /**
+     * IP-списки из оригинального репозитория `confeden/Nova`.
+     *
+     * Манифест `nova_updates` публикует только `list/`, поэтому файлы `ip/` берём
+     * напрямую у PC-версии. `youtube_ips.txt` там нет — для YouTube остаётся
+     * встроенный `assets/ip/youtube.txt`.
+     */
+    private data class UpstreamIpFile(
+        val remotePath: String,
+        val localName: String,
+        val assetPath: String,
+    )
+
+    private val UPSTREAM_IP_FILES = listOf(
+        UpstreamIpFile("ip/cloudflare.txt", "cloudflare_ips.txt", "ip/cloudflare.txt"),
+        UpstreamIpFile("ip/telegram.txt", "telegram_ips.txt", "ip/telegram.txt"),
     )
 
     data class Result(
@@ -107,6 +125,29 @@ object ListSync {
                 )
             }
 
+            // IP-списки оригинального PC-репозитория: манифест их не публикует.
+            // Слияние с assets/local не даёт потерять диапазоны, которых нет в
+            // upstream: сеть Telegram шире одного файла.
+            for (file in UPSTREAM_IP_FILES) {
+                val remote = fetchUpstreamIp(file.remotePath)
+                if (remote == null) {
+                    LogManager.log(
+                        "LISTS: ${file.remotePath} из ${ExternalSources.DATA_REPO} недоступен — " +
+                            "остаётся прежний ${file.localName}."
+                    )
+                    continue
+                }
+                val fallback = readAssetLines(app, file.assetPath) +
+                    readLocalLines(File(dir, file.localName))
+                val merged = mergeCidrLines(remote, fallback)
+                if (merged.isEmpty()) continue
+                File(staging, file.localName).writeText(merged.joinToString("\n") + "\n")
+                LogManager.log(
+                    "LISTS: ${file.localName} — ${remote.size} строк из " +
+                        "${ExternalSources.DATA_REPO}, всего ${merged.size}."
+                )
+            }
+
             val staged = staging.listFiles().orEmpty()
             if (staged.isEmpty()) {
                 staging.deleteRecursively()
@@ -161,6 +202,53 @@ object ListSync {
      * Манифест пробуем со всех зеркал: 200 с HTML или обрезанным JSON —
      * не повод сдаваться, если следующее зеркало отдаёт валидный документ.
      */
+    /**
+     * IP-список из `confeden/Nova` по зеркалам. Возвращает только валидные
+     * IPv4-CIDR; пустой/битый ответ — повод попробовать следующее зеркало.
+     */
+    private fun fetchUpstreamIp(relativePath: String): List<String>? {
+        for (url in ExternalSources.dataMirrors(relativePath)) {
+            val body = runCatching {
+                FeedHttp.text(
+                    url,
+                    FeedHttp.Policy(
+                        connectTimeoutMs = TIMEOUT_MS,
+                        readTimeoutMs = TIMEOUT_MS,
+                        maxBytes = MAX_BYTES,
+                    ),
+                )
+            }.getOrNull() ?: continue
+            val lines = mergeCidrLines(body.lineSequence().toList())
+            if (lines.isNotEmpty()) return lines
+        }
+        return null
+    }
+
+    /**
+     * Объединение CIDR-строк без дублей. Всё, что не парсится как IPv4-префикс
+     * (комментарии, IPv6, мусор), отбрасывается — его всё равно отфильтровал бы
+     * `ListRepository`, но лучше не писать в файл.
+     */
+    internal fun mergeCidrLines(vararg groups: List<String>): List<String> {
+        val merged = LinkedHashSet<String>()
+        for (group in groups) {
+            for (raw in group) {
+                val line = raw.substringBefore('#').trim()
+                if (line.isNotEmpty() && Ipv4Range.parse(line) != null) merged += line
+            }
+        }
+        return merged.toList()
+    }
+
+    private fun readAssetLines(context: Context, path: String): List<String> =
+        runCatching {
+            context.assets.open(path).bufferedReader().use { it.readLines() }
+        }.getOrDefault(emptyList())
+
+    private fun readLocalLines(file: File): List<String> =
+        if (!file.exists()) emptyList()
+        else runCatching { file.readLines() }.getOrDefault(emptyList())
+
     private fun fetchManifest(): ListManifest.Manifest? {
         for (url in ExternalSources.listMirrors(ExternalSources.LIST_MANIFEST)) {
             val body = runCatching { httpGet(url) }.getOrNull() ?: continue

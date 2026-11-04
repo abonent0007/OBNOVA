@@ -10,9 +10,9 @@
 | Что | Источник | Как обновляется | Запасной путь |
 |---|---|---|---|
 | `main.txt`, `second.txt`, `exclude.txt`, `ai.txt`, `youtube.txt`, `telegram.txt`, `whatsapp.txt`, `discord.txt`, `cloudflare.txt`, `games.txt`, `rkn.txt`, `opera_bootstrap_domains.txt` | `confeden/nova_updates`, каталог `nova_pc/list/` | Кнопка «Обновить списки»; набор файлов берётся из `manifest.json`, а не из кода | Встроенные копии в `app/src/main/assets/lists/` |
-| `ip/cloudflare.txt` | тот же репозиторий | Только если файл есть в манифесте; кладётся как `cloudflare_ips.txt` | `assets/ip/cloudflare.txt` |
-| `ip/youtube.txt` | тот же репозиторий | Если появится в манифесте; кладётся как `youtube_ips.txt` | `assets/ip/youtube.txt` |
-| `ip/telegram.txt` | тот же репозиторий | Если появится в манифесте; кладётся как `telegram_ips.txt` | `assets/ip/telegram.txt` |
+| `ip/cloudflare.txt` | оригинальный `confeden/Nova`, `ip/cloudflare.txt` | При каждой синхронизации, слияние с встроенным | `assets/ip/cloudflare.txt` |
+| `ip/telegram.txt` | оригинальный `confeden/Nova`, `ip/telegram.txt` | При каждой синхронизации, слияние с встроенным | `assets/ip/telegram.txt` |
+| `ip/youtube.txt` | — (в PC-репозитории нет) | — | `assets/ip/youtube.txt` |
 | Локальные TLD | `list/local_tlds.txt` (если появится в манифесте) | Вместе с остальными списками | `assets/lists/local_tlds.txt` → `RoutingPolicy.LOCAL_TLDS` |
 | `manifest.json` | `nova_pc/manifest.json` | Каждая синхронизация | Нет: без манифеста обновление не начинается, остаются прежние файлы |
 
@@ -20,10 +20,12 @@
 Каждый файл проверяется по sha256 из манифеста. Новые списки скачиваются во
 временный каталог и заменяют прежние только целиком: смеси версий не бывает.
 
-Проверка 2026-11-04: в манифесте upstream только `list/*`, файлов `ip/*` там
-нет, поэтому CIDR YouTube/Telegram/Cloudflare на устройстве берутся из
-встроенных `assets`. Код синхронизации к их появлению готов, но «динамическими»
-они станут только после публикации в фиде.
+Проверка 2026-11-04: в манифесте upstream только `list/`, файлов `ip/` там
+нет. Поэтому Telegram и Cloudflare CIDR берутся из оригинального
+`confeden/Nova` (`ip/telegram.txt`, `ip/cloudflare.txt`) и сливаются с
+встроенными; YouTube IP остаётся встроенным (в PC-репозитории его нет).
+На устройстве синхронизация записала 14 файлов, `telegram_ips.txt` — 16 строк
+(10 upstream + 6 встроенных).
 
 Подписки (публичная VLESS и WARP по умолчанию) остаются стоковыми:
 `iboxz/free-v2ray-collector` и `confeden/auto-warp-config`. Наш публичный
@@ -55,7 +57,7 @@
 |---|---|---|---|
 | Сервер DNS-туннеля Nova | `nova_android/dns_tunnel.json`, raw + GitHub Pages | 8 ч и при подключении в режиме DNS | `DnsServerFeed.SEED` и прошлое состояние |
 | Адреса Opera | `opera_endpoints.json`, raw + Pages | 3 ч / перед запуском Opera | кэш `discover`, затем свой discover |
-| Обновление APK | GitHub Releases API `abonent0007/OBNOVA` (публичный) | Периодически, но в форке выключено (`UPDATER_ENABLED = false`) | При ошибке — запись в журнал, ручная установка |
+| Обновление APK | GitHub Releases API `abonent0007/OBNOVA` (публичный) | Периодически и вручную; `github`-сборка (`UPDATER_ENABLED = true`), `fdroid` — нет | При ошибке — запись в журнал, ручная установка |
 | Мосты Tor | OnionHop (4 зеркала) + Delta (2), MOAT | При запросе | Встроенные мосты и прошлый файл |
 | Конфигурации WARP | `confeden/auto-warp-config` (seed) | По кнопке | Уже импортированные конфиги |
 
@@ -82,9 +84,11 @@
   показывается фактический `PRIMARY`.
 - Зашитые цели проверки сервисов: заменены выбором из списков с запасными
   хостами.
-- Безусловная загрузка `ip/cloudflare.txt` вне манифеста: теперь только если
-  файл объявлен в манифесте.
-- `youtube_ips.txt` и `telegram_ips.txt` больше не «мёртвые» имена: синхронизация
-  кладёт их из `ip/youtube.txt` и `ip/telegram.txt`.
+- Загрузка `ip/cloudflare.txt` и `ip/telegram.txt` из манифеста не работала:
+  манифест их не публикует. Теперь они берутся из оригинального
+  `confeden/Nova` и сливаются с встроенными.
+- `telegram_ips.txt` больше не «мёртвое» имя: синхронизация кладёт туда
+  объединение upstream и asset. `youtube_ips.txt` остаётся встроенным — файла
+  в PC-репозитории нет.
 - Запасная загрузка подписки в `WarpConfigsActivity` без тайм-аутов заменена
   `FeedHttp`; ошибка видна пользователю.
