@@ -27,7 +27,7 @@ class WarpConfigFeedTest {
 
     @Test
     fun `feed endpoints are https and ordered`() {
-        assertEquals(5, WarpConfigFeed.ENDPOINTS.size)
+        assertEquals(6, WarpConfigFeed.ENDPOINTS.size)
         assertEquals("https://warp-workers.warp-api.cfd", WarpConfigFeed.ENDPOINTS.first())
         assertEquals(WarpConfigFeed.ENDPOINTS.size, WarpConfigFeed.ENDPOINTS.distinct().size)
         assertEquals(true, WarpConfigFeed.ENDPOINTS.all { it.startsWith("https://") })
