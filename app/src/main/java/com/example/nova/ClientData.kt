@@ -9466,9 +9466,11 @@ class ClientData(context: Context) {
         private const val LAST_SUCCESS_FRESH_MS = 3L * 24 * 60 * 60 * 1000L
         /**
          * Потолок числа импортированных профилей VLESS. Подписки бывают на тысячи
-         * записей, а `SharedPreferences` читается на старте целиком.
+         * записей, а `SharedPreferences` читается на старте целиком. 800 — это
+         * четыре публичных источника по 120 плюс своя подписка: обновление
+         * одного источника не должно вытеснять профили остальных.
          */
-        const val MAX_VLESS_PROFILES = 400
+        const val MAX_VLESS_PROFILES = 800
 
         private const val MASQUE_TRANSPORT_COOLDOWN_MS = 25L * 1000L
 

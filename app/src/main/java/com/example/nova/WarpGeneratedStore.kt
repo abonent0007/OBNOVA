@@ -159,6 +159,44 @@ class WarpGeneratedStore(context: Context) {
     }
 
     /**
+     * Дополняет набор новыми точками входа, не заменяя уже сохранённые.
+     *
+     * Раньше каждый выпуск перезаписывал файл целиком: обновление по одной сети
+     * стирало профили, проверенные в другой. Ключ — `host:port`, порядок
+     * существующих сохраняется, новые добавляются в конец.
+     *
+     * @return сколько профилей стало всего.
+     */
+    fun mergeProfiles(incoming: List<WarpGeneratedProfile>, limit: Int = 300): Int {
+        var total = 0
+        mutate { json ->
+            val existing = parseProfiles(json.optJSONArray("profiles"))
+            val merged = LinkedHashMap<String, WarpGeneratedProfile>()
+            existing.forEach { merged["${it.host}:${it.port}"] = it }
+            incoming.forEach { profile ->
+                merged.putIfAbsent("${profile.host}:${profile.port}", profile)
+            }
+            val result = merged.values.take(limit)
+            json.put("profiles", encodeProfiles(result))
+            total = result.size
+        }
+        return total
+    }
+
+    /** Убирает профили по ключам `host:port`; возвращает остаток. */
+    fun removeProfiles(keys: Set<String>): Int {
+        if (keys.isEmpty()) return read().profiles.size
+        var total = 0
+        mutate { json ->
+            val kept = parseProfiles(json.optJSONArray("profiles"))
+                .filterNot { "${it.host}:${it.port}" in keys }
+            json.put("profiles", encodeProfiles(kept))
+            total = kept.size
+        }
+        return total
+    }
+
+    /**
      * Отмечает исход попытки на точке входа личного профиля.
      *
      * Успех обнуляет счётчик, отказ его повышает. Читает-меняет-пишет под тем же

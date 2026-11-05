@@ -5874,6 +5874,23 @@ class NovaVpnService : OperaNativeVpnService() {
                         "Непроверенные подборы могли остаться — следующий прогон их пересмотрит."
                 )
             }
+            if (adaptToNetwork && !qualityDiagnostics) {
+                // После прогона отбраковываем только **сгенерированные** профили,
+                // которые не прошли ни один data-plane-проход. Встроенные семена
+                // лежат в APK и не удаляются; их очередь задаёт накопленная
+                // статистика отказов.
+                val deadKeys = failedAdaptationAttempts
+                    .filter { attemptExactKey(it) !in successfulAdaptationKeys }
+                    .map { "${it.endpointHost}:${it.port}" }
+                    .toSet()
+                if (deadKeys.isNotEmpty()) {
+                    val left = WarpGeneratedStore(applicationContext).removeProfiles(deadKeys)
+                    LogManager.log(
+                        "Адаптация: убрано ${deadKeys.size} нерабочих сгенерированных профилей, " +
+                            "осталось $left."
+                    )
+                }
+            }
             val finalSnapshot = clientData.getWarpDiscoverySnapshot()
             val diagnosticsSummary = if (qualityDiagnostics && !warpConfigDiscoveryStopRequested.get()) {
                 summarizeWarpQualityDiagnostics(diagnosticEntries)

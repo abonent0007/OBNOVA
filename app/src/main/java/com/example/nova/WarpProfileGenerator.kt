@@ -123,36 +123,59 @@ object WarpProfileGenerator {
                 }
                 publish(appContext, STATE_RUNNING, "WARP: регистрирую устройство", 0, TARGET_COUNT)
                 val config = register { }
-                if (config == null) {
+                val registered = config?.let {
+                    WarpGeneratedStore.Identity(
+                        privateKey = it.privateKey,
+                        publicKey = it.publicKey,
+                        ipv4 = it.ipv4,
+                        ipv6 = it.ipv6,
+                        peerPublicKey = it.peerPublicKey,
+                        reserved = it.reserved.orEmpty(),
+                        createdAt = System.currentTimeMillis(),
+                    )
+                }
+                // Если Cloudflare не ответил (из РФ его API фильтруется), берём
+                // готовый конфиг из публичного WARP-фида. Своя регистрация всегда
+                // первая; фид — только запасной путь, чтобы кнопка не оставалась
+                // без профилей.
+                val identity = registered ?: WarpConfigFeed.fetch()
+                if (identity == null) {
                     // Молчаливый отказ здесь неотличим от «сеть медленная» (I4), а
                     // лечение разное: одно — подождать, другое — включить релей.
                     LogManager.log(
-                        "WARP-генератор: регистрация не прошла — своих профилей не будет, " +
+                        "WARP-генератор: регистрация и фид не прошли — своих профилей не будет, " +
                             "остаются встроенные семена."
                     )
                     publish(appContext, STATE_FAILED, "WARP: регистрация не прошла", 0, TARGET_COUNT)
                     return true
                 }
-                WarpGeneratedStore.Identity(
-                    privateKey = config.privateKey,
-                    publicKey = config.publicKey,
-                    ipv4 = config.ipv4,
-                    ipv6 = config.ipv6,
-                    peerPublicKey = config.peerPublicKey,
-                    reserved = config.reserved.orEmpty(),
-                    createdAt = System.currentTimeMillis(),
-                ).also {
+                identity.also {
                     store.writeIdentity(it)
-                    LogManager.log("WARP-генератор: личность зарегистрирована, адрес ${it.ipv4}.")
+                    LogManager.log("WARP-генератор: личность получена, адрес ${it.ipv4}.")
                 }
             }
 
             publish(appContext, STATE_RUNNING, "WARP: ищу точки входа", 0, TARGET_COUNT)
             val scanned = diversify(collectVerified(identity).sortedBy { it.rttMs })
-            if (scanned.isEmpty()) {
+            val endpoints = if (scanned.isNotEmpty()) {
+                scanned
+            } else {
+                // Сеть может не пропускать UDP-рукопожатия к WARP-префиксам (мобильные
+                // операторы). Тогда не сдаёмся: берём точки входа из встроенного
+                // набора Nova и проверяем их адаптацией, как и найденные сканером.
+                val bundled = fallbackEndpoints(appContext)
+                if (bundled.isNotEmpty()) {
+                    LogManager.log(
+                        "WARP-генератор: сканер не нашёл точек, беру ${bundled.size} " +
+                            "встроенных точек входа Nova — их проверит адаптация."
+                    )
+                }
+                bundled
+            }
+            if (endpoints.isEmpty()) {
                 LogManager.log(
-                    "WARP-генератор: сканер не нашёл ни одной точки входа за ${SCAN_TIMEOUT_MS / 1000} с. " +
-                        "Личность сохранена — следующий прогон начнёт со сканирования."
+                    "WARP-генератор: сканер не нашёл ни одной точки входа за ${SCAN_TIMEOUT_MS / 1000} с " +
+                        "и встроенный набор пуст. Личность сохранена — следующий прогон начнёт со сканирования."
                 )
                 publish(appContext, STATE_FAILED, "WARP: точки входа не найдены", 0, TARGET_COUNT)
                 return true
@@ -178,7 +201,7 @@ object WarpProfileGenerator {
                 .filter { it.isNotBlank() }
                 .distinct()
                 .shuffled(random)
-            val profiles = scanned.take(TARGET_COUNT).mapIndexed { index, endpoint ->
+            val profiles = endpoints.take(TARGET_COUNT).mapIndexed { index, endpoint ->
                 val (count, min, max) = WarpGeneratedStore.randomJunk(random)
                 val sni = if (sniPool.isEmpty()) "" else sniPool[index % sniPool.size]
                 WarpGeneratedProfile(
@@ -200,16 +223,17 @@ object WarpProfileGenerator {
                 "WARP-генератор: своё прикрытие I1 собрано для $withOwnI1 из ${profiles.size} профилей " +
                     "(имён в пуле ${sniPool.size})."
             )
-            store.writeProfiles(profiles)
+            store.mergeProfiles(profiles)
+            val total = store.read().profiles.size
             val best = profiles.minByOrNull { if (it.rttMs > 0) it.rttMs else Int.MAX_VALUE }
             LogManager.log(
-                "WARP-генератор: выпущено ${profiles.size} профилей, лучший " +
+                "WARP-генератор: выпущено ${profiles.size} профилей, всего в наборе $total, лучший " +
                     "${best?.rttMs ?: 0} мс (${best?.host}:${best?.port})."
             )
             publish(
                 appContext,
                 STATE_DONE,
-                "WARP: ${profiles.size} профилей, лучший ${best?.rttMs ?: 0} мс",
+                "WARP: ${profiles.size} новых, всего $total профилей",
                 profiles.size,
                 TARGET_COUNT,
             )
@@ -339,6 +363,24 @@ object WarpProfileGenerator {
         return (verified + second)
             .groupBy { it.host to it.port }
             .map { (_, same) -> same.minByOrNull { it.rttMs } ?: same.first() }
+    }
+
+    /**
+     * Точки входа из встроенного набора Nova, когда сканер ничего не подтвердил.
+     *
+     * Это именно данные оригинального проекта (`warp_verified_seeds.json` в APK),
+     * а не новый хардкод: список уже используется как запасной путь подключения.
+     * Адаптация проверит каждую точку и оставит только отвечающие.
+     */
+    private fun fallbackEndpoints(context: Context): List<Endpoint> {
+        val configs = runCatching { ClientData(context).getWarpVerifiedConfigs() }
+            .getOrDefault(emptyList())
+        return configs.asSequence()
+            .filter { it.endpointSource.equals("bundled-seed", ignoreCase = true) }
+            .map { Endpoint(it.host, it.port, 0) }
+            .distinctBy { it.host to it.port }
+            .take(TARGET_COUNT)
+            .toList()
     }
 
     // -- состояние для экрана -------------------------------------------------
