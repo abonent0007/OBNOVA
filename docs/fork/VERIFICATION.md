@@ -686,6 +686,21 @@ PIDs `:vpn` и `libnova-desync.so` не менялись, `tun0` на месте
   Три `raw.githubusercontent.com` источника прошли через зеркало
   `raw.githack.com`, iboxz — напрямую. Состояние сохранено в
   `public_subscriptions.json`, worker запланирован.
+
+### 1.34.6 — профили/подписки и Cloudflare (2026-11-05)
+
+- JVM: **638/0/9** (добавлены `WarpConfigFeedTest` и проверки фида).
+- Release/debug собраны: 6 APK; release arm64 SHA-256
+  `2D5300D66DCCE647C9B995384BC65B2E67A67890B146CA5DFD7E52A7B84FDEDF`.
+- Что проверено статически: кнопка «Обновить профили и подписки» вызывает
+  `ProfileUpdateCoordinator` (4 источника), затем запускает
+  `ACTION_START_WARP_NETWORK_ADAPTATION`; Cloudflare-генератор при пустом скане
+  берёт встроенные точки Nova, дополняет `warp_generated.json`, а при отказе
+  регистрации использует `warp-workers.warp-api.cfd`.
+- Проверка на устройстве 1.34.6 не завершена: adb-соединение с RMX3370
+  прервалось после установки 1.34.5; сетевые сценарии кнопок нужно повторить,
+  когда телефон снова появится.
+
 - Иконка 1.34.5: после установки и перезапуска launcher
   (`am force-stop com.android.launcher`) поиск «OBNOVA» показывает новый знак —
   тёмный скруглённый квадрат с зелёной рамкой и тремя узлами; старая звезда

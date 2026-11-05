@@ -20,6 +20,8 @@
   после data-plane-прогона; встроенные семена остаются, но получают статистику
   отказов и уходят вниз очереди.
 - План: `docs/plans/2026-11-05-profile-update-adaptation.md`.
+- Проверки: JVM **638/0/9**, release/debug собраны; SHA-256 arm64
+  `2D5300D66DCCE647C9B995384BC65B2E67A67890B146CA5DFD7E52A7B84FDEDF`.
 
 ## 2026-11-04 — 1.34.5 / versionCode 169
 
