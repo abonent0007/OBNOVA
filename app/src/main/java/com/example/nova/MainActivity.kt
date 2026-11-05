@@ -5728,6 +5728,7 @@ class MainActivity : AppCompatActivity() {
         if (clientData.getExitRegionPreference().trim().lowercase() == ConnectionSelectorPolicy.CHIP_MULTI) {
             currentTunnelBackend = NovaVpnService.BACKEND_MULTI
             pendingStatusText = buildConnectingStatusText()
+            startFlowHandedToService = true
             markServiceConnectingLocally(NovaVpnService.BACKEND_MULTI)
             updateUiByState(NovaVpnService.STATE_CONNECTING)
             NovaTunnelControl.start(this, "главный экран: MULTI")
