@@ -5,7 +5,7 @@
 
 ## 1. Текущее состояние
 
-- Ветка: `personal`, версия **1.34.6** / `versionCode 170` (OBNOVA).
+- Ветка: `personal`, версия **1.34.7** / `versionCode 171` (OBNOVA).
 - Встроенный апдейтер включён для `github`-сборки (`UPDATER_ENABLED = true`) и
   читает релизы `abonent0007/OBNOVA`; у `fdroid` он выключен. Подписки (VLESS,
   WARP) и списки остаются стоковыми.
