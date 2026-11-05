@@ -2,7 +2,7 @@
 
 **OBNOVA** — личный форк [Nova Android](https://github.com/confeden/Nova-Android)
 с переработанной маршрутизацией, обновлённым интерфейсом и рядом новых
-возможностей. Версия **1.34.6 (versionCode 170)**, minSdk 24, targetSdk 34.
+возможностей. Версия **1.34.7 (versionCode 171)**, minSdk 24, targetSdk 34.
 
 > Это **форк**, а не официальная сборка Nova. Оригинальный проект, его авторы и
 > документация — в репозитории [confeden/Nova-Android](https://github.com/confeden/Nova-Android).
@@ -72,6 +72,12 @@ tools/build_nova_core_aar.sh     # nova-core → AAR
 - Публичные VLESS-подписки проверяются реальным HTTPS-пробником; без живого
   узла `PRIMARY` остаётся на DESYNC.
 - `cfproxy` (AWG-мост) зависит от доступности WARP-эндпоинта у оператора.
+
+## Поддержка проекта
+
+Если OBNOVA помогает — спасибо! Добровольная поддержка через Сбербанк:
+
+[Перевести на Сбербанк](https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79684520007&bankCode=100000000111)
 
 ## Лицензия
 
