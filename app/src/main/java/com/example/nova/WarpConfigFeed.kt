@@ -22,6 +22,9 @@ object WarpConfigFeed {
         "https://warp-vercel-chi.warp-api.cfd",
         "https://warp-vercel-murex.warp-api.cfd",
         "https://warp-netlify.warp-api.cfd",
+        // Личный Worker владельца (tools/cf-relay/obnova-warp-worker.js):
+        // последний, чтобы приложение не зависело от него, если он недоступен.
+        "https://obnova-warp.yurentiy-avd.workers.dev/",
     )
 
     /** Разбор ответа; null — мусор или неполный конфиг. */
