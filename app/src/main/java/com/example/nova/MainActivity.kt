@@ -5718,6 +5718,16 @@ class MainActivity : AppCompatActivity() {
             else -> beginStartFlow(buildConnectingStatusText())
         }
         if (!isStartFlowCurrent(flowGeneration)) return
+        // MULTI — не WARP-сессия: у неё своя фаза (DESYNC/VLESS PRIMARY + Opera),
+        // поэтому legacy-путь с `PRIVATE_KEY` её не запускает. Передаём выбор
+        // службе тем же намерением, что плитка и виджет.
+        if (clientData.getExitRegionPreference().trim().lowercase() == ConnectionSelectorPolicy.CHIP_MULTI) {
+            currentTunnelBackend = NovaVpnService.BACKEND_MULTI
+            markServiceConnectingLocally(NovaVpnService.BACKEND_MULTI)
+            updateUiByState(NovaVpnService.STATE_CONNECTING)
+            NovaTunnelControl.start(this, "главный экран: MULTI")
+            return
+        }
         clientData.clearRestartSession()
         clientData.setTrafficMaskActiveHost(null)
         clientData.setWarpTrafficMaskActiveHost(null)

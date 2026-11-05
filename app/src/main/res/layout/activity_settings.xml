@@ -81,7 +81,7 @@
                     android:layout_marginBottom="2dp"/>
 
                 <!--
-                    Кнопок шесть, и на узком экране они в строку не помещаются.
+                    Кнопок восемь, и на узком экране они в строку не помещаются.
                     FlowRadioGroup переносит лишние на следующую строку, сохраняя
                     логику единственного выбора обычного RadioGroup.
                 -->
@@ -97,6 +97,19 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="AUTO"
+                        android:textColor="?attr/novaTextTitle"
+                        android:textSize="11sp"
+                        android:paddingStart="0dp"
+                        android:paddingEnd="0dp"
+                        android:layout_marginEnd="10dp"
+                        android:maxLines="1"
+                        android:buttonTint="?attr/novaAccent"/>
+
+                    <RadioButton
+                        android:id="@+id/rb_exit_multi"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="MULTI"
                         android:textColor="?attr/novaTextTitle"
                         android:textSize="11sp"
                         android:paddingStart="0dp"

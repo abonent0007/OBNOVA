@@ -40,10 +40,13 @@ object ConnectionSelectorPolicy {
      * разбирает кнопки позиционно (`getOrNull(0..5)`), и вставка в середину
      * молча переименовала бы половину селектора.
      */
-    val ORDER: List<String> = listOf("auto", "ru", "masque", "opera", "proton", "tor", "dns")
+    val ORDER: List<String> = listOf("auto", "multi", "ru", "masque", "opera", "proton", "tor", "dns")
+
+    /** Явный режим MULTI: VLESS PRIMARY, если есть профили, иначе DESYNC. */
+    const val CHIP_MULTI: String = "multi"
 
     /** Подписи в том же порядке. `ru` — это WARP, и это не опечатка. */
-    val LABELS: List<String> = listOf("AUTO", "WARP", "MASQUE", "OPERA", "PROTON", "TOR", "DNS")
+    val LABELS: List<String> = listOf("AUTO", "MULTI", "WARP", "MASQUE", "OPERA", "PROTON", "TOR", "DNS")
 
     /**
      * Разбиение на строки: сколько кнопок в каждой.
@@ -59,7 +62,7 @@ object ConnectionSelectorPolicy {
      *
      * Сумма обязана равняться [SIZE]; за этим следит тест.
      */
-    val ROWS: List<Int> = listOf(3, 2, 2)
+    val ROWS: List<Int> = listOf(4, 2, 2)
 
     /** Сколько кнопок обязано быть в группе. Меньше — селектор не настраивается. */
     val SIZE: Int get() = ORDER.size
@@ -491,6 +494,7 @@ object ConnectionSelectorPolicy {
      */
     val BUTTON_IDS: List<Int> = listOf(
         R.id.rb_exit_auto,
+        R.id.rb_exit_multi,
         R.id.rb_exit_ru,
         R.id.rb_exit_masque,
         R.id.rb_exit_opera,

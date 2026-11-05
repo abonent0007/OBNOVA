@@ -453,6 +453,12 @@
                 app:dockIcon="@drawable/ic_node_auto" />
 
             <com.example.nova.DockRadioButton
+                android:id="@+id/rb_exit_multi"
+                style="@style/NovaDockChip"
+                android:text="MULTI"
+                app:dockIcon="@drawable/ic_node_desync" />
+
+            <com.example.nova.DockRadioButton
                 android:id="@+id/rb_exit_ru"
                 style="@style/NovaDockChip"
                 android:text="WARP"

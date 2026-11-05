@@ -6009,11 +6009,20 @@ class NovaVpnService : OperaNativeVpnService() {
         )
         val warpAllowed = shouldUseWarpTransport(regionPreference, clientData)
         val operaAllowed = shouldAllowOperaTransport(regionPreference, clientData)
+        val explicitMulti = regionPreference == ConnectionSelectorPolicy.CHIP_MULTI
         try {
             if (!ensureFreshTransportState(connectGenerationId, "smart-connect")) return
-            if (RoutingStore(this).isSmartRoutingEnabled()) {
+            if (explicitMulti || RoutingStore(this).isSmartRoutingEnabled()) {
                 if (runMultiPhase(clientData, connectGenerationId)) return
                 if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return
+                if (explicitMulti) {
+                    LogManager.log("MULTI выбран явно и не поднялся — другим транспортом не подменяем.")
+                    publishTransportNotice(clientData, "MULTI не поднялся.", keepOnStop = true)
+                    isRunning = false
+                    broadcastState(STATE_STOPPED)
+                    stopSelf()
+                    return
+                }
                 LogManager.log("MULTI не поднялся — продолжаем обычным транспортом.")
             }
             // Tor проверяется раньше всего остального: `shouldUseWarpTransport`
@@ -26074,6 +26083,9 @@ class NovaVpnService : OperaNativeVpnService() {
         regionPreference: String,
         clientData: ClientData = ClientData(this),
     ): Boolean {
+        // MULTI сам решает, какой PRIMARY поднять (VLESS или DESYNC), и не
+        // должен получить WARP-сессию как «запасной транспорт» снаружи.
+        if (regionPreference == ConnectionSelectorPolicy.CHIP_MULTI) return false
         // Источник профилей старше региона: в режиме импортированных экран настроек
         // показывает не регионы, а протоколы, и сменить регион пользователю нечем.
         if (ownProfileSourceChosen(clientData)) return true
@@ -26084,6 +26096,7 @@ class NovaVpnService : OperaNativeVpnService() {
         regionPreference: String,
         clientData: ClientData = ClientData(this),
     ): Boolean {
+        if (regionPreference == ConnectionSelectorPolicy.CHIP_MULTI) return false
         // Opera — встроенный транспорт. Подставлять его под выбранные пользователем
         // профили нельзя ни в одной ветке: правило «явный выбор не подменяем»
         // (RegionTransportPolicy) распространяется и на выбор источника профилей.

@@ -18,15 +18,15 @@ class ConnectionSelectorPolicyTest {
     @Test
     fun `order and labels stay in step`() {
         assertEquals(ConnectionSelectorPolicy.ORDER.size, ConnectionSelectorPolicy.LABELS.size)
-        assertEquals(7, ConnectionSelectorPolicy.SIZE)
-        // Порядок кода, а не разметки: masque третий. Разъедется — сломается и
+        assertEquals(8, ConnectionSelectorPolicy.SIZE)
+        // Порядок кода, а не разметки: multi второй, masque четвёртый. Разъедется — сломается и
         // главный экран, и настройки, каждый по-своему.
         assertEquals(
-            listOf("auto", "ru", "masque", "opera", "proton", "tor", "dns"),
+            listOf("auto", "multi", "ru", "masque", "opera", "proton", "tor", "dns"),
             ConnectionSelectorPolicy.ORDER,
         )
         assertEquals(
-            listOf("AUTO", "WARP", "MASQUE", "OPERA", "PROTON", "TOR", "DNS"),
+            listOf("AUTO", "MULTI", "WARP", "MASQUE", "OPERA", "PROTON", "TOR", "DNS"),
             ConnectionSelectorPolicy.LABELS,
         )
     }

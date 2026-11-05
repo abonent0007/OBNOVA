@@ -86,6 +86,8 @@ import kotlinx.coroutines.SupervisorJob
 
 import kotlinx.coroutines.cancel
 
+import kotlinx.coroutines.delay
+
 import kotlinx.coroutines.launch
 
 import kotlinx.coroutines.withContext
@@ -324,6 +326,61 @@ class SettingsActivity : AppCompatActivity() {
 
         }
 
+    }
+
+    private val warpDiscoveryReceiver = object : BroadcastReceiver() {
+
+        override fun onReceive(context: Context?, intent: Intent?) {
+
+            if (intent?.action != NovaVpnService.ACTION_WARP_CONFIG_DISCOVERY) return
+
+            val running = intent.getBooleanExtra(NovaVpnService.EXTRA_DISCOVERY_RUNNING, false)
+            val message = intent.getStringExtra(NovaVpnService.EXTRA_DISCOVERY_MESSAGE).orEmpty()
+
+            val status = findViewById<TextView>(R.id.tv_warp_generate_status)
+
+            if (message.isNotBlank()) {
+                status?.visibility = View.VISIBLE
+                status?.text = message
+            }
+
+            if (!running) {
+                stopWarpGeneratePolling()
+                refreshIssuedProfilesState()
+            }
+        }
+    }
+
+    private var warpDiscoveryReceiverRegistered = false
+
+    private fun registerWarpDiscoveryReceiver() {
+
+        if (warpDiscoveryReceiverRegistered) return
+
+        val filter = IntentFilter(NovaVpnService.ACTION_WARP_CONFIG_DISCOVERY)
+
+        try {
+            ContextCompat.registerReceiver(
+                this,
+                warpDiscoveryReceiver,
+                filter,
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            warpDiscoveryReceiverRegistered = true
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun unregisterWarpDiscoveryReceiver() {
+
+        if (!warpDiscoveryReceiverRegistered) return
+
+        try {
+            unregisterReceiver(warpDiscoveryReceiver)
+        } catch (_: Exception) {
+        } finally {
+            warpDiscoveryReceiverRegistered = false
+        }
     }
 
     private val vpnStateReceiver = object : BroadcastReceiver() {
@@ -1742,6 +1799,8 @@ class SettingsActivity : AppCompatActivity() {
 
         registerVpnStateReceiver()
 
+        registerWarpDiscoveryReceiver()
+
     }
 
 
@@ -1753,6 +1812,8 @@ class SettingsActivity : AppCompatActivity() {
         unregisterPackageChangesReceiver()
 
         unregisterVpnStateReceiver()
+
+        unregisterWarpDiscoveryReceiver()
 
     }
 
@@ -1769,6 +1830,8 @@ class SettingsActivity : AppCompatActivity() {
         unregisterPackageChangesReceiver()
 
         unregisterVpnStateReceiver()
+
+        unregisterWarpDiscoveryReceiver()
 
         appLoadJob?.cancel()
 
@@ -4221,15 +4284,15 @@ class SettingsActivity : AppCompatActivity() {
 
         val rbExitAuto = buttons.getOrNull(0) ?: return
 
-        val rbExitRu = buttons.getOrNull(1) ?: return
+        val rbExitRu = buttons.getOrNull(2) ?: return
 
-        val rbExitMasque = buttons.getOrNull(2) ?: return
+        val rbExitMasque = buttons.getOrNull(3) ?: return
 
-        val rbExitOpera = buttons.getOrNull(3) ?: return
+        val rbExitOpera = buttons.getOrNull(4) ?: return
 
-        val rbExitProton = buttons.getOrNull(4) ?: return
+        val rbExitProton = buttons.getOrNull(5) ?: return
 
-        val rbExitTor = buttons.getOrNull(5) ?: return
+        val rbExitTor = buttons.getOrNull(6) ?: return
 
         // Название общее для обеих половин списка: WARP, MASQUE и AWG Proton — это
         // протоколы, EU и US — регионы, и «Выбор региона» половину из них не
@@ -4353,12 +4416,31 @@ class SettingsActivity : AppCompatActivity() {
                         this@SettingsActivity,
                         reason = "выбор TOR в настройках",
                     )
-                    val known = TorBridgeManager.snapshot(this@SettingsActivity).bridges.size
+                    var known = TorBridgeManager.snapshot(this@SettingsActivity).bridges.size
                     withContext(Dispatchers.Main) {
                         if (isFinishing || isDestroyed) return@withContext
                         torBridgeCount = known
                         summaryView.visibility = View.VISIBLE
                         summaryView.text = ConnectionSelectorPolicy.torNoticeFor(started, known)
+                    }
+                    // Сбор идёт в фоне десятки секунд. Раньше экран читал счётчик
+                    // один раз сразу после запуска и до onResume показывал «мостов
+                    // пока нет», хотя файл уже заполнен. Опрашиваем, пока не
+                    // появится хотя бы один мост.
+                    repeat(30) {
+                        delay(1_500)
+                        val fresh = TorBridgeManager.snapshot(this@SettingsActivity).bridges.size
+                        if (fresh != known) {
+                            known = fresh
+                            withContext(Dispatchers.Main) {
+                                if (isFinishing || isDestroyed) return@withContext
+                                torBridgeCount = fresh
+                                refreshTorBridgeStatus()
+                                summaryView.visibility = View.VISIBLE
+                                summaryView.text = ConnectionSelectorPolicy.torNoticeFor(started, fresh)
+                            }
+                        }
+                        if (known > 0) return@launch
                     }
                 }
             }
