@@ -2154,14 +2154,15 @@ class NovaVpnService : OperaNativeVpnService() {
             novaCoreTunnelActive = false
             operaTunThread = null
             novaEngineThread = null
-            setCurrentBackend(BACKEND_WARP)
             val requestedRegion = normalizeRegionPreference(
                 regionPreference ?: ClientData(this).getExitRegionPreference()
             )
-            val expectedBackendHint = if (shouldUseWarpTransport(requestedRegion)) {
-                BACKEND_WARP
-            } else {
-                getOperaFallbackSequence(requestedRegion).firstOrNull()?.second?.let { "$BACKEND_OPERA-$it" }
+            val requestedMulti = requestedRegion == ConnectionSelectorPolicy.CHIP_MULTI
+            setCurrentBackend(if (requestedMulti) BACKEND_MULTI else BACKEND_WARP)
+            val expectedBackendHint = when {
+                requestedMulti -> BACKEND_MULTI
+                shouldUseWarpTransport(requestedRegion) -> BACKEND_WARP
+                else -> getOperaFallbackSequence(requestedRegion).firstOrNull()?.second?.let { "$BACKEND_OPERA-$it" }
                     ?: BACKEND_OPERA
             }
             if (adoptHealthyExistingVpnIfPresent(expectedBackendHint)) {

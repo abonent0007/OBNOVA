@@ -3293,6 +3293,9 @@ class MainActivity : AppCompatActivity() {
         if (clientData.getExitRegionPreference().trim().lowercase() == "tor") {
             return NovaVpnService.BACKEND_TOR
         }
+        if (clientData.getExitRegionPreference().trim().lowercase() == ConnectionSelectorPolicy.CHIP_MULTI) {
+            return NovaVpnService.BACKEND_MULTI
+        }
         val snapshot = snapshotBackend?.trim().orEmpty()
         val selectedRegion = clientData.getExitRegionPreference().trim().lowercase()
         val restartSessionBackend = clientData.getRestartSession()?.let { session ->
@@ -5723,6 +5726,7 @@ class MainActivity : AppCompatActivity() {
         // службе тем же намерением, что плитка и виджет.
         if (clientData.getExitRegionPreference().trim().lowercase() == ConnectionSelectorPolicy.CHIP_MULTI) {
             currentTunnelBackend = NovaVpnService.BACKEND_MULTI
+            pendingStatusText = buildConnectingStatusText()
             markServiceConnectingLocally(NovaVpnService.BACKEND_MULTI)
             updateUiByState(NovaVpnService.STATE_CONNECTING)
             NovaTunnelControl.start(this, "главный экран: MULTI")
