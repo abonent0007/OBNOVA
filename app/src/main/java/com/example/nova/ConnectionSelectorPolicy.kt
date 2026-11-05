@@ -245,7 +245,10 @@ object ConnectionSelectorPolicy {
      */
     fun torEntryAttempts(mode: String): List<String> =
         if (normalizeTorEntry(mode) == TOR_ENTRY_AUTO) {
-            listOf(TOR_ENTRY_WEBTUNNEL, TOR_ENTRY_OBFS4, TOR_ENTRY_SNOWFLAKE, TOR_ENTRY_VANILLA)
+            // obfs4 идёт первым: webtunnel-мосты из текущего сборщика требуют
+            // резолва домена, а на мобильных сетях РФ он уходит в timeout; IP-
+            // мосты obfs4 поднимаются без DNS. webtunnel остаётся вторым.
+            listOf(TOR_ENTRY_OBFS4, TOR_ENTRY_WEBTUNNEL, TOR_ENTRY_SNOWFLAKE, TOR_ENTRY_VANILLA)
         } else {
             listOf(normalizeTorEntry(mode))
         }

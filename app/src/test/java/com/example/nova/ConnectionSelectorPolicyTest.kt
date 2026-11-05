@@ -169,7 +169,7 @@ class ConnectionSelectorPolicyTest {
     @Test
     fun `auto expands to an ordered attempt list`() {
         assertEquals(
-            listOf("webtunnel", "obfs4", "snowflake", "vanilla"),
+            listOf("obfs4", "webtunnel", "snowflake", "vanilla"),
             ConnectionSelectorPolicy.torEntryAttempts("auto"),
         )
         assertEquals(listOf("obfs4"), ConnectionSelectorPolicy.torEntryAttempts("obfs4"))

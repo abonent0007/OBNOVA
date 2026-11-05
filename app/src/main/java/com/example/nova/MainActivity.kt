@@ -5674,6 +5674,7 @@ class MainActivity : AppCompatActivity() {
             preference == "eu" -> "ПОДКЛЮЧЕНИЕ... EU"
             preference == "us" -> "ПОДКЛЮЧЕНИЕ... US"
             preference == "masque" -> "ПОДКЛЮЧЕНИЕ... MASQUE"
+            preference == "multi" -> "ПОДКЛЮЧЕНИЕ... MULTI"
             preference == "tor" -> "ПОДКЛЮЧЕНИЕ... TOR"
             preference == "vless" -> "ПОДКЛЮЧЕНИЕ... VLESS"
             preference == "proton" -> "ПОДКЛЮЧЕНИЕ... AWG Proton"

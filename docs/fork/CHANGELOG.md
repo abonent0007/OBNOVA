@@ -17,6 +17,11 @@
   `WARP_CONFIG_DISCOVERY`; строка показывает `Адаптация N из M: …`.
 - **PROTON:** версия клиента обновлена до `android-vpn@5.20.21.0` (как в PC),
   старый `5.4.44.0` API отклонял с HTTP 422 «version no longer supported».
+- **TOR auto:** первым теперь пробуется `obfs4` (IP-мосты без DNS), затем
+  `webtunnel`, `snowflake`, `vanilla` — webtunnel-домены текущего сборщика
+  не резолвятся на мобильной сети.
+- **MULTI-статус:** `buildConnectingStatusText` и `resolveUiBackend` знают
+  `multi`, поэтому экран больше не подписывает подключение как AUTO.
 - Остальное — как в 1.34.7.
 
 ## 2026-11-05 — 1.34.7 / versionCode 171
