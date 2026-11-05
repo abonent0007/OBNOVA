@@ -28,6 +28,8 @@ import android.net.NetworkCapabilities
 
 import android.net.Uri
 
+import android.net.VpnService
+
 import android.os.Build
 
 import android.os.Bundle
@@ -4469,9 +4471,77 @@ class SettingsActivity : AppCompatActivity() {
 
         }
 
+        bindProfileUpdateButton()
+
     }
 
 
+
+    /**
+     * Кнопка «Обновить профили и подписки»: четыре публичных источника VLESS,
+     * затем запуск адаптации по полному набору.
+     *
+     * Слушатель ставится при каждой перерисовке карточки: экран может вернуться
+     * из фона, а кнопка обязана остаться рабочей и не задублировать поток.
+     */
+    private fun bindProfileUpdateButton() {
+        val button = findViewById<TextView>(R.id.btn_update_profiles) ?: return
+        val status = findViewById<TextView>(R.id.tv_warp_generate_status)
+        button.isEnabled = !profileUpdateRunning
+        button.alpha = if (profileUpdateRunning) 0.5f else 1f
+        button.setOnClickListener {
+            if (profileUpdateRunning) return@setOnClickListener
+            profileUpdateRunning = true
+            button.isEnabled = false
+            button.alpha = 0.5f
+            status?.visibility = View.VISIBLE
+            status?.text = "Обновляю профили и подписки…"
+            Thread({
+                val result = ProfileUpdateCoordinator.updateAll(this@SettingsActivity) { phase ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) status?.text = phase
+                    }
+                }
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    profileUpdateRunning = false
+                    button.isEnabled = true
+                    button.alpha = 1f
+                    status?.text = result.message
+                    if (result.ok) {
+                        startAdaptationAfterProfileUpdate(status)
+                    }
+                }
+            }, "NovaProfileUpdate").apply { isDaemon = true }.start()
+        }
+    }
+
+    /**
+     * Адаптация запускается только после того, как список обновлён. Если
+     * разрешения VPN нет, честно говорим об этом: молчаливый выход выглядел бы
+     * как «адаптация прошла».
+     */
+    private fun startAdaptationAfterProfileUpdate(status: TextView?) {
+        if (VpnService.prepare(this) != null) {
+            status?.text = "Профили обновлены. Разрешите VPN, чтобы запустить адаптацию."
+            return
+        }
+        val preference = clientData.getExitRegionPreference()
+        val region = if (preference == "eu" || preference == "us") "ru" else preference
+        val intent = Intent(this, NovaVpnService::class.java).apply {
+            action = NovaVpnService.ACTION_START_WARP_NETWORK_ADAPTATION
+            putExtra(NovaVpnService.EXTRA_EXIT_REGION, region)
+        }
+        runCatching { ContextCompat.startForegroundService(this, intent) }
+            .onSuccess {
+                LogManager.log("Профили обновлены — запускаю адаптацию WARP по полному списку.")
+                status?.text = "Профили обновлены. Адаптация WARP…"
+            }
+            .onFailure { error ->
+                LogManager.log("Адаптация после обновления не запустилась: ${error.message}")
+                status?.text = "Профили обновлены, адаптация не запустилась: ${error.message}"
+            }
+    }
 
     /**
      * Кнопка «Обновить профили Proton»: видимость, состояние и обработчик.
@@ -4487,7 +4557,6 @@ class SettingsActivity : AppCompatActivity() {
      * кнопку запертой, если выпуск ещё идёт.
      */
     private fun bindProtonRefreshButton(summaryView: TextView, visible: Boolean) {
-
         val button = findViewById<TextView>(R.id.btn_proton_refresh) ?: return
 
         // Вид источника решает [ProfileIssueLabels], а не место вызова: кнопка
@@ -4561,6 +4630,9 @@ class SettingsActivity : AppCompatActivity() {
 
     /** Идёт ли выпуск личных профилей Cloudflare — по файлу состояния из `:vpn`. */
     private var warpGenerateBusy = false
+
+    /** Идёт ли обновление профилей и публичных подписок из новой кнопки. */
+    private var profileUpdateRunning = false
 
     private fun refreshIssuedProfilesState() {
         lifecycleScope.launch(Dispatchers.IO) {

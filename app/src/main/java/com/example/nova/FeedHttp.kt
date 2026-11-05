@@ -32,6 +32,8 @@ internal object FeedHttp {
         val readTimeoutMs: Int,
         val maxBytes: Int,
         val userAgent: String = "OBNOVA-Android/${BuildConfig.VERSION_NAME}",
+        /** Дополнительные заголовки; нужны фидам, которые фильтруют по `X-Client`. */
+        val headers: Map<String, String> = emptyMap(),
     ) {
         init {
             require(connectTimeoutMs > 0) { "connectTimeoutMs must be positive" }
@@ -57,6 +59,9 @@ internal object FeedHttp {
             connection.instanceFollowRedirects = true
             connection.useCaches = false
             connection.setRequestProperty("User-Agent", policy.userAgent)
+            policy.headers.forEach { (name, value) ->
+                connection.setRequestProperty(name, value)
+            }
             val code = connection.responseCode
             if (code != HttpURLConnection.HTTP_OK) {
                 throw IOException("HTTP $code")
