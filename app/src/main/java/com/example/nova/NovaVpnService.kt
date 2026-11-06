@@ -10061,11 +10061,13 @@ class NovaVpnService : OperaNativeVpnService() {
             val operaRetryAfter = routingStore.operaRetryAfterMs()
             val nowMs = System.currentTimeMillis()
             var cfProxyPort = 0
+            var masqueProxyPort = 0
             if (BuildConfig.CF_PROXY_SLOT_ENABLED) {
                 // Сначала MASQUE/443: на этой сети UDP WireGuard режется, а
                 // QUIC проходит. AWG оставлен запасным для сетей без QUIC.
                 if (MasqueSocksBridge.startAndWait(this)) {
                     cfProxyPort = MasqueSocksBridge.LISTEN_PORT
+                    masqueProxyPort = cfProxyPort
                     LogManager.log("MULTI: cfproxy = MASQUE SOCKS ${MasqueSocksBridge.LISTEN_ADDRESS}.")
                 } else if (AwgSocksBridge.startAndWait(this)) {
                     cfProxyPort = AwgSocksBridge.LISTEN_PORT
@@ -10133,8 +10135,17 @@ class NovaVpnService : OperaNativeVpnService() {
 
             val vlessPort = startVlessSocksForMulti(clientData, connectGenerationId)
             multiVlessActive = vlessPort > 0
-            val primaryPort = if (vlessPort > 0) vlessPort else desyncPort
-            val spoofPort = if (vlessPort > 0) desyncPort else 0
+            // PRIMARY: живой VLESS, иначе MASQUE-слот cfproxy, и только потом
+            // DESYNC. На ПК primary — MASQUE; здесь он уже поднят как cfproxy,
+            // но раньше использовался лишь запасным путём. DESYNC остаётся
+            // spoof-слотом для обхода DPI, когда VLESS/MASQUE не отвечают.
+            val masquePrimary = masqueProxyPort > 0
+            val primaryPort = when {
+                vlessPort > 0 -> vlessPort
+                masquePrimary -> masqueProxyPort
+                else -> desyncPort
+            }
+            val spoofPort = if (primaryPort != desyncPort) desyncPort else 0
             multiPrimaryPort = primaryPort
             multiSpoofPort = spoofPort
             multiOperaPort = operaPort
