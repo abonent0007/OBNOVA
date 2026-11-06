@@ -4936,6 +4936,18 @@ class SettingsActivity : AppCompatActivity() {
         }
         container.addView(junkRow)
 
+        // Выбор пресета должен сразу показывать его значения: иначе «Быстро»
+        // сохранялся с числом профилей от прошлого пресета (50 вместо 25), и
+        // пользователь видел одно, а получал другое.
+        presetGroup.setOnCheckedChangeListener { _, checkedId ->
+            val preset = presetIds[checkedId] ?: return@setOnCheckedChangeListener
+            val values = WarpGenerationSettings.defaults(preset)
+            countInput.setText(values.profileCount.toString())
+            junkCount.setText(values.junkCount.toString())
+            junkMin.setText(values.junkMin.toString())
+            junkMax.setText(values.junkMax.toString())
+        }
+
         AlertDialog.Builder(this)
             .setTitle("Настройки генерации WARP")
             .setView(container)
@@ -5075,7 +5087,8 @@ class SettingsActivity : AppCompatActivity() {
 
                 generatedCloudflareProfilesExist = exists
 
-                val running = progress.state == WarpProfileGenerator.STATE_RUNNING
+                val running = WarpProfileGenerator.isLive(progress)
+                val interrupted = progress.state == WarpProfileGenerator.STATE_RUNNING && !running
 
                 if (running) warpGenerateRequestedAtMs = 0L
 
@@ -5110,7 +5123,11 @@ class SettingsActivity : AppCompatActivity() {
                 // Пока прогон о себе не заявил, показываем своё слово, а не итог
                 // прошлого: «выпущено 50 профилей» сразу под только что нажатой
                 // кнопкой читается как мгновенный успех.
-                val message = if (awaitingStart) "WARP: запускаю выпуск" else progress.message
+                val message = when {
+                    awaitingStart -> "WARP: запускаю выпуск"
+                    interrupted -> "WARP: прошлый прогон прерван — можно повторить"
+                    else -> progress.message
+                }
 
                 if (message.isBlank()) {
 

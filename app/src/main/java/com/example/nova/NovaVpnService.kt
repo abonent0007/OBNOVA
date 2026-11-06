@@ -27856,6 +27856,12 @@ class NovaVpnService : OperaNativeVpnService() {
             // что встанет в очереди первым.
             val tcpPool = java.util.concurrent.Executors.newFixedThreadPool(PROTON_PROBE_PARALLELISM)
             val done = java.util.concurrent.atomic.AtomicInteger(0)
+            // Сбор останавливается на первом живом узле + короткое окно, а
+            // оставшиеся TCP-пробы ещё доигрывают в пуле. Их прогресс писался
+            // и после итогового DONE — экран видел снова RUNNING и ждал полный
+            // PROBE_WAIT_MS, хотя замер давно закончен. Флаг закрывает запись
+            // прогресса ровно в момент публикации итога.
+            val progressClosed = java.util.concurrent.atomic.AtomicBoolean(false)
             val alive = java.util.concurrent.atomic.AtomicInteger(0)
             val completion = java.util.concurrent.ExecutorCompletionService<ProtonProfile>(tcpPool)
             val measured = try {
@@ -27896,7 +27902,7 @@ class NovaVpnService : OperaNativeVpnService() {
                         }
                         if (result.pingMs > 0) alive.incrementAndGet()
                         val finished = done.incrementAndGet()
-                        if (finished % 5 == 0 || finished == total) {
+                        if (!progressClosed.get() && (finished % 5 == 0 || finished == total)) {
                             store.writeProbeState(
                                 ProtonProfileStore.ProbeState(
                                     ProtonProfileStore.STATE_RUNNING,
@@ -28059,6 +28065,7 @@ class NovaVpnService : OperaNativeVpnService() {
                 }
             }
 
+            progressClosed.set(true)
             store.writeProfiles(ranked)
             store.writeProbeState(
                 ProtonProfileStore.ProbeState(

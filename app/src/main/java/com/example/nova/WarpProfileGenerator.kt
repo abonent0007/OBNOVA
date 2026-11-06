@@ -82,6 +82,22 @@ object WarpProfileGenerator {
     fun isRunning(): Boolean = running.get()
 
     /**
+     * Жив ли прогон с точки зрения экрана.
+     *
+     * Прогон идёт в процессе `:vpn`; если его убили, терминальное состояние в
+     * файл не попадёт и `running` останется навсегда. Поэтому состояние
+     * считается живым только пока оно свежее: полный прогон — два скана по
+     * 45 с плюс регистрация, всё старше [STALE_RUNNING_MS] — оборванный прогон.
+     */
+    fun isLive(progress: Progress, nowMs: Long = System.currentTimeMillis()): Boolean =
+        progress.state == STATE_RUNNING &&
+            progress.atMs > 0L &&
+            nowMs - progress.atMs in 0..STALE_RUNNING_MS
+
+    /** Дольше этого `running` в файле считается оборванным прогоном. */
+    const val STALE_RUNNING_MS = 5 * 60_000L
+
+    /**
      * Полный прогон. Зовётся из процесса `:vpn`.
      *
      * @param force заново регистрировать личность, даже если она уже есть.
@@ -234,17 +250,23 @@ object WarpProfileGenerator {
                 "WARP-генератор: своё прикрытие I1 собрано для $withOwnI1 из ${profiles.size} профилей " +
                     "(имён в пуле ${sniPool.size})."
             )
+            val beforeMerge = store.read().profiles.size
             store.mergeProfiles(profiles)
             val total = store.read().profiles.size
+            // "Новых" — это реально добавленные записи, а не размер выпуска:
+            // повторный прогон по тем же встроенным точкам обновляет прежние
+            // профили, и называть все 25 новыми было бы неправдой.
+            val added = (total - beforeMerge).coerceAtLeast(0)
             val best = profiles.minByOrNull { if (it.rttMs > 0) it.rttMs else Int.MAX_VALUE }
             LogManager.log(
-                "WARP-генератор: выпущено ${profiles.size} профилей, всего в наборе $total, лучший " +
+                "WARP-генератор: выпущено ${profiles.size} профилей, добавлено $added, " +
+                    "всего в наборе $total, лучший " +
                     "${best?.rttMs ?: 0} мс (${best?.host}:${best?.port})."
             )
             publish(
                 appContext,
                 STATE_DONE,
-                "WARP: ${profiles.size} новых, всего $total профилей",
+                "WARP: выпущено ${profiles.size}, добавлено $added, всего $total",
                 profiles.size,
                 targetCount,
             )
@@ -361,6 +383,16 @@ object WarpProfileGenerator {
                 "WARP-генератор: сканер нашёл ${verified.size} точек и добил ответ $padded " +
                     "случайными — эти в профили не идут."
             )
+        }
+        if (verified.isEmpty()) {
+            // На мобильных сетях UDP-рукопожатия к WARP-префиксам часто режутся
+            // целиком. Второй проход в этом случае даёт тот же ноль, только ещё
+            // 45 секунд ожидания — сразу отдаём встроенный набор.
+            LogManager.log(
+                "WARP-генератор: первый проход не нашёл ни одной проверенной точки — " +
+                    "второй не тратим, берём встроенный набор."
+            )
+            return verified
         }
         if (verified.size >= ENOUGH_VERIFIED) return verified
         LogManager.log(
