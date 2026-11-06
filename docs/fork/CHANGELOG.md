@@ -24,6 +24,11 @@
   primary на ПК; раньше при отсутствии живого VLESS сразу уходил в DESYNC.
 - **MULTI-статус:** `buildConnectingStatusText` и `resolveUiBackend` знают
   `multi`, поэтому экран больше не подписывает подключение как AUTO.
+- **YouTube/AI:** порядок `secondary → spoof → primary`; если Opera не успела,
+  YouTube идёт через DESYNC, а не через MASQUE (MASQUE отдавал Google TLS с 0 байт).
+- **Opera в MULTI:** регистрация идёт через MASQUE-слот (1379), а не через DESYNC;
+  при неудаче первый запуск повторяется в фоне, после успеха router
+  перезагружается без пересборки TUN.
 - Остальное — как в 1.34.7.
 
 ## 2026-11-05 — 1.34.7 / versionCode 171

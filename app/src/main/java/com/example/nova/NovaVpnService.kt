@@ -10101,6 +10101,10 @@ class NovaVpnService : OperaNativeVpnService() {
                     LogManager.log("MULTI: старый backoff Opera игнорируем — Stage 2 поднимает её через мост.")
                 }
                 var ready = OperaProxyManager.ReadyState.FAILED
+                // Opera API — снаружи; DESYNC до него не доходит (Google/Opera
+                // режут TLS), а MASQUE-слот уже поднят и даёт рабочий egress.
+                val operaBootstrapPort = if (masqueProxyPort > 0) masqueProxyPort else desyncPort
+                val operaBootstrap = "socks5h://127.0.0.1:$operaBootstrapPort"
                 // EU первым, AS — резерв: азиатский узел в ленте жив, когда EU/AM не отвечают.
                 for (country in listOf("EU", "AS")) {
                     ready = OperaProxyManager.ensureReady(
@@ -10110,8 +10114,8 @@ class NovaVpnService : OperaNativeVpnService() {
                         country = country,
                         readyTimeoutMs = 20_000L,
                         maxLaunchPlans = 40,
-                        bootstrapApiProxy = "socks5h://127.0.0.1:$desyncPort",
-                        bootstrapDialProxy = "socks5h://127.0.0.1:$desyncPort",
+                        bootstrapApiProxy = operaBootstrap,
+                        bootstrapDialProxy = operaBootstrap,
                         shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
                     )
                     if (ready != OperaProxyManager.ReadyState.FAILED) break
@@ -10185,6 +10189,42 @@ class NovaVpnService : OperaNativeVpnService() {
                     (if (operaPort != 0) " / Opera$operaPort" else "") +
                     " / DIRECT, локальные TLD — напрямую."
             )
+            if (operaPort == 0 && OperaProxyManager.isTransportSupportedOnDevice(this)) {
+                // Первый запуск Opera мог не уложиться в 40 с (регистрация через
+                // DESYNC-мост). Не оставляем YouTube на MASQUE/DESYNC навсегда:
+                // пробуем ещё, и при успехе горячо перезагружаем router — новые
+                // соединения пойдут в Opera, живой TUN не пересобирается.
+                startSafeServiceThread("NovaOperaRetry") {
+                    repeat(3) { attempt ->
+                        Thread.sleep(30_000L)
+                        if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
+                            return@startSafeServiceThread
+                        }
+                        val ready = OperaProxyManager.ensureReady(
+                            this,
+                            LogManager::log,
+                            purposeLabel = "MULTI: догоняем Opera",
+                            country = "EU",
+                            readyTimeoutMs = 20_000L,
+                            maxLaunchPlans = 40,
+                            bootstrapApiProxy = "socks5h://127.0.0.1:${if (masqueProxyPort > 0) masqueProxyPort else desyncPort}",
+                            bootstrapDialProxy = "socks5h://127.0.0.1:${if (masqueProxyPort > 0) masqueProxyPort else desyncPort}",
+                            shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
+                        )
+                        if (ready != OperaProxyManager.ReadyState.FAILED) {
+                            multiOperaPort = OperaProxyManager.getLoopbackProxyPort(this)
+                            routingStore.setOperaRetryAfterMs(0L)
+                            reloadRouterConfig()
+                            LogManager.log(
+                                "MULTI: Opera догнала сеанс (попытка ${attempt + 1}) — " +
+                                    "SECONDARY 127.0.0.1:$multiOperaPort, маршруты перезагружены."
+                            )
+                            return@startSafeServiceThread
+                        }
+                        LogManager.log("MULTI: Opera пока не поднялась (попытка ${attempt + 1}/3).")
+                    }
+                }
+            }
 
             val tunThread = operaTunThread
             var desyncDownTicks = 0

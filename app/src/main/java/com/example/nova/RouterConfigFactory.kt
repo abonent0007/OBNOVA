@@ -172,6 +172,14 @@ object RouterConfigFactory {
         }
         val ru = listOf("primary") + tail
         val eu = (if (opera) listOf("secondary") else emptyList()) + ru
+        // YouTube/AI: Opera первой, но при её отсутствии — DESYNC (spoof), а не
+        // MASQUE-primary: MASQUE-egress отдаёт Google TLS без данных (Ok(N), Ok(0)).
+        val google = buildList {
+            if (opera) add("secondary")
+            if (spoof) add("spoof")
+            add("primary")
+            if (!killSwitch) add("direct")
+        }
         // Telegram в PC-политике закреплён за relay/PRIMARY и не должен уходить
         // в DIRECT: иначе при отказе слота он молча пойдёт мимо туннеля.
         val pinned = buildList {
@@ -182,11 +190,13 @@ object RouterConfigFactory {
             RouteClass.DIRECT -> listOf("direct")
             RouteClass.BLOCK -> emptyList()
             RouteClass.RU -> ru
-            RouteClass.EU, RouteClass.YOUTUBE, RouteClass.AI -> eu
+            RouteClass.EU -> eu
+            RouteClass.YOUTUBE, RouteClass.AI -> google
             RouteClass.TELEGRAM -> pinned
             RouteClass.WHATSAPP, RouteClass.DISCORD -> ru
             null -> when (service) {
-                "eu", "youtube", "ai" -> eu
+                "eu" -> eu
+                "youtube", "ai" -> google
                 "telegram" -> pinned
                 else -> ru
             }
