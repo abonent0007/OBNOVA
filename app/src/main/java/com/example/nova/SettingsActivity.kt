@@ -4,6 +4,8 @@ package com.example.nova
 
 import android.app.ActivityManager
 
+import android.app.AlertDialog
+
 import android.app.StatusBarManager
 
 import android.content.BroadcastReceiver
@@ -4683,6 +4685,12 @@ class SettingsActivity : AppCompatActivity() {
 
         button.text = ProfileIssueLabels.label(kind, exists, busy)
 
+        val settingsButton = findViewById<TextView>(R.id.btn_warp_generate_settings)
+        if (settingsButton != null) {
+            settingsButton.visibility = if (kind == ProfileIssueLabels.Kind.CLOUDFLARE) View.VISIBLE else View.GONE
+            settingsButton.setOnClickListener { showWarpGenerationSettingsDialog() }
+        }
+
         button.setOnClickListener {
             if (kind == ProfileIssueLabels.Kind.PROTON) {
                 startProtonProfileRefresh(button, summaryView)
@@ -4878,6 +4886,83 @@ class SettingsActivity : AppCompatActivity() {
      *        нажатие передаёт `false`: личность одна на все профили, и менять её
      *        ради нового списка точек входа незачем.
      */
+    /** Настройки выпуска WARP: пресеты PC и количество профилей. */
+    private fun showWarpGenerationSettingsDialog() {
+        val current = WarpGenerationSettings.load(this)
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(12), dp(20), dp(4))
+        }
+        val presetGroup = RadioGroup(this).apply { orientation = RadioGroup.VERTICAL }
+        val presetIds = LinkedHashMap<Int, String>()
+        WarpGenerationSettings.PRESETS.forEach { (value, label) ->
+            val id = View.generateViewId()
+            presetIds[id] = value
+            presetGroup.addView(
+                RadioButton(this).apply {
+                    this.id = id
+                    text = label
+                    isChecked = value == current.preset
+                }
+            )
+        }
+        container.addView(presetGroup)
+        container.addView(TextView(this).apply { text = "Профилей (5–50)" })
+        val countInput = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(current.profileCount.toString())
+        }
+        container.addView(countInput)
+        container.addView(TextView(this).apply { text = "Jc / Jmin / Jmax (для «Свои значения»)" })
+        val junkRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val junkCount = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(current.junkCount.toString())
+        }
+        val junkMin = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(current.junkMin.toString())
+        }
+        val junkMax = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(current.junkMax.toString())
+        }
+        listOf(junkCount, junkMin, junkMax).forEach {
+            it.layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            junkRow.addView(it)
+        }
+        container.addView(junkRow)
+
+        AlertDialog.Builder(this)
+            .setTitle("Настройки генерации WARP")
+            .setView(container)
+            .setNegativeButton("Отмена", null)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val preset = presetIds[presetGroup.checkedRadioButtonId]
+                    ?: WarpGenerationSettings.PRESET_OPTIMAL
+                var values = WarpGenerationSettings.defaults(preset)
+                countInput.text?.toString()?.toIntOrNull()?.let {
+                    values = values.copy(profileCount = it)
+                }
+                if (preset == WarpGenerationSettings.PRESET_CUSTOM) {
+                    values = values.copy(
+                        junkCount = junkCount.text?.toString()?.toIntOrNull() ?: values.junkCount,
+                        junkMin = junkMin.text?.toString()?.toIntOrNull() ?: values.junkMin,
+                        junkMax = junkMax.text?.toString()?.toIntOrNull() ?: values.junkMax,
+                    )
+                }
+                WarpGenerationSettings.save(this, values)
+                LogManager.log(
+                    "WARP-генератор: настройки сохранены — ${values.preset}, " +
+                        "профилей ${values.profileCount}, junk ${values.junkCount}/${values.junkMin}-${values.junkMax}."
+                )
+            }
+            .show()
+    }
+
     private fun startWarpProfileGeneration(force: Boolean) {
 
         // Кнопка теперь общая с Proton и живёт в карточке выбора протокола.

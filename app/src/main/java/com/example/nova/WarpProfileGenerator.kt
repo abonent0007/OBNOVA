@@ -107,8 +107,13 @@ object WarpProfileGenerator {
         }
         val appContext = context.applicationContext
         val store = WarpGeneratedStore(appContext)
+        val settings = WarpGenerationSettings.load(appContext)
+        val targetCount = settings.profileCount.coerceIn(
+            WarpGenerationSettings.MIN_PROFILES,
+            WarpGenerationSettings.MAX_PROFILES,
+        )
         try {
-            publish(appContext, STATE_RUNNING, "WARP: готовлю личность", 0, TARGET_COUNT)
+            publish(appContext, STATE_RUNNING, "WARP: готовлю личность", 0, targetCount)
 
             val existing = store.read()
             val identity = if (!force && !tunnelLive && existing.identity != null) {
@@ -121,7 +126,7 @@ object WarpProfileGenerator {
                             "отбирать сессию у рабочего ключа (I27)."
                     )
                 }
-                publish(appContext, STATE_RUNNING, "WARP: регистрирую устройство", 0, TARGET_COUNT)
+                publish(appContext, STATE_RUNNING, "WARP: регистрирую устройство", 0, targetCount)
                 val config = register { }
                 val registered = config?.let {
                     WarpGeneratedStore.Identity(
@@ -146,7 +151,7 @@ object WarpProfileGenerator {
                         "WARP-генератор: регистрация и фид не прошли — своих профилей не будет, " +
                             "остаются встроенные семена."
                     )
-                    publish(appContext, STATE_FAILED, "WARP: регистрация не прошла", 0, TARGET_COUNT)
+                    publish(appContext, STATE_FAILED, "WARP: регистрация не прошла", 0, targetCount)
                     return true
                 }
                 identity.also {
@@ -155,7 +160,7 @@ object WarpProfileGenerator {
                 }
             }
 
-            publish(appContext, STATE_RUNNING, "WARP: ищу точки входа", 0, TARGET_COUNT)
+            publish(appContext, STATE_RUNNING, "WARP: ищу точки входа", 0, targetCount)
             val scanned = diversify(collectVerified(identity).sortedBy { it.rttMs })
             val endpoints = if (scanned.isNotEmpty()) {
                 scanned
@@ -177,7 +182,7 @@ object WarpProfileGenerator {
                     "WARP-генератор: сканер не нашёл ни одной точки входа за ${SCAN_TIMEOUT_MS / 1000} с " +
                         "и встроенный набор пуст. Личность сохранена — следующий прогон начнёт со сканирования."
                 )
-                publish(appContext, STATE_FAILED, "WARP: точки входа не найдены", 0, TARGET_COUNT)
+                publish(appContext, STATE_FAILED, "WARP: точки входа не найдены", 0, targetCount)
                 return true
             }
 
@@ -201,8 +206,14 @@ object WarpProfileGenerator {
                 .filter { it.isNotBlank() }
                 .distinct()
                 .shuffled(random)
-            val profiles = endpoints.take(TARGET_COUNT).mapIndexed { index, endpoint ->
-                val (count, min, max) = WarpGeneratedStore.randomJunk(random)
+            val profiles = endpoints.take(targetCount).mapIndexed { index, endpoint ->
+                val (count, min, max) = if (settings.junkCount > 0) {
+                    val low = settings.junkMin.coerceAtLeast(0)
+                    val high = settings.junkMax.coerceAtLeast(low)
+                    Triple(settings.junkCount, low, high)
+                } else {
+                    WarpGeneratedStore.randomJunk(random)
+                }
                 val sni = if (sniPool.isEmpty()) "" else sniPool[index % sniPool.size]
                 WarpGeneratedProfile(
                     host = endpoint.host,
@@ -235,12 +246,12 @@ object WarpProfileGenerator {
                 STATE_DONE,
                 "WARP: ${profiles.size} новых, всего $total профилей",
                 profiles.size,
-                TARGET_COUNT,
+                targetCount,
             )
             return true
         } catch (e: Exception) {
             LogManager.log("WARP-генератор: прогон оборвался — ${e.message}")
-            publish(appContext, STATE_FAILED, "WARP: прогон оборвался", 0, TARGET_COUNT)
+            publish(appContext, STATE_FAILED, "WARP: прогон оборвался", 0, targetCount)
             return true
         } finally {
             running.set(false)

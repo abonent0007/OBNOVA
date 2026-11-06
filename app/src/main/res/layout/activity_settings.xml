@@ -244,6 +244,22 @@
                     android:textSize="13sp"
                     android:visibility="gone" />
 
+                <TextView
+                    android:id="@+id/btn_warp_generate_settings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginTop="6dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:background="@drawable/bg_settings_action_dark"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:text="Настройки генерации WARP"
+                    android:textColor="?attr/novaTextHint"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+
                 <!--
                     Ход выпуска личных профилей Cloudflare. Строка живёт рядом с
                     кнопкой, которая его и запускает: карточку «Личные профили»
