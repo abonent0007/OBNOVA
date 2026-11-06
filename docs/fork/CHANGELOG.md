@@ -20,6 +20,8 @@
 - **TOR auto:** первым теперь пробуется `obfs4` (IP-мосты без DNS), затем
   `webtunnel`, `snowflake`, `vanilla` — webtunnel-домены текущего сборщика
   не резолвятся на мобильной сети.
+- **MULTI:** PRIMARY теперь выбирается как **VLESS → MASQUE (cfproxy) → DESYNC**, как
+  primary на ПК; раньше при отсутствии живого VLESS сразу уходил в DESYNC.
 - **MULTI-статус:** `buildConnectingStatusText` и `resolveUiBackend` знают
   `multi`, поэтому экран больше не подписывает подключение как AUTO.
 - Остальное — как в 1.34.7.
