@@ -32,7 +32,7 @@
   перезапись `DONE` прогрессом Proton → монитор + флаг; зависший замер Proton →
   `ProbeState.isStale`; ошибка обновления профилей → гарантированный сброс
   состояния экрана.
-- **Проверки:** `lintGithubDebug` — 0 ошибок (907 предупреждений, в основном
+- **Проверки:** `lintGithubDebug` — 0 ошибок (906 предупреждений, в основном
   старый стиль); `testGithubDebugUnitTest` — зелёный, включая новые
   `ProtonProbeStateTest`, `WarpGeneratedStoreMergeTest` и проверки
   bootstrap-источников; `tools/audit_diff.py` — 0 неиспользуемых импортов,

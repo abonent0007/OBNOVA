@@ -3,6 +3,29 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
+## 2026-11-08 — статический аудит (без выпуска)
+
+```text
+./gradlew lintGithubDebug
+BUILD SUCCESSFUL; issues=906 (Error: 0, Warning: 906 — в основном старый стиль)
+Lint упал внутри ObjectAnimatorDetector (NPE "Text range missing from end
+source") — это дефект самого детектора, отчёт и сборка при этом созданы.
+
+./gradlew testGithubDebugUnitTest
+BUILD SUCCESSFUL
+ProtonProbeStateTest: 4/4
+WarpGeneratedStoreMergeTest: 3/3
+ExternalSourcesTest: 10/10
+
+python tools/audit_diff.py --base HEAD --strict
+audit: files=14 unused_imports=0 unguarded_calls=0
+```
+
+Проверено на JVM: обновление WARP-набора сохраняет порядок и не заменяет
+проверенные записи; состояние замера Proton считается оборванным по `atMs`;
+bootstrap-источники WARP/Proton/Cloudflare остаются HTTPS и в документированном
+порядке. Android-сборка `assembleGithubDebug` проходит.
+
 ## 2026-11-07 — WARP-генератор, TOR, DNS, Proton (RMX3370, 1.34.9)
 
 ### WARP-генератор: число профилей и зависание кнопки
