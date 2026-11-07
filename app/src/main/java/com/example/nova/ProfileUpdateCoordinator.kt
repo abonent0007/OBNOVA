@@ -28,6 +28,19 @@ object ProfileUpdateCoordinator {
     }
 
     /**
+     * Итог оборванного прогона. Единая точка, чтобы экран не собирал
+     * «пустой» результат вручную и не оставлял кнопку в состоянии «идёт».
+     */
+    fun failure(error: Throwable?): Result = Result(
+        okSources = 0,
+        failedSources = ExternalSources.PUBLIC_VLESS_SOURCES.size,
+        added = 0,
+        removed = 0,
+        total = 0,
+        message = "Профили не обновились: ${error?.message ?: "неизвестная ошибка"}",
+    )
+
+    /**
      * Обновляет все публичные подписки. Вызывать с IO-потока: сеть и запись.
      *
      * @param progress человекочитаемая фаза для строки состояния.

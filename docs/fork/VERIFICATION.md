@@ -15,6 +15,7 @@ source") — это дефект самого детектора, отчёт и 
 BUILD SUCCESSFUL
 ProtonProbeStateTest: 4/4
 WarpGeneratedStoreMergeTest: 3/3
+ProfileUpdateCoordinatorTest: 2/2
 ExternalSourcesTest: 10/10
 
 python tools/audit_diff.py --base HEAD --strict

@@ -34,8 +34,9 @@
   состояния экрана.
 - **Проверки:** `lintGithubDebug` — 0 ошибок (906 предупреждений, в основном
   старый стиль); `testGithubDebugUnitTest` — зелёный, включая новые
-  `ProtonProbeStateTest`, `WarpGeneratedStoreMergeTest` и проверки
-  bootstrap-источников; `tools/audit_diff.py` — 0 неиспользуемых импортов,
+  `ProtonProbeStateTest`, `WarpGeneratedStoreMergeTest`,
+  `ProfileUpdateCoordinatorTest` и проверки bootstrap-источников;
+  `tools/audit_diff.py` — 0 неиспользуемых импортов,
   0 внешних вызовов без guard/fallback (5 ложных срабатываний помечены
   `audit: guarded` с указанием внешнего `try/catch`).
 

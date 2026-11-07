@@ -4592,14 +4592,7 @@ class SettingsActivity : AppCompatActivity() {
                     // ошибка сети/файла раньше убивала поток и `profileUpdateRunning`
                     // оставался true до перезапуска экрана.
                     LogManager.log("Обновление профилей: прогон оборвался — ${error.message}")
-                    ProfileUpdateCoordinator.Result(
-                        okSources = 0,
-                        failedSources = ExternalSources.PUBLIC_VLESS_SOURCES.size,
-                        added = 0,
-                        removed = 0,
-                        total = 0,
-                        message = "Профили не обновились: ${error.message ?: "неизвестная ошибка"}",
-                    )
+                    ProfileUpdateCoordinator.failure(error)
                 }
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
