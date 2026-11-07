@@ -7,6 +7,9 @@
 > Это **форк**, а не официальная сборка Nova. Оригинальный проект, его авторы и
 > документация — в репозитории [confeden/Nova-Android](https://github.com/confeden/Nova-Android).
 
+## Донаты на дальнейшее развитие принимаются по ссылке ниже:
+**[Ваша помощь в развитии это вклад в свободный интернет для всех.](https://www.sberbank.ru/ru/choise_bank?requisiteNumber=79684520007&bankCode=100000000111)**
+
 <p>
   <img src="docs/screenshots/main.png" width="270" alt="Главный экран OBNOVA" />
   <img src="docs/screenshots/routes.png" width="270" alt="Маршрутизация OBNOVA" />
