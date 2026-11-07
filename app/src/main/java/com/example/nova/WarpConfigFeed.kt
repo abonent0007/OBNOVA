@@ -15,17 +15,8 @@ import org.json.JSONObject
  */
 object WarpConfigFeed {
 
-    /** Зеркала в порядке генератора: workers, sub, vercel, netlify. */
-    val ENDPOINTS = listOf(
-        "https://warp-workers.warp-api.cfd",
-        "https://warp-sub.warp-api.cfd",
-        "https://warp-vercel-chi.warp-api.cfd",
-        "https://warp-vercel-murex.warp-api.cfd",
-        "https://warp-netlify.warp-api.cfd",
-        // Личный Worker владельца (tools/cf-relay/obnova-warp-worker.js):
-        // последний, чтобы приложение не зависело от него, если он недоступен.
-        "https://obnova-warp.yurentiy-avd.workers.dev/",
-    )
+    /** Зеркала в порядке генератора: workers, sub, vercel, netlify, личный Worker. */
+    val ENDPOINTS = ExternalSources.WARP_CONFIG_FEED_BASES
 
     /** Разбор ответа; null — мусор или неполный конфиг. */
     fun parse(body: String): WarpGeneratedStore.Identity? {

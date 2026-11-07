@@ -35,8 +35,11 @@ import kotlin.random.Random
  */
 object WarpProfileGenerator {
 
-    /** Сколько профилей выпускаем. Столько же, сколько встроенных семян. */
-    const val TARGET_COUNT = 50
+    /**
+     * Сколько профилей выпускаем — задаёт [WarpGenerationSettings]: от 5 до 50.
+     * Константы здесь нет намеренно: пресет «Быстро» выпускает 25, и сканер
+     * должен искать ровно столько, а не всегда пятьдесят.
+     */
 
     /** Потолок одного прохода сканера: дольше ждать бессмысленно, точки входа anycast'овые. */
     private const val SCAN_TIMEOUT_MS = 45_000
@@ -46,6 +49,8 @@ object WarpProfileGenerator {
      *
      * Проверенная — та, до которой сканер довёл настоящее рукопожатие и намерил
      * время ответа. Остальные к сети не прикасались вовсе (см. [scanEndpoints]).
+     * Для маленького пресета порог дополнительно ограничивается числом
+     * запрошенных профилей: цель 15 не требует 24 проверенных.
      */
     private const val ENOUGH_VERIFIED = 24
 
@@ -177,18 +182,19 @@ object WarpProfileGenerator {
             }
 
             publish(appContext, STATE_RUNNING, "WARP: ищу точки входа", 0, targetCount)
-            val scanned = diversify(collectVerified(identity).sortedBy { it.rttMs })
+            val scanned = diversify(collectVerified(identity, targetCount).sortedBy { it.rttMs })
             val endpoints = if (scanned.isNotEmpty()) {
                 scanned
             } else {
                 // Сеть может не пропускать UDP-рукопожатия к WARP-префиксам (мобильные
-                // операторы). Тогда не сдаёмся: берём точки входа из встроенного
-                // набора Nova и проверяем их адаптацией, как и найденные сканером.
-                val bundled = fallbackEndpoints(appContext)
+                // операторы). Тогда не сдаёмся: берём точки входа из текущего набора
+                // Nova — встроенные семена плюс уже проверенные/импортированные
+                // конфиги, — и их проверяет адаптация, как и найденные сканером.
+                val bundled = fallbackEndpoints(appContext, targetCount)
                 if (bundled.isNotEmpty()) {
                     LogManager.log(
                         "WARP-генератор: сканер не нашёл точек, беру ${bundled.size} " +
-                            "встроенных точек входа Nova — их проверит адаптация."
+                            "точек входа Nova — их проверит адаптация."
                     )
                 }
                 bundled
@@ -330,7 +336,7 @@ object WarpProfileGenerator {
         return head + tail
     }
 
-    private fun scanEndpoints(identity: WarpGeneratedStore.Identity): List<Endpoint> {
+    private fun scanEndpoints(identity: WarpGeneratedStore.Identity, limit: Int): List<Endpoint> {
         val raw = runCatching {
             Nova.scanWarpEndpoints(
                 identity.privateKey,
@@ -338,7 +344,7 @@ object WarpProfileGenerator {
                 true,
                 true,
                 SCAN_TIMEOUT_MS.toLong(),
-                TARGET_COUNT.toLong(),
+                limit.toLong(),
             )
         }.getOrElse { error ->
             LogManager.log("WARP-генератор: сканер не запустился — ${error.message}")
@@ -374,8 +380,11 @@ object WarpProfileGenerator {
      * Второй проход — только если проверенных мало: он стоит ещё [SCAN_TIMEOUT_MS],
      * и платить эту цену там, где и одного прохода хватило, незачем.
      */
-    private fun collectVerified(identity: WarpGeneratedStore.Identity): List<Endpoint> {
-        val first = scanEndpoints(identity)
+    private fun collectVerified(
+        identity: WarpGeneratedStore.Identity,
+        targetCount: Int,
+    ): List<Endpoint> {
+        val first = scanEndpoints(identity, targetCount)
         val verified = first.filter { it.rttMs > 0 }
         val padded = first.size - verified.size
         if (padded > 0) {
@@ -394,12 +403,16 @@ object WarpProfileGenerator {
             )
             return verified
         }
-        if (verified.size >= ENOUGH_VERIFIED) return verified
+        // Для маленького пресета («Быстро» — 25, «Совместимо» — 15) хватает
+        // ровно запрошенного числа: ждать 24 проверенных при цели 15 — лишний
+        // 45-секундный проход.
+        val enough = minOf(ENOUGH_VERIFIED, targetCount)
+        if (verified.size >= enough) return verified
         LogManager.log(
-            "WARP-генератор: проверенных точек ${verified.size}, это меньше $ENOUGH_VERIFIED — " +
+            "WARP-генератор: проверенных точек ${verified.size}, это меньше $enough — " +
                 "идём вторым проходом."
         )
-        val second = scanEndpoints(identity).filter { it.rttMs > 0 }
+        val second = scanEndpoints(identity, targetCount).filter { it.rttMs > 0 }
         // Объединение, а не пересечение: сканер обходит префиксы случайно, и два
         // прохода находят во многом разные адреса — пересечение было бы почти
         // пустым. У повторившихся берём лучшее время.
@@ -409,20 +422,38 @@ object WarpProfileGenerator {
     }
 
     /**
-     * Точки входа из встроенного набора Nova, когда сканер ничего не подтвердил.
+     * Точки входа из текущего набора Nova, когда сканер ничего не подтвердил.
      *
-     * Это именно данные оригинального проекта (`warp_verified_seeds.json` в APK),
-     * а не новый хардкод: список уже используется как запасной путь подключения.
-     * Адаптация проверит каждую точку и оставит только отвечающие.
+     * Сначала берётся динамический набор `getWarpVerifiedMergedConfigs()`:
+     * встроенные семена, уже проверенные узлы и импортированные конфиги,
+     * которые приложение обновляет само. Это не хардкод: список меняется от
+     * прогона к прогону. Если динамический набор пуст (первый запуск, файлы
+     * ещё не созданы), читается только встроенный asset — он остаётся
+     * запасным путём, а не единственным источником.
      */
-    private fun fallbackEndpoints(context: Context): List<Endpoint> {
-        val configs = runCatching { ClientData(context).getWarpVerifiedConfigs() }
+    private fun fallbackEndpoints(context: Context, targetCount: Int): List<Endpoint> {
+        val clientData = ClientData(context)
+        val dynamic = runCatching { clientData.getWarpVerifiedMergedConfigs() }
+            .getOrDefault(emptyList())
+            .asSequence()
+            .filter { it.host.isNotBlank() && it.port in 1..65535 }
+            .map { Endpoint(it.host, it.port, 0) }
+            .distinctBy { it.host to it.port }
+            .take(targetCount)
+            .toList()
+        if (dynamic.isNotEmpty()) {
+            LogManager.log(
+                "WARP-генератор: динамический набор Nova дал ${dynamic.size} точек входа."
+            )
+            return dynamic
+        }
+        val configs = runCatching { clientData.getWarpVerifiedConfigs() }
             .getOrDefault(emptyList())
         return configs.asSequence()
             .filter { it.endpointSource.equals("bundled-seed", ignoreCase = true) }
             .map { Endpoint(it.host, it.port, 0) }
             .distinctBy { it.host to it.port }
-            .take(TARGET_COUNT)
+            .take(targetCount)
             .toList()
     }
 

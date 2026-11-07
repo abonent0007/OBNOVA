@@ -4581,10 +4581,25 @@ class SettingsActivity : AppCompatActivity() {
             status?.visibility = View.VISIBLE
             status?.text = "Обновляю профили и подписки…"
             Thread({
-                val result = ProfileUpdateCoordinator.updateAll(this@SettingsActivity) { phase ->
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) status?.text = phase
+                val result = runCatching {
+                    ProfileUpdateCoordinator.updateAll(this@SettingsActivity) { phase ->
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) status?.text = phase
+                        }
                     }
+                }.getOrElse { error ->
+                    // Прогон не должен оставлять кнопку навсегда выключенной:
+                    // ошибка сети/файла раньше убивала поток и `profileUpdateRunning`
+                    // оставался true до перезапуска экрана.
+                    LogManager.log("Обновление профилей: прогон оборвался — ${error.message}")
+                    ProfileUpdateCoordinator.Result(
+                        okSources = 0,
+                        failedSources = ExternalSources.PUBLIC_VLESS_SOURCES.size,
+                        added = 0,
+                        removed = 0,
+                        total = 0,
+                        message = "Профили не обновились: ${error.message ?: "неизвестная ошибка"}",
+                    )
                 }
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread

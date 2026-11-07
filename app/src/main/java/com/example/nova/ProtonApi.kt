@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 object ProtonApi {
 
     /** Оба хоста рабочие; второй остаётся на случай, если первый недоступен из сети. */
-    private val HOSTS = listOf("https://vpn-api.proton.me", "https://api.protonvpn.ch")
+    private val HOSTS = ExternalSources.PROTON_API_HOSTS
 
     private const val APP_VERSION = "android-vpn@5.20.21.0"
     private const val CHALLENGE_FRAME_KEY = "vpn-android-v4-challenge-0"
@@ -342,12 +342,14 @@ object ProtonApi {
         if (targets.isEmpty()) return null
         if (body != null) {
             for (target in targets) {
+                // audit: guarded — execute() ловит сетевые ошибки.
                 val request = buildRequest(target.base, path, body, profile, session)
                 execute(target.client.newCall(request), target.base, null, record)
                     ?.let { return Winner(target.base, it) }
             }
             return null
         }
+        // audit: guarded — execute() ловит сетевые ошибки.
         val calls = targets.map { it.client.newCall(buildRequest(it.base, path, null, profile, session)) }
         val abandoned = AtomicBoolean(false)
         return ProtonRace.firstSuccess(

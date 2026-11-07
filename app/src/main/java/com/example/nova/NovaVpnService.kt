@@ -2110,9 +2110,9 @@ class NovaVpnService : OperaNativeVpnService() {
         val warpQualityDiagnosticsStart = intent?.action == ACTION_START_WARP_QUALITY_DIAGNOSTICS
         val regionPreference = intent?.getStringExtra(EXTRA_EXIT_REGION)
 
-        if (intent != null && intent.action != ACTION_RESTORE_LAST_SESSION) {
-            applyExplicitReapplyOverrides(intent, clientData)
-        }
+        // После ветки выше intent не null и это не RESTORE_LAST_SESSION:
+        // повторная проверка того же условия была недостижимой.
+        applyExplicitReapplyOverrides(intent, clientData)
 
         if (warpConfigDiscoveryStart || warpNetworkAdaptationStart || warpQualityDiagnosticsStart) {
             if (warpConfigDiscoveryRunning.get()) {
@@ -8543,6 +8543,7 @@ class NovaVpnService : OperaNativeVpnService() {
                     )
                 }
             } else {
+                // audit: guarded — ошибку ловит try/catch этой ветки.
                 Nova.setDomainBypassPolicy(enabled, zonesCsv, domainsCsv, cyrillic)
                 if (enabled) {
                     LogManager.log(
@@ -8639,12 +8640,25 @@ class NovaVpnService : OperaNativeVpnService() {
     private fun applyPlainDnsIntercept(servers: List<String>, reason: String) {
         val normalized = servers.map { it.trim() }.filter { it.isNotBlank() }.distinct()
         if (normalized.isEmpty()) {
-            Nova.setDnsInterceptPolicy(false, "", "", "")
+            runCatching { Nova.setDnsInterceptPolicy(false, "", "", "") }
+                .onFailure {
+                    LogManager.log("DNS: отключить перехват в ядре не удалось — ${it.message}")
+                }
             activeDnsInterceptServers = emptyList()
             coreDnsInterceptEnabled = false
             return
         }
-        Nova.setDnsInterceptPolicy(true, normalized.joinToString(","), "", "")
+        val applied = runCatching {
+            Nova.setDnsInterceptPolicy(true, normalized.joinToString(","), "", "")
+        }.onFailure {
+            LogManager.log("DNS: включить перехват в ядре не удалось — ${it.message}")
+        }.isSuccess
+        if (!applied) {
+            // Нативная политика не принята — не выдаём её за действующую.
+            activeDnsInterceptServers = emptyList()
+            coreDnsInterceptEnabled = false
+            return
+        }
         activeDnsInterceptServers = normalized
         coreDnsInterceptEnabled = true
         LogManager.log(
@@ -10763,6 +10777,10 @@ class NovaVpnService : OperaNativeVpnService() {
         }
     }
 
+    /** Диагностика ядра — не повод ронять уже поднятый сеанс. */
+    private fun dnsTunnelStatusSafe(): String =
+        runCatching { nova.Nova.dnsTunnelStatus() }.getOrDefault("")
+
     /**
      * Ветка dnstt: туннель живёт в ядре и отдаёт адрес локального слушателя.
      *
@@ -10791,7 +10809,7 @@ class NovaVpnService : OperaNativeVpnService() {
             stopDnsTunnelQuietly()
             return 0
         }
-        LogManager.log("DNS: ${nova.Nova.dnsTunnelStatus()}.")
+        LogManager.log("DNS: ${dnsTunnelStatusSafe()}.")
         return port
     }
 
@@ -11142,7 +11160,10 @@ class NovaVpnService : OperaNativeVpnService() {
         return bridgesOfKind()
     }
 
-    /** Держит поднятый туннель Tor, пока через него идёт трафик. */
+    /** Статистика транспорта — диагностика; её отказ не должен ронять сеанс. */
+    private fun torPtProxyStatsSafe(): String =
+        runCatching { nova.Nova.torPtProxyStats() }.getOrDefault("")
+
     /**
      * Держит поднятый туннель Tor и заодно решает, работал ли этот вход вообще.
      *
@@ -11216,11 +11237,11 @@ class NovaVpnService : OperaNativeVpnService() {
                     // по-разному, и второе — повод сменить вход, а не сдаться.
                     LogManager.log(
                         "TOR: цепочка через этот вход не провезла ни одной пробы. " +
-                            nova.Nova.torPtProxyStats()
+                            torPtProxyStatsSafe()
                     )
                     return null
                 }
-                LogManager.log("TOR: цепочка перестала пропускать трафик. ${nova.Nova.torPtProxyStats()}")
+                LogManager.log("TOR: цепочка перестала пропускать трафик. ${torPtProxyStatsSafe()}")
                 return false
             }
         }
@@ -15316,6 +15337,7 @@ class NovaVpnService : OperaNativeVpnService() {
                             port = currentPort,
                         )
                         LogManager.log("MASQUE SNI рукопожатия: $masqueSniToSend (вместо ${transportMode.masqueSni.orEmpty()})")
+                        // audit: guarded — внешний try/catch ниже.
                         Nova.startMasqueVPNWithSNI(
                             tunnelFdForEngine(attemptDescriptor),
                             identityJson,
@@ -27831,9 +27853,16 @@ class NovaVpnService : OperaNativeVpnService() {
           try {
             val privateKey = account.wireGuardPrivateKey
             val total = candidates.size
-            store.writeProbeState(
-                ProtonProfileStore.ProbeState(ProtonProfileStore.STATE_RUNNING, total, 0, 0)
-            )
+            // Итоговый DONE и прогресс воркеров пишут один файл. Без общей
+            // блокировки возможен порядок «воркер прочитал флаг, main записал
+            // DONE, воркер записал RUNNING» — экран снова видел незавершённый
+            // замер. Флаг и запись закрываются под этим же монитором.
+            val probeStateLock = Any()
+            synchronized(probeStateLock) {
+                store.writeProbeState(
+                    ProtonProfileStore.ProbeState(ProtonProfileStore.STATE_RUNNING, total, 0, 0)
+                )
+            }
             LogManager.log(
                 "Proton probe: меряем $total кандидатов TCP-откликом, сокеты защищены; " +
                     "рукопожатие уйдёт одно — в голову очереди."
@@ -27902,15 +27931,19 @@ class NovaVpnService : OperaNativeVpnService() {
                         }
                         if (result.pingMs > 0) alive.incrementAndGet()
                         val finished = done.incrementAndGet()
-                        if (!progressClosed.get() && (finished % 5 == 0 || finished == total)) {
-                            store.writeProbeState(
-                                ProtonProfileStore.ProbeState(
-                                    ProtonProfileStore.STATE_RUNNING,
-                                    total,
-                                    finished,
-                                    alive.get(),
-                                )
-                            )
+                        if (finished % 5 == 0 || finished == total) {
+                            synchronized(probeStateLock) {
+                                if (!progressClosed.get()) {
+                                    store.writeProbeState(
+                                        ProtonProfileStore.ProbeState(
+                                            ProtonProfileStore.STATE_RUNNING,
+                                            total,
+                                            finished,
+                                            alive.get(),
+                                        )
+                                    )
+                                }
+                            }
                         }
                         result
                     }
@@ -28065,16 +28098,18 @@ class NovaVpnService : OperaNativeVpnService() {
                 }
             }
 
-            progressClosed.set(true)
-            store.writeProfiles(ranked)
-            store.writeProbeState(
-                ProtonProfileStore.ProbeState(
-                    ProtonProfileStore.STATE_DONE,
-                    total,
-                    total,
-                    tcpOnly.size,
+            synchronized(probeStateLock) {
+                progressClosed.set(true)
+                store.writeProfiles(ranked)
+                store.writeProbeState(
+                    ProtonProfileStore.ProbeState(
+                        ProtonProfileStore.STATE_DONE,
+                        total,
+                        total,
+                        tcpOnly.size,
+                    )
                 )
-            )
+            }
             LogManager.log(
                 "Proton probe: из $total TCP-откликом ответили ${tcpOnly.size}, молчат ${silent.size}. " +
                     "Сохранено ${ranked.size}, лучший ${ranked.firstOrNull()?.pingMs ?: -1} мс " +

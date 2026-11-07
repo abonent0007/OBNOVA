@@ -568,14 +568,25 @@ object ProtonProfileManager {
         // и очередь подключения, пересобранная в этом окне, строилась из них
         // (см. `ProtonProfileStore.candidatesFile`).
         store.writeCandidates(candidates)
-        store.writeProbeState(
-            ProtonProfileStore.ProbeState(
-                ProtonProfileStore.STATE_REQUESTED,
-                candidates.size,
-                0,
-                0,
+        // Живой замер мог остаться от предыдущего захода (например, экран
+        // переоткрыли, пока служба ещё мерила). Его `running` нельзя затирать
+        // на `requested`: служба второй замер не запустит, а awaitProbe
+        // потеряет уже накопленный прогресс. Оборванный замер по `atMs`
+        // отличается от живого и перезапускается.
+        val probeInFlight = store.readProbeState()
+            ?.let { it.state == ProtonProfileStore.STATE_RUNNING && !it.isStale() } == true
+        if (probeInFlight) {
+            LogManager.log("Proton: замер уже идёт — второй не заводим, ждём текущий.")
+        } else {
+            store.writeProbeState(
+                ProtonProfileStore.ProbeState(
+                    ProtonProfileStore.STATE_REQUESTED,
+                    candidates.size,
+                    0,
+                    0,
+                )
             )
-        )
+        }
         publish("Proton: проверка 0/${candidates.size}")
         val probeRequested = requestProbe(context)
 
@@ -767,6 +778,13 @@ object ProtonProfileManager {
             }
             val state = store.readProbeState()
             if (state != null) {
+                if (state.isStale()) {
+                    LogManager.log(
+                        "Proton: замер завис на ${state.done}/${state.total} — " +
+                            "не ждём ${PROBE_WAIT_MS / 1000} с, берём запасной порядок."
+                    )
+                    return null
+                }
                 if (state.done != lastDone) {
                     lastDone = state.done
                     publish("Proton: проверка ${state.done}/${state.total.takeIf { it > 0 } ?: total}")

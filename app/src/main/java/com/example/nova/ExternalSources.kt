@@ -45,6 +45,36 @@ object ExternalSources {
     const val RELEASES_PAGE_URL = "https://github.com/$RELEASES_REPO/releases"
 
     /**
+     * Bootstrap-адреса WARP-фида: готовый конфиг, когда регистрация Cloudflare
+     * не проходит. Это именно семена обхода, а не данные: список обязан быть
+     * известен до первого запроса, поэтому он живёт в коде. Порядок — от
+     * основного работника к личному Worker'у владельца; последний намеренно
+     * в конце, чтобы приложение не зависело от него.
+     */
+    val WARP_CONFIG_FEED_BASES = listOf(
+        "https://warp-workers.warp-api.cfd",
+        "https://warp-sub.warp-api.cfd",
+        "https://warp-vercel-chi.warp-api.cfd",
+        "https://warp-vercel-murex.warp-api.cfd",
+        "https://warp-netlify.warp-api.cfd",
+        "https://obnova-warp.yurentiy-avd.workers.dev/",
+    )
+
+    /**
+     * Bootstrap-хосты Proton API. Запасной узел для заблокированных сетей
+     * ищется динамически через DoH (`ProtonDoh`), поэтому здесь только те
+     * адреса, которые обязаны быть известны до первого запроса.
+     */
+    val PROTON_API_HOSTS = listOf(
+        "https://vpn-api.proton.me",
+        "https://api.protonvpn.ch",
+    )
+
+    /** Регистрация WARP в Cloudflare: внешний API, а не наш фид. */
+    const val CLOUDFLARE_WARP_REG_URL =
+        "https://api.cloudflareclient.com/v0a4471/reg"
+
+    /**
      * Подписка AWG/WARP по умолчанию в экране «Конфигурации».
      *
      * Источник — стоковый PC-форк; на наш релизный репозиторий его не менять:

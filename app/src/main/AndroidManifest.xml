@@ -132,12 +132,6 @@
             android:theme="@style/Theme.Nova.Settings"/>
 
         <activity
-            android:name=".ParityScreenActivity"
-            android:label="OBNOVA"
-            android:launchMode="singleTop"
-            android:theme="@style/Theme.Nova.Settings" />
-
-        <activity
             android:name=".RoutesActivity"
             android:label="Маршруты"
             android:launchMode="singleTop"

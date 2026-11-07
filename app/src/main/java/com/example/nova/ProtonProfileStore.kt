@@ -110,8 +110,35 @@ class ProtonProfileStore(context: Context) {
      * Состояние замера. Живёт в файле, потому что замер идёт в процессе `:vpn`
      * (только у службы есть `protect()`), а показывает его процесс интерфейса.
      */
-    data class ProbeState(val state: String, val total: Int, val done: Int, val alive: Int) {
-        val finished: Boolean get() = state == STATE_DONE || state == STATE_FAILED
+    data class ProbeState(
+        val state: String,
+        val total: Int,
+        val done: Int,
+        val alive: Int,
+        val atMs: Long = 0L,
+    ) {
+        val finished: Boolean get() =
+            state == ProtonProfileStore.STATE_DONE || state == ProtonProfileStore.STATE_FAILED
+
+        /**
+         * Завис ли замер.
+         *
+         * Состояние `running` пишется в файл, а замер идёт в процессе `:vpn`.
+         * Если процесс убили, терминальное состояние не появится, и без
+         * отметки времени экран ждал бы полные [PROBE_WAIT_MS] на каждом
+         * запуске. `atMs` обновляется каждым прогрессом, поэтому всё старше
+         * [PROBE_STALE_MS] — оборванный прогон, а не живой замер.
+         */
+        fun isStale(
+            nowMs: Long = System.currentTimeMillis(),
+            maxAgeMs: Long = ProtonProfileStore.PROBE_STALE_MS,
+        ): Boolean {
+            val inProgress = state == ProtonProfileStore.STATE_REQUESTED ||
+                state == ProtonProfileStore.STATE_RUNNING
+            // atMs == 0 — файл старой версии без отметки; живым его считать
+            // нельзя, иначе обновление с прошлой сборки снова ждало бы 120 с.
+            return inProgress && nowMs - atMs > maxAgeMs
+        }
     }
 
     data class Account(
@@ -492,6 +519,7 @@ class ProtonProfileStore(context: Context) {
                 total = json.optInt("total", 0),
                 done = json.optInt("done", 0),
                 alive = json.optInt("alive", 0),
+                atMs = json.optLong("at", 0L),
             )
         }.getOrNull()
     }
@@ -504,6 +532,7 @@ class ProtonProfileStore(context: Context) {
                 put("total", state.total)
                 put("done", state.done)
                 put("alive", state.alive)
+                put("at", if (state.atMs > 0L) state.atMs else System.currentTimeMillis())
             }.toString(),
         )
     }
@@ -1305,6 +1334,9 @@ class ProtonProfileStore(context: Context) {
          * сменить Wi-Fi на сотовую), но не «каждый вызов».
          */
         const val PROBE_REFRESH_MS = 60L * 60 * 1000
+
+        /** Дольше этого `running` без обновления — оборванный замер, а не живой. */
+        const val PROBE_STALE_MS = 150_000L
 
         const val STATE_REQUESTED = "requested"
         const val STATE_RUNNING = "running"

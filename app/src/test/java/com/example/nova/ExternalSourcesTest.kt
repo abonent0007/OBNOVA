@@ -139,4 +139,25 @@ class ExternalSourcesTest {
         )
         assertTrue(ExternalSources.TOR_MOAT_BUILTIN_URL.startsWith("https://"))
     }
+
+    @Test
+    fun `warp and proton bootstrap sources keep fallback order`() {
+        val warp = ExternalSources.WARP_CONFIG_FEED_BASES
+        assertEquals(6, warp.size)
+        assertEquals(warp.size, warp.distinct().size)
+        assertTrue(warp.all { it.startsWith("https://") })
+        assertEquals("https://obnova-warp.yurentiy-avd.workers.dev/", warp.last())
+        assertEquals(ExternalSources.WARP_CONFIG_FEED_BASES, WarpConfigFeed.ENDPOINTS)
+
+        assertEquals(
+            listOf("https://vpn-api.proton.me", "https://api.protonvpn.ch"),
+            ExternalSources.PROTON_API_HOSTS,
+        )
+        assertTrue(ExternalSources.PROTON_API_HOSTS.all { it.startsWith("https://") })
+        assertTrue(
+            ExternalSources.CLOUDFLARE_WARP_REG_URL.startsWith(
+                "https://api.cloudflareclient.com/",
+            ),
+        )
+    }
 }

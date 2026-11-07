@@ -57,6 +57,28 @@ data class WarpGeneratedProfile(
 }
 
 /**
+ * Чистое слияние наборов WARP-профилей.
+ *
+ * Существующие записи сохраняют порядок и приоритет: одно и то же `host:port`
+ * из нового выпуска не заменяет уже проверенную запись, а только дополняет
+ * набор. Новые точки добавляются в конец, [limit] обрезает хвост. Вынесено из
+ * [WarpGeneratedStore.mergeProfiles], чтобы правило обновления можно было
+ * проверить без Android-контекста и файловых операций.
+ */
+internal fun mergeWarpProfiles(
+    existing: List<WarpGeneratedProfile>,
+    incoming: List<WarpGeneratedProfile>,
+    limit: Int = 300,
+): List<WarpGeneratedProfile> {
+    val merged = LinkedHashMap<String, WarpGeneratedProfile>()
+    existing.forEach { merged["${it.host}:${it.port}"] = it }
+    incoming.forEach { profile ->
+        merged.putIfAbsent("${profile.host}:${profile.port}", profile)
+    }
+    return merged.values.take(limit).toList()
+}
+
+/**
  * Хранилище собственных WARP-профилей.
  *
  * Зачем оно вообще. Пятьдесят встроенных семян несут **чужие приватные ключи**,
@@ -171,12 +193,7 @@ class WarpGeneratedStore(context: Context) {
         var total = 0
         mutate { json ->
             val existing = parseProfiles(json.optJSONArray("profiles"))
-            val merged = LinkedHashMap<String, WarpGeneratedProfile>()
-            existing.forEach { merged["${it.host}:${it.port}"] = it }
-            incoming.forEach { profile ->
-                merged.putIfAbsent("${profile.host}:${profile.port}", profile)
-            }
-            val result = merged.values.take(limit)
+            val result = mergeWarpProfiles(existing, incoming, limit)
             json.put("profiles", encodeProfiles(result))
             total = result.size
         }

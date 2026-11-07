@@ -35,7 +35,7 @@ class WarpClient(
         private var optionalTrafficCamouflageSetterAvailable = true
     }
 
-    private val REG_URL = "https://api.cloudflareclient.com/v0a4471/reg"
+    private val REG_URL = ExternalSources.CLOUDFLARE_WARP_REG_URL
 
     private enum class CountryOrderStrategy {
         PREFERRED,
@@ -1007,6 +1007,7 @@ class WarpClient(
             .header("Connection", "Keep-Alive")
             .build()
 
+        // audit: guarded — ошибку ловит register().
         client.newCall(request).execute().use { response ->
             val responseText = response.body?.string().orEmpty()
             if (response.code != 200) {
