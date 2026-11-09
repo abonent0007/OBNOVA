@@ -5,7 +5,7 @@
 
 ## 1. Текущее состояние
 
-- Ветка: `personal`, версия **1.34.10** / `versionCode 174` (OBNOVA).
+- Ветка: `personal`, версия **1.34.11** / `versionCode 175` (OBNOVA).
 - KALIOPA Phase 1+2: меню начинается с «Профили и подписки», «Конфигурации»
   удалены; `UnifiedProfileStore` собирает WARP/VLESS/Proton в одну базу, шесть
   VLESS-источников, `google_ai`/Spotify-правила, Opera same-egress + WARP-AWG

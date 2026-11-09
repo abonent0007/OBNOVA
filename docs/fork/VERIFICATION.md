@@ -3,6 +3,26 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
+## 2026-11-09 — 1.34.11 / versionCode 175
+
+```text
+./gradlew testGithubDebugUnitTest assembleGithubRelease assembleGithubDebug
+BUILD SUCCESSFUL; 82 класса / 661 тест, 0 падений
+
+817EC0FBCBF8164B12AD60DA3E2D19F1A3FC8054505B19CAE8A9103D3BD1246E  OBNOVA_1.34.11-arm64-v8a.apk
+06B56B37F03479C3D21467CA7E7CAD03B63510F7ADCB94F57593CB645D40268B  OBNOVA_1.34.11-armeabi-v7a.apk
+F06509F09867997777974DFFFA8D52D3E03B8F8561896DCD25F4848EAFEADE21  OBNOVA_1.34.11-universal.apk
+```
+
+- **MULTI primary:** при отсутствии VLESS/MASQUE primary берёт AWG-мост
+  cfproxy (1378), DESYNC остаётся spoof. Это должно вернуть YouTube-видео и
+  Telegram в WARP-egress.
+- **Футер:** `OBNOVA v…` вместо `Nova v…`.
+- Живой тест 1.34.11 не выполнен: после установки 1.34.10 устройство снова
+  ушло в `adb offline` (USB authorization/transport), затем исчезло. Нужно
+  разблокировать телефон и подтвердить отладку; после этого — проверить
+  YouTube-видео, Telegram и WARP/MASQUE.
+
 ## 2026-11-09 — 1.34.10 / versionCode 174 (сборка)
 
 ```text

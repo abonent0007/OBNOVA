@@ -10166,14 +10166,16 @@ class NovaVpnService : OperaNativeVpnService() {
 
             val vlessPort = startVlessSocksForMulti(clientData, connectGenerationId)
             multiVlessActive = vlessPort > 0
-            // PRIMARY: живой VLESS, иначе MASQUE-слот cfproxy, и только потом
-            // DESYNC. На ПК primary — MASQUE; здесь он уже поднят как cfproxy,
-            // но раньше использовался лишь запасным путём. DESYNC остаётся
-            // spoof-слотом для обхода DPI, когда VLESS/MASQUE не отвечают.
+            // PRIMARY: живой VLESS, иначе MASQUE, иначе WARP-AWG (cfproxy 1378),
+            // и только потом DESYNC. На ПК primary — WARP; если MASQUE не
+            // поднялся, AWG-мост уже жив и обязан быть primary, а не только
+            // cfproxy. Иначе YouTube-видео уходит в DESYNC (TCP), а он тянет
+            // только превью; Telegram тоже остаётся без WARP-egress.
             val masquePrimary = masqueProxyPort > 0
             val primaryPort = when {
                 vlessPort > 0 -> vlessPort
                 masquePrimary -> masqueProxyPort
+                cfProxyPort > 0 -> cfProxyPort
                 else -> desyncPort
             }
             val spoofPort = if (primaryPort != desyncPort) desyncPort else 0

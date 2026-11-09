@@ -11,7 +11,7 @@ Nova для Android: приложение с активной адаптацие
 
 ## Текущее состояние личного форка
 
-- Версия **1.34.10 / versionCode 174** (OBNOVA).
+- Версия **1.34.11 / versionCode 175** (OBNOVA).
 - Встроенный апдейтер включён для `github`-сборки (`BuildConfig.UPDATER_ENABLED = true`)
   и читает релизы **`abonent0007/OBNOVA`** через GitHub API; `fdroid`-сборка
   апдейтер не включает (правило каталога). Облачные профили (Proton, VLESS, WARP)

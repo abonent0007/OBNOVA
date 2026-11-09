@@ -3,6 +3,16 @@
 > Формат: дата → что изменено → где → чем проверено. Все пути от корня
 > `C:\Users\User\Documents\Nova-Android-Fork`.
 
+## 2026-11-09 — 1.34.11 / versionCode 175
+
+- **MULTI primary:** если VLESS и MASQUE не поднялись, primary теперь берёт
+  живой WARP-AWG SOCKS (cfproxy 1378), а DESYNC остаётся только spoof-слотом.
+  Раньше primary уходил в DESYNC, поэтому YouTube показывал превью (TCP), но
+  видео не шло, а Telegram оставался на DESYNC. Это соответствует PC-схеме:
+  primary — WARP, DESYNC — обход DPI.
+- **Футер настроек:** `Nova v…` заменён на `OBNOVA v…`.
+- Остальное — как в 1.34.10.
+
 ## 2026-11-09 — 1.34.10 / versionCode 174
 
 - **KALIOPA parity, Phase 1:** изучена PC-схема Route Lab; меню начинается с

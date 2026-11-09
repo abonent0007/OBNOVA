@@ -2662,7 +2662,7 @@ class SettingsActivity : AppCompatActivity() {
         // Подпись со ссылкой — оформленный текст, а такой перевод на экране не трогает:
         // спаны пришлось бы переносить. Поэтому обе строки переводятся до разметки,
         // и ссылка ищется уже в переведённой подписи.
-        val fullText = NovaLanguage.tr(this, "Nova v$versionName - создана с ❤️ Telegram чат")
+        val fullText = NovaLanguage.tr(this, "OBNOVA v$versionName - создана с ❤️ Telegram чат")
 
         val linkText = NovaLanguage.tr(this, "Telegram чат")
 
