@@ -51,6 +51,14 @@ class RouterConfigFactoryTest {
     }
 
     @Test
+    fun `youtube prefers primary before desync`() {
+        assertEquals(
+            listOf("secondary", "primary", "spoof", "direct"),
+            RouterConfigFactory.order("youtube", emptyMap(), opera = true, spoof = true),
+        )
+    }
+
+    @Test
     fun `google ai tries primary before desync`() {
         assertEquals(
             listOf("secondary", "primary", "spoof", "direct"),

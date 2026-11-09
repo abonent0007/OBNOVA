@@ -2169,6 +2169,14 @@ class NovaVpnService : OperaNativeVpnService() {
                 isRunning = true
                 return START_STICKY
             }
+            if (currentState == STATE_CONNECTING) {
+                // Выбор MULTI/автостарт уже запустил сеанс; повторное нажатие
+                // «Подключить» не должно менять connectGeneration и обрывать
+                // Opera/подготовку. Иначе YouTube остаётся без SECONDARY.
+                LogManager.log("smart-connect: сеанс уже подключается — повторный запуск игнорируем.")
+                isRunning = true
+                return START_STICKY
+            }
             val connectGenerationId = beginConnectGeneration(stopExisting = true)
             // Явный пуск отменяет отложенное добивание предыдущего stop: иначе оно
             // снесёт службу под уже начавшимся циклом.
@@ -9495,8 +9503,9 @@ class NovaVpnService : OperaNativeVpnService() {
         socksPort: Int,
         connectGenerationId: Int,
         deep: Boolean = false,
+        budgetMs: Long = VLESS_CANDIDATE_PROBE_BUDGET_MS,
     ): Boolean {
-        val deadline = SystemClock.elapsedRealtime() + VLESS_CANDIDATE_PROBE_BUDGET_MS
+        val deadline = SystemClock.elapsedRealtime() + budgetMs
         while (!isUserStopped &&
             isConnectGenerationCurrent(connectGenerationId) &&
             // Нажатие кнопки важнее текущего кандидата: дожидаться его ответа значит
@@ -9999,6 +10008,10 @@ class NovaVpnService : OperaNativeVpnService() {
             val (link, config) = profiles[cursor]
             cursor = (cursor + 1) % profiles.size
             tried++
+            val remaining = (deadline - SystemClock.elapsedRealtime()).coerceAtMost(
+                VLESS_CANDIDATE_PROBE_BUDGET_MS,
+            )
+            if (remaining <= 250L) break
             val startError = XrayBridge.start(VlessXrayConfig.build(config, port))
             if (startError.isNotBlank()) {
                 rejected += link
@@ -10006,7 +10019,7 @@ class NovaVpnService : OperaNativeVpnService() {
                 XrayBridge.stop()
                 continue
             }
-            if (awaitVlessProxyReady(port, connectGenerationId, deep = true)) {
+            if (awaitVlessProxyReady(port, connectGenerationId, deep = true, budgetMs = remaining)) {
                 clientData.setVlessConfigLink(link)
                 LogManager.log(
                     "MULTI: VLESS PRIMARY поднят (${config.displayName}, 127.0.0.1:$port)."
@@ -10116,21 +10129,18 @@ class NovaVpnService : OperaNativeVpnService() {
                 }
                 var ready = OperaProxyManager.ReadyState.FAILED
                 // PC-схема: Opera API и tunnel диалятся через WARP full-proxy.
-                // В Android это AwgSocksBridge (userspace AWG, SOCKS 1378) —
-                // MASQUE-egress не умеет резолвить API и не успевает
-                // зарегистрировать сессию. Если WARP-мост не поднялся, остаётся
-                // локальный MASQUE/DESYNC как запас.
-                val operaBootstrapPort = if (masqueProxyPort > 0) masqueProxyPort else desyncPort
-                val awgBootstrap = if (AwgSocksBridge.startAndWait(this)) {
-                    LogManager.log(
-                        "MULTI: Opera bootstrap через WARP AWG SOCKS ${AwgSocksBridge.LISTEN_ADDRESS}."
-                    )
-                    "socks5h://${AwgSocksBridge.LISTEN_ADDRESS}"
-                } else {
-                    ""
-                }
-                val operaBootstrap = awgBootstrap.ifEmpty {
-                    "socks5h://127.0.0.1:$operaBootstrapPort"
+                // На Android лучший рабочий WARP — MASQUE (1379), затем AWG
+                // (1378), затем DESYNC. Раньше AWG выбирался даже при живом
+                // MASQUE и, умирая, уводил Opera в timeout.
+                val operaBootstrap = when {
+                    masqueProxyPort > 0 -> "socks5h://127.0.0.1:$masqueProxyPort"
+                    AwgSocksBridge.startAndWait(this) -> {
+                        LogManager.log(
+                            "MULTI: Opera bootstrap через WARP AWG SOCKS ${AwgSocksBridge.LISTEN_ADDRESS}."
+                        )
+                        "socks5h://${AwgSocksBridge.LISTEN_ADDRESS}"
+                    }
+                    else -> "socks5h://127.0.0.1:$desyncPort"
                 }
                 // EU первым, AS — резерв: азиатский узел в ленте жив, когда EU/AM не отвечают.
                 for (country in listOf("EU", "AS")) {
@@ -10164,7 +10174,15 @@ class NovaVpnService : OperaNativeVpnService() {
                 return true
             }
 
-            val vlessPort = startVlessSocksForMulti(clientData, connectGenerationId)
+            val vlessPort = if (masqueProxyPort > 0) {
+                // MASQUE уже поднят и даёт рабочий WARP-egress. Перебор 629
+                // VLESS-профилей при этом — минуты ожидания и блокирующий JNI;
+                // PC-схема тоже ставит WARP primary, а VLESS оставляет запасом.
+                LogManager.log("MULTI: MASQUE готов — VLESS-перебор пропускаем, primary=MASQUE.")
+                0
+            } else {
+                startVlessSocksForMulti(clientData, connectGenerationId)
+            }
             multiVlessActive = vlessPort > 0
             // PRIMARY: живой VLESS, иначе MASQUE, иначе WARP-AWG (cfproxy 1378),
             // и только потом DESYNC. На ПК primary — WARP; если MASQUE не

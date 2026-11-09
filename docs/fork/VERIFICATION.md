@@ -9,19 +9,24 @@
 ./gradlew testGithubDebugUnitTest assembleGithubRelease assembleGithubDebug
 BUILD SUCCESSFUL; 82 класса / 661 тест, 0 падений
 
-817EC0FBCBF8164B12AD60DA3E2D19F1A3FC8054505B19CAE8A9103D3BD1246E  OBNOVA_1.34.11-arm64-v8a.apk
-06B56B37F03479C3D21467CA7E7CAD03B63510F7ADCB94F57593CB645D40268B  OBNOVA_1.34.11-armeabi-v7a.apk
-F06509F09867997777974DFFFA8D52D3E03B8F8561896DCD25F4848EAFEADE21  OBNOVA_1.34.11-universal.apk
+A30AC7D184555D3771A4C0A31C6337097DA95798D48F49870B66EF4E36180FC3  OBNOVA_1.34.11-arm64-v8a.apk
 ```
 
 - **MULTI primary:** при отсутствии VLESS/MASQUE primary берёт AWG-мост
-  cfproxy (1378), DESYNC остаётся spoof. Это должно вернуть YouTube-видео и
-  Telegram в WARP-egress.
-- **Футер:** `OBNOVA v…` вместо `Nova v…`.
-- Живой тест 1.34.11 не выполнен: после установки 1.34.10 устройство снова
-  ушло в `adb offline` (USB authorization/transport), затем исчезло. Нужно
-  разблокировать телефон и подтвердить отладку; после этого — проверить
-  YouTube-видео, Telegram и WARP/MASQUE.
+  cfproxy (1378); если MASQUE 1379 жив, перебор 629 VLESS пропускается.
+  DESYNC остаётся spoof.
+- **Футер:** `OBNOVA v1.34.11` — проверено на устройстве.
+- **Apps VPN:** на телефоне стоял режим «Всё, кроме выбранных», YouTube был
+  исключён — router вообще не видел YouTube. Переключено на «Все приложения
+  через VPN».
+- **Живой тест:** MULTI поднялся `PRIMARY1379`; Opera через MASQUE один раз
+  дошла до `MULTI: NO` (затем регистрация снова 502/backoff). При отсутствии
+  Opera YouTube уходит в primary и получает `Ok(N), Ok(0)`; видео не идёт.
+  Пиксель-тест YouTube-видео не пройден — нужен стабильный Opera/secondary.
+- Второе нажатие CONNECT_SMART во время CONNECTING больше не обрывает Opera
+  (добавлена идемпотентность).
+
+1.34.11 **не опубликован**: нужен зелёный live-тест YouTube/Telegram.
 
 ## 2026-11-09 — 1.34.10 / versionCode 174 (сборка)
 

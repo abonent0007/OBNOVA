@@ -5,12 +5,19 @@
 
 ## 2026-11-09 — 1.34.11 / versionCode 175
 
-- **MULTI primary:** если VLESS и MASQUE не поднялись, primary теперь берёт
-  живой WARP-AWG SOCKS (cfproxy 1378), а DESYNC остаётся только spoof-слотом.
-  Раньше primary уходил в DESYNC, поэтому YouTube показывал превью (TCP), но
-  видео не шло, а Telegram оставался на DESYNC. Это соответствует PC-схеме:
-  primary — WARP, DESYNC — обход DPI.
+- **MULTI primary:** если VLESS и MASQUE не поднялись, primary берёт живой
+  WARP-AWG SOCKS (cfproxy 1378), а DESYNC остаётся только spoof-слотом.
+- **MASQUE — приоритетный WARP:** если MASQUE SOCKS 1379 поднят, перебор 629
+  VLESS не запускается (он блокировал старт на минуты); primary=MASQUE,
+  DESYNC=spoof. Opera bootstrap идёт через MASQUE, AWG/DESYNC — запас.
+- **YouTube/AI:** порядок `secondary → primary → spoof → direct`; при живой
+  Opera YouTube идёт в secondary. Раньше spoof стоял выше primary.
+- **Повторный CONNECT_SMART** во время `CONNECTING` игнорируется: второе
+  нажатие «Подключить» больше не инвалидирует поколение и не убивает Opera.
 - **Футер настроек:** `Nova v…` заменён на `OBNOVA v…`.
+- **Apps VPN:** на устройстве режим был «Всё, кроме выбранных», YouTube
+  исключён — router не видел его трафика. Для проверки выставлен «Все
+  приложения через VPN»; это настройка, не код.
 - Остальное — как в 1.34.10.
 
 ## 2026-11-09 — 1.34.10 / versionCode 174

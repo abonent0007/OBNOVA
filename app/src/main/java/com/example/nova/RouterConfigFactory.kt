@@ -178,23 +178,17 @@ object RouterConfigFactory {
         }
         val ru = listOf("primary") + tail
         val eu = (if (opera) listOf("secondary") else emptyList()) + ru
-        // YouTube/AI: Opera первой, но при её отсутствии — DESYNC (spoof), а не
-        // MASQUE-primary: MASQUE-egress отдаёт Google TLS без данных (Ok(N), Ok(0)).
+        // YouTube/AI: Opera первой, затем PRIMARY (MASQUE/WARP), и только потом
+        // DESYNC. Раньше spoof стоял выше primary из-за нерабочего MASQUE;
+        // теперь MASQUE-личность поднимается, и видео YouTube/Telegram должно
+        // идти через primary, а DESYNC остаётся обходом DPI.
         val google = buildList {
             if (opera) add("secondary")
-            if (spoof) add("spoof")
-            add("primary")
-            if (!killSwitch) add("direct")
-        }
-        // Google AI/opencode по PC-схеме: Opera NL, затем WARP/PRIMARY, и только
-        // потом DESYNC. Это отличается от общего AI, где DESYNC идёт раньше
-        // primary из-за MASQUE-egress Google; для Google AI PC ставит WARP выше.
-        val googlePrimaryFirst = buildList {
-            if (opera) add("secondary")
             add("primary")
             if (spoof) add("spoof")
             if (!killSwitch) add("direct")
         }
+        val googlePrimaryFirst = google
         // Telegram в PC-политике закреплён за relay/PRIMARY и не должен уходить
         // в DIRECT: иначе при отказе слота он молча пойдёт мимо туннеля.
         val pinned = buildList {
