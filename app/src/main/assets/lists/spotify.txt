@@ -1,0 +1,8 @@
+# PC route scheme: spotify -> DIRECT.
+spotify.com
+open.spotify.com
+accounts.spotify.com
+api.spotify.com
+spotifycdn.com
+scdn.co
+spotify.link

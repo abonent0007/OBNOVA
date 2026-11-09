@@ -60,7 +60,7 @@ class RouteSettingsTest {
     @Test
     fun `service list keeps stable keys`() {
         assertEquals(
-            listOf("ru", "eu", "youtube", "telegram", "whatsapp", "discord", "ai", "google_ai", "other"),
+            listOf("ru", "eu", "youtube", "telegram", "whatsapp", "discord", "spotify", "ai", "google_ai", "other"),
             RouteSettings.SERVICES.map { it.key },
         )
     }

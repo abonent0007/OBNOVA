@@ -625,11 +625,20 @@ object OperaProxyManager {
                     // вариант: он падал на probe, исправный адрес уходил в cooldown, и
                     // Opera вставала лишь через полный discover (или не вставала вовсе).
                     val registrationRoutes = buildList {
-                        if (effectiveApiProxy.isNotEmpty()) add("" to effectiveApiProxy)
-                        // Один релей: сессия либо регистрируется через релей, либо нет —
-                        // второй адрес того же релея лишь раздувал бы счётчик попыток.
-                        apiRelays.firstOrNull()?.let { add(it to "") }
-                        add("" to "")
+                        if (effectiveApiProxy.isNotEmpty()) {
+                            // PC-схема: API-регистрация и туннель Opera обязаны
+                            // выходить одним egress. Раньше после пары попыток
+                            // план переходил на релей/прямой путь, сессия
+                            // регистрировалась с одного IP, а CONNECT шёл с
+                            // другого — SurfEasy отвечал 502. При заданном
+                            // bootstrap-прокси других маршрутов в этом прогоне нет.
+                            add("" to effectiveApiProxy)
+                        } else {
+                            // Один релей: сессия либо регистрируется через релей, либо нет —
+                            // второй адрес того же релея лишь раздувал бы счётчик попыток.
+                            apiRelays.firstOrNull()?.let { add(it to "") }
+                            add("" to "")
+                        }
                     }
                     for (endpoint in cachedEndpoints) {
                         val pinnedHosts = candidateHosts.take(2).ifEmpty { listOf("") }

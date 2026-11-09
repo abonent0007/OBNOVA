@@ -57,6 +57,8 @@ interface RoutingLists {
     fun inAi(host: String): Boolean
     /** Google AI/opencode: Opera первой, затем primary, DESYNC — запас. */
     fun inGoogleAi(host: String): Boolean = false
+    /** Spotify по PC-схеме идёт напрямую. */
+    fun inSpotify(host: String): Boolean = false
     fun inYoutube(host: String): Boolean
     fun inTelegram(host: String): Boolean
     fun inWhatsapp(host: String): Boolean

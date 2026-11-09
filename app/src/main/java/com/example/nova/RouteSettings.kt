@@ -25,6 +25,7 @@ object RouteSettings {
         Service("telegram", "Telegram", RouteClass.TELEGRAM),
         Service("whatsapp", "WhatsApp", RouteClass.WHATSAPP),
         Service("discord", "Discord", RouteClass.DISCORD),
+        Service("spotify", "Spotify", RouteClass.DIRECT),
         Service("ai", "AI (Gemini, ChatGPT)", RouteClass.AI),
         Service("google_ai", "Google AI / opencode", RouteClass.GOOGLE_AI),
         Service("other", "Остальной трафик", RouteClass.RU),

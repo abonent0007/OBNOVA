@@ -10115,8 +10115,11 @@ class NovaVpnService : OperaNativeVpnService() {
                     LogManager.log("MULTI: старый backoff Opera игнорируем — Stage 2 поднимает её через мост.")
                 }
                 var ready = OperaProxyManager.ReadyState.FAILED
-                // Opera API — снаружи; DESYNC до него не доходит (Google/Opera
-                // режут TLS), а MASQUE-слот уже поднят и даёт рабочий egress.
+                // PC-схема: Opera API и tunnel должны выходить с одного IP.
+                // Локальный MASQUE/DESYNC — единственный egress, который умеет
+                // и DNS, и CONNECT без внешнего релея; релей не подошёл как
+                // `-proxy` (API через него уходит в timeout), поэтому fallback
+                // на него не ставим.
                 val operaBootstrapPort = if (masqueProxyPort > 0) masqueProxyPort else desyncPort
                 val operaBootstrap = "socks5h://127.0.0.1:$operaBootstrapPort"
                 // EU первым, AS — резерв: азиатский узел в ленте жив, когда EU/AM не отвечают.
@@ -10353,6 +10356,7 @@ class NovaVpnService : OperaNativeVpnService() {
                 second = lists.secondDomains(),
                 ai = lists.aiDomains(),
                 googleAi = lists.googleAiDomains(),
+                spotify = lists.spotifyDomains(),
                 youtube = lists.youtubeDomains(),
                 youtubeIps = lists.youtubeIps(),
                 telegramIps = lists.telegramIps(),

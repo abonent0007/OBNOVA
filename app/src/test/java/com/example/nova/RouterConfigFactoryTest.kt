@@ -40,6 +40,17 @@ class RouterConfigFactoryTest {
     }
 
     @Test
+    fun `spotify goes direct before the eu list`() {
+        val json = RouterConfigFactory.build(
+            input = input().copy(spotify = listOf("spotify.com")),
+            primaryPort = 1376,
+            operaPort = 1371,
+        )
+        assertTrue(json.contains("\"name\":\"spotify\""))
+        assertTrue(json.contains("\"order\":[\"direct\"]"))
+    }
+
+    @Test
     fun `google ai tries primary before desync`() {
         assertEquals(
             listOf("secondary", "primary", "spoof", "direct"),

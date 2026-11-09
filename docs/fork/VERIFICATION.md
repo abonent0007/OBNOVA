@@ -7,10 +7,10 @@
 
 ```text
 ./gradlew testGithubDebugUnitTest
-BUILD SUCCESSFUL; classes=82 tests=660 failures=0 errors=0
+BUILD SUCCESSFUL; classes=82 tests=661 failures=0 errors=0
   UnifiedProfileStoreTest: 3/3
   RouteSettingsTest: 5/5
-  RouterConfigFactoryTest: 16/16 (relay-first Telegram, google_ai order)
+  RouterConfigFactoryTest: 17/17 (relay-first Telegram, google_ai, Spotify)
   ExternalSourcesTest: 11/11 (6 источников VLESS, Opera .244 priority)
 
 ./gradlew assembleGithubDebug / assembleGithubRelease
@@ -40,10 +40,19 @@ WARP:   «выпущено 7, добавлено 7, всего 52»
 отсутствуют.
 
 Opera EU на этом сеансе не поднялась: и `77.111.247.*`, и `77.111.244.*`
-вернули `502 Bad Gateway` от upstream. Приоритет `.244` сработал (в журнале
-видно переход на `.244`), но причина глубже — API-сеанс/релей Opera, а не
-только адрес. Поэтому проверка Google AI/opencode на живом маршруте остаётся
-открытой; unit-тест порядка слоёв зелёный.
+вернули `502 Bad Gateway` от upstream. Приоритет `.244` сработал, но причина
+глубже — API-сеанс/egress. После правила «один egress» журнал подтвердил:
+
+```text
+Stage 2: API SurfEasy и туннель через один egress — socks5h://127.0.0.1:1379.
+Opera API SurfEasy через Stage 2 egress (DESYNC) socks5h://127.0.0.1:1379
+anonymous registration ... context deadline exceeded
+```
+
+Попытка использовать релей как `-proxy` тоже дала timeout регистрации.
+MULTI при этом поднялся (`CONNECTED backend=MULTI`) без Opera; Google AI
+живьём не проверен, пока Opera недоступна. Это внешняя проблема API/egress,
+не выбор endpoint.
 
 ## 2026-11-08 — статический аудит (без выпуска)
 

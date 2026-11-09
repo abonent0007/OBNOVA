@@ -38,8 +38,16 @@
   перезапрашивается. На RMX3370 оба пула в текущем сеансе вернули 502 от
   upstream, поэтому причина не только в адресе: нужен рабочий API-сеанс/релей
   Opera; это следующий шаг.
-- **Проверки:** 82 класса / 660 тестов, 0 падений; `RouteSettingsTest` 5/5,
-  `RouterConfigFactoryTest` 16/16, `ExternalSourcesTest` 11/11;
+- **Opera, один egress:** API-регистрация и CONNECT теперь не смешивают
+  маршруты: при bootstrap-прокси в одном прогоне используется только он, без
+  отката на релей/прямой путь. Проверено: локальный MASQUE-egress не успевает
+  зарегистрировать API (timeout), релей как `-proxy` тоже даёт timeout —
+  Opera остаётся выключенной, но сессия больше не регистрируется с одного IP,
+  а трафик не идёт с другого.
+- **Spotify:** отдельный `spotify.txt` и правило DIRECT (PC-схема). Discord и
+  WhatsApp намеренно оставлены на primary: в РФ прямой выход для них рискован.
+- **Проверки:** 82 класса / 661 тест, 0 падений; `RouteSettingsTest` 5/5,
+  `RouterConfigFactoryTest` 17/17, `ExternalSourcesTest` 11/11;
   `assembleGithubDebug` и release-сборка для устройства успешны. Lint — см.
   `docs/fork/VERIFICATION.md`.
 

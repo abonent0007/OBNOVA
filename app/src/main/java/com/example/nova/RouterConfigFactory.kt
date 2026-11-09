@@ -28,6 +28,7 @@ object RouterConfigFactory {
         val second: List<String> = emptyList(),
         val ai: List<String> = emptyList(),
         val googleAi: List<String> = emptyList(),
+        val spotify: List<String> = emptyList(),
         val youtube: List<String> = emptyList(),
         /** IP-литералы YouTube/Google: Cronet обходит доменные правила. */
         val youtubeIps: List<String> = emptyList(),
@@ -93,6 +94,7 @@ object RouterConfigFactory {
             )
         }
         add(rules, input.googleAi, order("google_ai", input.overrides, opera, spoof, killSwitch), "google-ai")
+        add(rules, input.spotify, order("spotify", input.overrides, opera, spoof, killSwitch), "spotify")
         add(rules, input.ai, order("ai", input.overrides, opera, spoof, killSwitch), "ai")
         add(rules, input.second, order("eu", input.overrides, opera, spoof, killSwitch), "eu")
         if (input.youtubeIps.isNotEmpty()) {
@@ -212,6 +214,7 @@ object RouterConfigFactory {
                 "eu" -> eu
                 "youtube", "ai" -> google
                 "google_ai" -> googlePrimaryFirst
+                "spotify" -> listOf("direct")
                 "telegram" -> pinned
                 else -> ru
             }
