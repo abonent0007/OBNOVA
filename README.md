@@ -2,7 +2,7 @@
 
 **OBNOVA** — личный форк [Nova Android](https://github.com/confeden/Nova-Android)
 с переработанной маршрутизацией, обновлённым интерфейсом и рядом новых
-возможностей. Версия **1.34.8 (versionCode 172)**, minSdk 24, targetSdk 34.
+возможностей. Версия **1.34.10 (versionCode 174)**, minSdk 24, targetSdk 34.
 
 > Это **форк**, а не официальная сборка Nova. Оригинальный проект, его авторы и
 > документация — в репозитории [confeden/Nova-Android](https://github.com/confeden/Nova-Android).

@@ -5,7 +5,11 @@
 
 ## 1. Текущее состояние
 
-- Ветка: `personal`, версия **1.34.8** / `versionCode 172` (OBNOVA).
+- Ветка: `personal`, версия **1.34.10** / `versionCode 174` (OBNOVA).
+- KALIOPA Phase 1+2: меню начинается с «Профили и подписки», «Конфигурации»
+  удалены; `UnifiedProfileStore` собирает WARP/VLESS/Proton в одну базу, шесть
+  VLESS-источников, `google_ai`/Spotify-правила, Opera same-egress + WARP-AWG
+  bootstrap. План и статус — `docs/plans/2026-11-09-kaliopa-android-parity.md`.
 - Встроенный апдейтер включён для `github`-сборки (`UPDATER_ENABLED = true`) и
   читает релизы `abonent0007/OBNOVA`; у `fdroid` он выключен. Подписки (VLESS,
   WARP) и списки остаются стоковыми.

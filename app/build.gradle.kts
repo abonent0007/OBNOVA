@@ -171,8 +171,8 @@ android {
         // упаковывается (проверка ниже), а быстрая и диагностическая сборки идут с
         // прежним ключом, который сервер принимает. Провернуть ключ в обход сервера —
         // получить `407` у всех пользователей.
-        versionCode = 173
-        versionName = "1.34.9"
+        versionCode = 174
+        versionName = "1.34.10"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

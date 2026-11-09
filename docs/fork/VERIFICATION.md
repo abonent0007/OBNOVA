@@ -3,6 +3,32 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
+## 2026-11-09 — 1.34.10 / versionCode 174 (сборка)
+
+```text
+./gradlew testGithubDebugUnitTest assembleGithubRelease assembleGithubDebug
+BUILD SUCCESSFUL; 82 класса / 661 тест, 0 падений
+
+release:
+AB0EC0800D325E0B1538C521EB3A851276E777762B95E3423D65382C2424D2BD  OBNOVA_1.34.10-arm64-v8a.apk
+8222182495D949123F799ACE9F1D9211C473A447ED534B70CBB808C6A22876B3  OBNOVA_1.34.10-armeabi-v7a.apk
+0C0BACAD3EDA341B3AB29E1E7E3AA33D78EE113ECF877B75E378D6994F98926E  OBNOVA_1.34.10-universal.apk
+
+debug:
+C109199BCD6189D0C3436ED35A77DF5DD42DCAA19BDD3745EFC06BA104B11865  OBNOVA_1.34.10-debug-arm64-v8a.apk
+DB6EDA7FCCECFD13D17299C97E013D0E083A19C258C86261CA80D9A8BDE12940  OBNOVA_1.34.10-debug-armeabi-v7a.apk
+1B4D69E88EE929F46D26264DC437915F8E367625316B30E2CD721086DC1B6C9C  OBNOVA_1.34.10-debug-universal.apk
+```
+
+Статический аудит меню настроек: 37 `row_*`/`btn_*`; у всех, кроме
+`row_logs_container` (это контейнер, не кликабельная строка), есть обработчик
+в `SettingsActivity`. «Конфигурации» отсутствуют.
+
+Живой прогон меню и функций на RMX3370 в этот раз не выполнен: `adb devices`
+пуст, устройство не отдаёт transport. Нужно разблокировать телефон, разрешить
+отладку по USB и переподключить кабель; после этого — установка 1.34.10 и
+проход всех экранов.
+
 ## 2026-11-09 — KALIOPA parity, Phase 1 + device smoke
 
 ```text

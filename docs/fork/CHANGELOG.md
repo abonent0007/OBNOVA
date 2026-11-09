@@ -3,6 +3,32 @@
 > Формат: дата → что изменено → где → чем проверено. Все пути от корня
 > `C:\Users\User\Documents\Nova-Android-Fork`.
 
+## 2026-11-09 — 1.34.10 / versionCode 174
+
+- **KALIOPA parity, Phase 1:** изучена PC-схема Route Lab; меню начинается с
+  блока «Профили и подписки» (обновить всё + генерация WARP, проверить и
+  очистить, слить в одну базу, настройки генерации, Proton). Старые
+  дублирующие кнопки скрыты, «Конфигурации» удалены вместе с экраном,
+  адаптерами и макетами.
+- **Единая база:** `UnifiedProfileStore` собирает WARP-семена, сгенерированные
+  WARP, VLESS-подписки и Proton в `profiles_unified.json` с `origin/alive/
+  last_checked/fail_count`; TCP-проверка, мягкое удаление после двух отказов и
+  `profiles_dead.json` для защиты от возврата мёртвых VLESS из публичного фида.
+  Bundled seeds не удаляются.
+- **Источники:** к четырём VLESS-подпискам добавлены два резервных источника
+  PC (`aviamastersgh/vpn-free-russia` verified и RU); лимит VLESS — 1200.
+- **Маршруты:** Telegram-домены идут через WSS-реле первыми; `google_ai/
+  opencode` получили отдельное правило Opera → primary → DESYNC; Spotify —
+  DIRECT. Discord/WhatsApp оставлены на primary (в РФ direct рискован).
+- **Opera:** `.244` endpoint приоритетнее `.247`; API-регистрация и CONNECT
+  используют один egress; добавлен PC-вариант bootstrap через WARP-AWG
+  `AwgSocksBridge` (1378). На текущем сеансе Opera API через MASQUE/релей
+  уходит в timeout/502 — внешняя проблема, live-тест оставлен открытым.
+- **Проверки:** 82 класса / 661 тест, 0 падений; debug/release-сборки; lint —
+  0 ошибок (868 предупреждений). На RMX3370 проверены меню профилей, merge
+  591, check 141/355/95, update 6/6 → 882, генерация WARP 7/52.
+- Остальное — как в 1.34.9.
+
 ## 2026-11-09 — KALIOPA parity, Phase 1 (без выпуска)
 
 - **Схема:** изучен `http://127.0.0.1:8099/` (Route Lab, KALIOPA 1.44.2.40) и
