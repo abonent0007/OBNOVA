@@ -17,7 +17,7 @@ BUILD SUCCESSFUL; classes=82 tests=660 failures=0 errors=0
 BUILD SUCCESSFUL
 
 ./gradlew lintGithubDebug
-BUILD SUCCESSFUL; Error: 0, Warning: 847 (стиль/старые API)
+BUILD SUCCESSFUL; Error: 0, Warning: 868 (стиль/старые API)
 Lint снова упал внутри ObjectAnimatorDetector (NPE "Text range missing from
 end source") — дефект детектора, отчёт создан.
 
