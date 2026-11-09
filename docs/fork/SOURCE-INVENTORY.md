@@ -11,7 +11,7 @@
 |---|---|---|---|
 | WARP-конфигурация (готовая личность) | `ExternalSources.WARP_CONFIG_FEED_BASES` | `WarpConfigFeed.fetch()` перебирает 6 зеркал | Своя регистрация Cloudflare (`WarpClient`), затем встроенные семена |
 | Точки входа WARP | `WarpProfileGenerator` + `ClientData.getWarpVerifiedMergedConfigs()` | Сканер ядра и текущий набор проверенных/импортированных конфигов | Встроенный `warp_verified_seeds.json` (asset) |
-| VLESS-подписки (4 источника) | `ExternalSources.PUBLIC_VLESS_SOURCES` | `PublicSubscriptions.sync()` с ETag/Last-Modified | Старые профили источника сохраняются; зеркала raw → githack → jsDelivr |
+| VLESS-подписки (6 источников) | `ExternalSources.PUBLIC_VLESS_SOURCES` | `PublicSubscriptions.sync()` с ETag/Last-Modified | Старые профили источника сохраняются; зеркала raw → githack → jsDelivr |
 | Мосты Tor | `ExternalSources.TOR_BRIDGE_MIRROR_BASES`, `TOR_BRIDGE_FALLBACK_BASES` | `TorBridgeManager` (гонка зеркал, кэш 30 мин) | Встроенные snowflake-мосты и сохранённый `tor_bridges.json` |
 | MOAT-мосты Tor | `ExternalSources.TOR_MOAT_SETTINGS_URL`, `TOR_MOAT_BUILTIN_URL` | `TorBridges` при сборе | Пропуск MOAT, остаются публичные сборщики |
 | Профиль DNS-туннеля | `ExternalSources.DNS_TUNNEL_FEED` | `DnsServerFeed` через `updateFeedMirrors` | Встроенный профиль `DnsServerFeed.SEED` |

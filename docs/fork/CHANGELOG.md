@@ -3,6 +3,37 @@
 > Формат: дата → что изменено → где → чем проверено. Все пути от корня
 > `C:\Users\User\Documents\Nova-Android-Fork`.
 
+## 2026-11-09 — KALIOPA parity, Phase 1 (без выпуска)
+
+- **Схема:** изучен `http://127.0.0.1:8099/` (Route Lab, KALIOPA 1.44.2.40) и
+  зафиксирован план `docs/plans/2026-11-09-kaliopa-android-parity.md`.
+  Замечания AGI: не переносить PAC/proxy-chaining/локальные inbound-порты;
+  UDP/QUIC и Opera-only-TCP проверять на устройстве; единая база — только
+  append-only с мягким удалением.
+- **Источники профилей:** к четырём VLESS-подпискам добавлены два резервных
+  источника PC-версии (`aviamastersgh/vpn-free-russia` verified и RU), лимит
+  VLESS поднят до 1200, чтобы 6×120 и своя подписка не вытесняли друг друга.
+- **Единая база:** `UnifiedProfileStore` собирает WARP-семена, сгенерированные
+  WARP, VLESS-подписки и Proton в один `profiles_unified.json` с `origin`,
+  `alive`, `last_checked`, `fail_count`; повторный sync не плодит дубли и
+  сохраняет результаты проверок. Bundled seeds не удаляются.
+- **Проверка и очистка:** `UnifiedProfileChecker` (TCP) проверяет VLESS/Proton/
+  MASQUE; UDP-AWG честно остаётся «не проверен». Мёртвые не-bundled профили
+  удаляются после двух отказов; VLESS-идентичности попадают в
+  `profiles_dead.json` на 7 дней, чтобы публичный фид не вернул их сразу.
+- **Меню:** сверху добавлен блок «Профили и подписки» — «1. Обновить всё и
+  сгенерировать», «2. Проверить и очистить», «Слить все профили в одну базу»,
+  настройки генерации WARP и обновление Proton. Старые дублирующие кнопки
+  скрыты.
+- **Конфигурации удалены:** экран `WarpConfigsActivity`, `ConfigsAdapter`,
+  `WarpConfigCardAdapter`, макеты, пункт меню и запись в манифесте. Автозагрузка
+  конфигураций внутри движка не затронута.
+- **Telegram:** доменные правила теперь, как и IP, первым используют WSS-реле
+  (если оно настроено), затем cfproxy/Opera/primary; раньше домены обходили реле.
+- **Проверки:** unit-тесты и `assembleGithubDebug` зелёные; новые
+  `UnifiedProfileStoreTest`, расширенный `RouterConfigFactoryTest`. Lint — см.
+  `docs/fork/VERIFICATION.md`.
+
 ## 2026-11-08 — аудит источников и логических цепочек (без выпуска)
 
 - **Инвентаризация:** добавлен `docs/fork/SOURCE-INVENTORY.md`; bootstrap-адреса

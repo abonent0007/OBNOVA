@@ -17,15 +17,17 @@ class ExternalSourcesTest {
     }
 
     @Test
-    fun `public subscriptions match the four sources from the PC registry`() {
+    fun `public subscriptions match the six sources from the PC registry`() {
         val sources = ExternalSources.PUBLIC_VLESS_SOURCES
-        assertEquals(4, sources.size)
+        assertEquals(6, sources.size)
         assertEquals(
             listOf(
                 "https://iboxz.github.io/free-v2ray-collector/main/vless.txt",
                 "https://raw.githubusercontent.com/Delta-Kronecker/V2ray-Config/main/config/reality/reality.txt",
                 "https://raw.githubusercontent.com/0xRadikal/Free-v2ray-Configs/main/protocols/vless.txt",
                 "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/vless.txt",
+                "https://raw.githubusercontent.com/aviamastersgh/vpn-free-russia/main/verified_configs.txt",
+                "https://raw.githubusercontent.com/aviamastersgh/vpn-free-russia/main/ru_configs.txt",
             ),
             sources.map { it.url },
         )

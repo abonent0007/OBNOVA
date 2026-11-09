@@ -40,6 +40,21 @@ class RouterConfigFactoryTest {
     }
 
     @Test
+    fun `telegram domains use relay even without telegram ips`() {
+        val json = RouterConfigFactory.build(
+            input = input().copy(
+                telegramRelayUrl = "wss://relay.example/apiws",
+                telegramRelaySecret = "s3cret",
+            ),
+            primaryPort = 1376,
+            operaPort = 1371,
+            cfProxyPort = 1378,
+        )
+        assertTrue(json.contains("\"name\":\"telegram\""))
+        assertTrue(json.contains("\"order\":[\"ws\",\"cfproxy\",\"secondary\",\"primary\"]"))
+    }
+
+    @Test
     fun `mtproto proxy ip goes to cfproxy before default`() {
         val json = RouterConfigFactory.build(
             input = input(),

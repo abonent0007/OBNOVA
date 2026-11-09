@@ -43,6 +43,128 @@
                 android:layout_marginBottom="6dp"/>
 
             <TextView
+                android:id="@+id/hdr_group_profiles"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:layout_marginBottom="8dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:fontFamily="sans-serif-medium"
+                android:letterSpacing="0.12"
+                android:text="ПРОФИЛИ И ПОДПИСКИ"
+                android:textColor="?attr/novaTextGroupFrom"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="?attr/novaCardBackground"
+                android:minHeight="64dp"
+                android:paddingLeft="12dp"
+                android:paddingTop="10dp"
+                android:paddingRight="12dp"
+                android:paddingBottom="10dp"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:id="@+id/tv_profiles_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="База профилей: ещё не собрана"
+                    android:textColor="?attr/novaTextHint"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/tv_profiles_generation_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="2dp"
+                    android:textColor="?attr/novaAccent"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+
+                <TextView
+                    android:id="@+id/btn_profiles_update_all"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="4dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:background="@drawable/bg_settings_action_dark"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:text="1. Обновить всё и сгенерировать"
+                    android:textColor="?attr/novaTextTitle"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/btn_profiles_check_clean"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="6dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:background="@drawable/bg_settings_action_dark"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:text="2. Проверить и очистить"
+                    android:textColor="?attr/novaTextTitle"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/btn_profiles_merge"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="6dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:background="@drawable/bg_settings_action_dark"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:text="Слить все профили в одну базу"
+                    android:textColor="?attr/novaTextTitle"
+                    android:textSize="13sp" />
+
+                <TextView
+                    android:id="@+id/btn_profiles_warp_settings"
+                    android:layout_width="wrap_content"
+                    android:layout_height="32dp"
+                    android:layout_marginTop="6dp"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:background="@drawable/bg_settings_action_dark"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:text="Настройки генерации WARP"
+                    android:textColor="?attr/novaTextHint"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:id="@+id/btn_profiles_proton_refresh"
+                    android:layout_width="wrap_content"
+                    android:layout_height="36dp"
+                    android:layout_marginTop="6dp"
+                    android:paddingStart="14dp"
+                    android:paddingEnd="14dp"
+                    android:background="@drawable/bg_settings_action_dark"
+                    android:gravity="center"
+                    android:clickable="true"
+                    android:focusable="true"
+                    android:text="Обновить профили Proton"
+                    android:textColor="?attr/novaTextTitle"
+                    android:textSize="13sp"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <TextView
                 android:id="@+id/hdr_group_connection"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -215,7 +337,8 @@
                     android:focusable="true"
                     android:text="Обновить профили и подписки"
                     android:textColor="?attr/novaTextTitle"
-                    android:textSize="13sp" />
+                    android:textSize="13sp"
+                    android:visibility="gone" />
 
                 <!--
                     Повтор выпуска Proton-профилей.
@@ -294,59 +417,6 @@
                     android:textColor="?attr/novaTextHint"
                     android:textSize="12sp"
                     android:visibility="gone"/>
-            </LinearLayout>
-
-            <LinearLayout
-                android:id="@+id/row_warp_configs"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:background="?attr/novaCardBackground"
-                android:minHeight="64dp"
-                android:paddingLeft="16dp"
-                android:paddingTop="8dp"
-                android:paddingRight="16dp"
-                android:paddingBottom="8dp"
-                android:layout_marginBottom="6dp"
-                android:clickable="true"
-                android:focusable="true">
-
-                <LinearLayout
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:orientation="vertical">
-
-                    <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:text="Конфигурации"
-                        android:textColor="?attr/novaTextTitle"
-                        android:textSize="16sp"
-                        android:textStyle="bold"
-                        android:drawableStart="@drawable/ic_nova_list"
-                        android:drawablePadding="14dp"
-                        android:drawableTint="?attr/novaIconTint" />
-
-                    <TextView
-                        android:id="@+id/tv_warp_configs_note"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="3dp"
-                        android:text="Открыть список встроенных, импортированных и ручных конфигураций"
-                        android:textColor="?attr/novaTextHint"
-                        android:textSize="12sp" />
-                </LinearLayout>
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="12dp"
-                    android:text="›"
-                    android:textColor="?attr/novaTextTitle"
-                    android:textSize="24sp"
-                    android:textStyle="bold" />
             </LinearLayout>
 
             <!--

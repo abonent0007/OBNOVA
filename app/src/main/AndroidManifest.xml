@@ -213,12 +213,6 @@
             android:theme="@style/Theme.Nova.Settings" />
 
         <activity
-            android:name=".WarpConfigsActivity"
-            android:label="WARP конфигурации"
-            android:launchMode="singleTop"
-            android:theme="@style/Theme.Nova.Settings" />
-
-        <activity
             android:name=".LocalProxyActivity"
             android:label="Раздача через Nova"
             android:launchMode="singleTop"

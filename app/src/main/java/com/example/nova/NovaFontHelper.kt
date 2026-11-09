@@ -23,20 +23,9 @@ object NovaFontHelper {
         R.id.tv_version,
         R.id.tv_title,
         R.id.row_share_release,
-        R.id.btn_create_new,
-        R.id.btn_paste_config,
-        R.id.tv_configs_source_label,
-        R.id.tv_discovery_status,
-        R.id.tv_discovery_progress,
-        R.id.tv_empty,
-        R.id.tv_config_title,
-        R.id.tv_config_current,
-        R.id.btn_delete_config,
-        R.id.btn_copy_config,
         R.id.tv_footer,
         R.id.tv_qs_tile_note,
         R.id.tv_exit_last,
-        R.id.tv_warp_configs_note,
         R.id.tv_split_section_title,
         R.id.tv_next_profile_caption,
         R.id.tv_profile_issue_progress,
@@ -47,15 +36,14 @@ object NovaFontHelper {
     /**
      * Виды, у которых моноширинность — часть смысла, а не оформления.
      *
-     * Журнал и тело конфигурации выравниваются по колонкам, и пропорциональный
-     * шрифт их ломает. Раньше их узнавали по уже выставленному `Typeface.MONOSPACE`,
-     * и на теме Matrix это стало ловушкой: после её включения моноширинным
-     * становится **всё** дерево, а значит при переходе на любую другую тему
-     * проверка «уже моноширинный» пропускала каждый вид, и терминальное начертание
+     * Журнал выравнивается по колонкам, и пропорциональный шрифт его ломает.
+     * Раньше его узнавали по уже выставленному `Typeface.MONOSPACE`, и на теме
+     * Matrix это стало ловушкой: после её включения моноширинным становится
+     * **всё** дерево, а значит при переходе на любую другую тему проверка
+     * «уже моноширинный» пропускала каждый вид, и терминальное начертание
      * оставалось навсегда. Признак обязан быть по идентификатору.
      */
     private val alwaysMonospaceIds = setOf(
-        R.id.tv_config_body,
         R.id.tv_logs_preview,
     )
 

@@ -9470,7 +9470,7 @@ class ClientData(context: Context) {
          * четыре публичных источника по 120 плюс своя подписка: обновление
          * одного источника не должно вытеснять профили остальных.
          */
-        const val MAX_VLESS_PROFILES = 800
+        const val MAX_VLESS_PROFILES = 1_200
 
         private const val MASQUE_TRANSPORT_COOLDOWN_MS = 25L * 1000L
 

@@ -3,6 +3,33 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
+## 2026-11-09 — KALIOPA parity, Phase 1
+
+```text
+./gradlew testGithubDebugUnitTest
+BUILD SUCCESSFUL; classes=82 tests=658 failures=0 errors=0
+  UnifiedProfileStoreTest: 3/3
+  RouterConfigFactoryTest: 15/15 (включая relay-first для Telegram-доменов)
+  ExternalSourcesTest: 10/10 (6 источников VLESS)
+
+./gradlew assembleGithubDebug
+BUILD SUCCESSFUL
+
+./gradlew lintGithubDebug
+BUILD SUCCESSFUL; Error: 0, Warning: 847 (стиль/старые API)
+Lint снова упал внутри ObjectAnimatorDetector (NPE "Text range missing from
+end source") — дефект детектора, отчёт создан.
+
+python tools/audit_diff.py --base HEAD --strict
+audit: files=12 unused_imports=0 unguarded_calls=0
+```
+
+Устройство RMX3370 в этот прогон было отключено (`adb devices` пуст), а
+arm64-AVD на x86_64-хосте не запускается (`FATAL: Avd's CPU Architecture
+'arm64' is not supported by the QEMU2 emulator on x86_64 host`). Поэтому
+UI-смоук меню на устройстве остаётся следующим шагом; сборка, ресурсы,
+unit-тесты и lint проверены.
+
 ## 2026-11-08 — статический аудит (без выпуска)
 
 ```text

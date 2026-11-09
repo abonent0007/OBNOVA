@@ -74,12 +74,7 @@ object ExternalSources {
     const val CLOUDFLARE_WARP_REG_URL =
         "https://api.cloudflareclient.com/v0a4471/reg"
 
-    /**
-     * Подписка AWG/WARP по умолчанию в экране «Конфигурации».
-     *
-     * Источник — стоковый PC-форк; на наш релизный репозиторий его не менять:
-     * обновления APK и подписки — разные каналы.
-     */
+    /** Подписка AWG/WARP по умолчанию: внутренний источник автоподгрузки. */
     const val WARP_CONFIGS_FEED =
         "https://raw.githubusercontent.com/confeden/auto-warp-config/refs/heads/main/config.txt"
 
@@ -134,6 +129,16 @@ object ExternalSources {
         VlessSource(
             name = "barry-far VLESS",
             url = "https://raw.githubusercontent.com/barry-far/V2ray-Config/main/Splitted-By-Protocol/vless.txt",
+        ),
+        // Два резервных публичных списка из PC-версии. Тело решает протокол
+        // (VLESS/VMess/Trojan/SS); это резерв, а не основа приватного маршрута.
+        VlessSource(
+            name = "vpn-free-russia verified (public)",
+            url = "https://raw.githubusercontent.com/aviamastersgh/vpn-free-russia/main/verified_configs.txt",
+        ),
+        VlessSource(
+            name = "vpn-free-russia RU (public)",
+            url = "https://raw.githubusercontent.com/aviamastersgh/vpn-free-russia/main/ru_configs.txt",
         ),
     )
 

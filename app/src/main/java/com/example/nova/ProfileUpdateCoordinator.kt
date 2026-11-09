@@ -49,7 +49,7 @@ object ProfileUpdateCoordinator {
         context: Context,
         progress: ((String) -> Unit)? = null,
     ): Result {
-        progress?.invoke("Публичные подписки: 4 источника…")
+        progress?.invoke("Публичные подписки: ${ExternalSources.PUBLIC_VLESS_SOURCES.size} источников…")
         val sync = PublicSubscriptions.sync(
             context = context,
             force = false,

@@ -101,30 +101,32 @@ object RouterConfigFactory {
                 cidrs = input.youtubeIps,
             )
         }
-        if (input.telegramIps.isNotEmpty()) {
-            val baseTelegramOrder = order("telegram", input.overrides, opera, spoof, killSwitch)
-            // Как на ПК: Telegram идёт через WSS-реле, а реле — через MASQUE
-            // (via). Прямой cfproxy ниже остаётся запасом, затем Opera.
-            val telegramIpOrder = if (input.overrides["telegram"] == null) {
-                buildList {
-                    if (input.telegramRelayUrl.isNotBlank()) add("ws")
-                    if (cfProxy) add("cfproxy")
-                    if (opera) add("secondary")
-                    add("primary")
-                }
-            } else {
-                baseTelegramOrder
+        val baseTelegramOrder = order("telegram", input.overrides, opera, spoof, killSwitch)
+        // Как на ПК: Telegram идёт через WSS-реле, а реле — через MASQUE
+        // (via). Прямой cfproxy ниже остаётся запасом, затем Opera. Это
+        // правило одно для IP и доменов: раньше доменный Telegram обходил
+        // реле и уходил в primary, хотя IP уже шли через реле.
+        val telegramPreferredOrder = if (input.overrides["telegram"] == null) {
+            buildList {
+                if (input.telegramRelayUrl.isNotBlank()) add("ws")
+                if (cfProxy) add("cfproxy")
+                if (opera) add("secondary")
+                add("primary")
             }
+        } else {
+            baseTelegramOrder
+        }
+        if (input.telegramIps.isNotEmpty()) {
             rules += RouterConfig.RuleSpec(
                 domains = emptyList(),
-                order = telegramIpOrder,
+                order = telegramPreferredOrder,
                 name = "telegram-ip",
                 cidrs = input.telegramIps,
             )
         }
         add(rules, input.youtube, order("youtube", input.overrides, opera, spoof, killSwitch), "youtube")
         add(rules, input.main, order("ru", input.overrides, opera, spoof, killSwitch), "ru")
-        add(rules, input.telegram, order("telegram", input.overrides, opera, spoof, killSwitch), "telegram")
+        add(rules, input.telegram, telegramPreferredOrder, "telegram")
         add(rules, input.whatsapp, order("whatsapp", input.overrides, opera, spoof, killSwitch), "whatsapp")
         add(rules, input.discord, order("discord", input.overrides, opera, spoof, killSwitch), "discord")
 

@@ -339,7 +339,7 @@ class SettingsActivity : AppCompatActivity() {
             val running = intent.getBooleanExtra(NovaVpnService.EXTRA_DISCOVERY_RUNNING, false)
             val message = intent.getStringExtra(NovaVpnService.EXTRA_DISCOVERY_MESSAGE).orEmpty()
 
-            val status = findViewById<TextView>(R.id.tv_warp_generate_status)
+            val status = profileGenerationStatusView()
 
             if (message.isNotBlank()) {
                 status?.visibility = View.VISIBLE
@@ -573,10 +573,6 @@ class SettingsActivity : AppCompatActivity() {
         tvTrafficMaskActive = TextView(this)
 
 
-        val rowWarpConfigs = findViewById<LinearLayout>(R.id.row_warp_configs)
-
-        val tvWarpConfigsNote = findViewById<TextView>(R.id.tv_warp_configs_note)
-
         val rowMainBackground = findViewById<LinearLayout>(R.id.row_main_background)
 
         val rowDnsSettings = findViewById<LinearLayout>(R.id.row_dns_settings)
@@ -798,8 +794,6 @@ class SettingsActivity : AppCompatActivity() {
             rbMaskAuto,
             rbMaskCustom,
 
-            rowWarpConfigs,
-
             swLogs,
 
             btnClearLogs,
@@ -927,8 +921,6 @@ class SettingsActivity : AppCompatActivity() {
 
         updateTrafficMaskUi(swTrafficMask, rgTrafficMaskMode, etTrafficMaskHost, tvTrafficMaskActive)
 
-        updateWarpConfigsSummary(tvWarpConfigsNote)
-
         updateLocalProxySummary(tvLocalProxyNote)
 
         // Карточки «Личные профили» больше нет; из неё пережила только сводка по
@@ -941,12 +933,6 @@ class SettingsActivity : AppCompatActivity() {
 
         findViewById<LinearLayout>(R.id.row_dns_endpoint)?.setOnClickListener {
             showDnsProfilesDialog()
-        }
-
-        rowWarpConfigs.setOnClickListener {
-
-            startActivity(Intent(this, WarpConfigsActivity::class.java))
-
         }
 
         rowMainBackground.setOnClickListener {
@@ -1746,8 +1732,6 @@ class SettingsActivity : AppCompatActivity() {
         updateAlwaysOnRow(swAlwaysOn)
 
         updateVendorBackgroundRow(rowBackgroundVendor)
-
-        findViewById<TextView>(R.id.tv_warp_configs_note)?.let(::updateWarpConfigsSummary)
 
         findViewById<TextView>(R.id.tv_local_proxy_note)?.let(::updateLocalProxySummary)
 
@@ -4556,6 +4540,7 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         bindProfileUpdateButton()
+        bindProfileLifecycleButtons()
 
     }
 
@@ -4570,7 +4555,7 @@ class SettingsActivity : AppCompatActivity() {
      */
     private fun bindProfileUpdateButton() {
         val button = findViewById<TextView>(R.id.btn_update_profiles) ?: return
-        val status = findViewById<TextView>(R.id.tv_warp_generate_status)
+        val status = profileGenerationStatusView()
         button.isEnabled = !profileUpdateRunning
         button.alpha = if (profileUpdateRunning) 0.5f else 1f
         button.setOnClickListener {
@@ -4606,6 +4591,128 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }, "NovaProfileUpdate").apply { isDaemon = true }.start()
         }
+    }
+
+    /**
+     * Верхний блок «Профили и подписки»: обновление, проверка/очистка, слияние
+     * в единую базу, настройки генерации и Proton. Старые кнопки остаются в
+     * макете скрытыми, чтобы не дублировать действия и не ломать вызовы
+     * [bindProfileUpdateButton]/[bindProtonRefreshButton].
+     */
+    private fun bindProfileLifecycleButtons() {
+        findViewById<TextView>(R.id.btn_profiles_update_all)?.setOnClickListener {
+            startUnifiedProfileUpdate()
+        }
+        findViewById<TextView>(R.id.btn_profiles_check_clean)?.setOnClickListener {
+            startUnifiedProfileCheck()
+        }
+        findViewById<TextView>(R.id.btn_profiles_merge)?.setOnClickListener {
+            startUnifiedProfileMerge()
+        }
+        findViewById<TextView>(R.id.btn_profiles_warp_settings)?.setOnClickListener {
+            showWarpGenerationSettingsDialog()
+        }
+        findViewById<TextView>(R.id.btn_profiles_proton_refresh)?.let { button ->
+            button.visibility = View.VISIBLE
+            button.setOnClickListener {
+                val status = profileBaseStatusView() ?: return@setOnClickListener
+                startProtonProfileRefresh(button, status)
+            }
+        }
+        refreshUnifiedProfileStatus()
+    }
+
+    private fun profileBaseStatusView(): TextView? =
+        findViewById<TextView>(R.id.tv_profiles_status)
+
+    private fun profileGenerationStatusView(): TextView? =
+        findViewById<TextView>(R.id.tv_profiles_generation_status)
+            ?: findViewById(R.id.tv_warp_generate_status)
+
+    private var profileLifecycleBusy = false
+
+    private fun refreshUnifiedProfileStatus() {
+        if (profileLifecycleBusy) return
+        lifecycleScope.launch(Dispatchers.IO) {
+            val text = runCatching {
+                UnifiedProfileStore.summary(this@SettingsActivity)
+            }.getOrElse { "База профилей: ${it.message ?: "недоступна"}" }
+            withContext(Dispatchers.Main) {
+                if (!isFinishing && !isDestroyed) profileBaseStatusView()?.text = text
+            }
+        }
+    }
+
+    private fun startUnifiedProfileUpdate() {
+        val status = profileBaseStatusView() ?: return
+        profileLifecycleBusy = true
+        status.text = "Обновляю подписки (${ExternalSources.PUBLIC_VLESS_SOURCES.size} источников)…"
+        Thread({
+            val message = runCatching {
+                val sync = ProfileUpdateCoordinator.updateAll(this@SettingsActivity) { phase ->
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) status.text = phase
+                    }
+                }
+                val stats = UnifiedProfileStore.syncFromLegacy(this@SettingsActivity)
+                "${sync.message}; ${stats.summary()}"
+            }.getOrElse { error ->
+                LogManager.log("Обновление профилей: прогон оборвался — ${error.message}")
+                "Обновление не удалось: ${error.message ?: "неизвестная ошибка"}"
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
+                profileLifecycleBusy = false
+                status.text = message
+                // Генерация WARP — отдельный сервисный прогон; она дополняет
+                // подписки, а не заменяет их.
+                startWarpProfileGeneration(force = false)
+            }
+        }, "NovaUnifiedUpdate").apply { isDaemon = true }.start()
+    }
+
+    private fun startUnifiedProfileCheck() {
+        val status = profileBaseStatusView() ?: return
+        profileLifecycleBusy = true
+        status.text = "Собираю базу и проверяю доступность профилей…"
+        Thread({
+            val text = runCatching {
+                UnifiedProfileStore.syncFromLegacy(this@SettingsActivity)
+                val checked = UnifiedProfileStore.checkAll(this@SettingsActivity)
+                val removed = UnifiedProfileStore.removeDead(this@SettingsActivity)
+                val final = UnifiedProfileStore.syncFromLegacy(this@SettingsActivity)
+                "Проверено: ${checked.alive} живых, ${checked.dead} мёртвых; " +
+                    "удалено $removed. ${final.summary()}"
+            }.getOrElse { error ->
+                LogManager.log("Проверка профилей: прогон оборвался — ${error.message}")
+                "Проверка не удалась: ${error.message ?: "неизвестная ошибка"}"
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    profileLifecycleBusy = false
+                    status.text = text
+                }
+            }
+        }, "NovaUnifiedCheck").apply { isDaemon = true }.start()
+    }
+
+    private fun startUnifiedProfileMerge() {
+        val status = profileBaseStatusView() ?: return
+        profileLifecycleBusy = true
+        status.text = "Сливаю все профили в одну базу…"
+        Thread({
+            val text = runCatching {
+                UnifiedProfileStore.syncFromLegacy(this@SettingsActivity).summary()
+            }.getOrElse { error ->
+                "Слияние не удалось: ${error.message ?: "неизвестная ошибка"}"
+            }
+            runOnUiThread {
+                if (!isFinishing && !isDestroyed) {
+                    profileLifecycleBusy = false
+                    status.text = text
+                }
+            }
+        }, "NovaUnifiedMerge").apply { isDaemon = true }.start()
     }
 
     /**
@@ -4649,64 +4756,15 @@ class SettingsActivity : AppCompatActivity() {
      * кнопку запертой, если выпуск ещё идёт.
      */
     private fun bindProtonRefreshButton(summaryView: TextView, visible: Boolean) {
-        val button = findViewById<TextView>(R.id.btn_proton_refresh) ?: return
-
-        // Вид источника решает [ProfileIssueLabels], а не место вызова: кнопка
-        // одна на два источника, и подпись раньше была написана трижды.
-        val kind = if (!visible) {
-            ProfileIssueLabels.Kind.NONE
-        } else {
-            ProfileIssueLabels.kindFor(
-                storedRegion = clientData.getExitRegionPreference(),
-                protonPreparationRequested = ProtonProfileManager.isPreparationRequested(),
-            )
+        // Старые кнопки Proton/Cloudflare заменены верхним блоком «Профили и
+        // подписки». Оставляем их в макете скрытыми: на них завязаны проверки
+        // наличия вида в refreshWarpGenerateState, но дублировать действия на
+        // экране больше не нужно.
+        findViewById<TextView>(R.id.btn_proton_refresh)?.apply {
+            visibility = View.GONE
+            setOnClickListener(null)
         }
-
-        if (kind == ProfileIssueLabels.Kind.NONE) {
-
-            button.visibility = View.GONE
-
-            button.setOnClickListener(null)
-
-            return
-
-        }
-
-        button.visibility = View.VISIBLE
-
-        val busy = when (kind) {
-            ProfileIssueLabels.Kind.PROTON -> ProtonProfileManager.isRunning()
-            // Личные профили Cloudflare выпускает процесс `:vpn`, и его
-            // `isRunning()` из интерфейса не виден вовсе — состояние приходит
-            // файлом, который опрашивает [refreshWarpGenerateState].
-            else -> warpGenerateBusy
-        }
-
-        val exists = when (kind) {
-            ProfileIssueLabels.Kind.PROTON -> protonProfilesExist
-            else -> generatedCloudflareProfilesExist
-        }
-
-        button.isEnabled = !busy
-
-        button.alpha = if (busy) 0.5f else 1f
-
-        button.text = ProfileIssueLabels.label(kind, exists, busy)
-
-        val settingsButton = findViewById<TextView>(R.id.btn_warp_generate_settings)
-        if (settingsButton != null) {
-            settingsButton.visibility = if (kind == ProfileIssueLabels.Kind.CLOUDFLARE) View.VISIBLE else View.GONE
-            settingsButton.setOnClickListener { showWarpGenerationSettingsDialog() }
-        }
-
-        button.setOnClickListener {
-            if (kind == ProfileIssueLabels.Kind.PROTON) {
-                startProtonProfileRefresh(button, summaryView)
-            } else {
-                startWarpProfileGeneration(force = false)
-            }
-        }
-
+        findViewById<TextView>(R.id.btn_warp_generate_settings)?.visibility = View.GONE
     }
 
     /**
@@ -4988,7 +5046,7 @@ class SettingsActivity : AppCompatActivity() {
         // Кнопка теперь общая с Proton и живёт в карточке выбора протокола.
         val button = findViewById<TextView>(R.id.btn_proton_refresh) ?: return
 
-        val status = findViewById<TextView>(R.id.tv_warp_generate_status)
+        val status = profileGenerationStatusView()
 
         LogManager.log(
             "WARP-генератор: пользователь попросил выпустить свои профили " +
@@ -5078,7 +5136,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val button = findViewById<TextView>(R.id.btn_proton_refresh) ?: return
 
-        val status = findViewById<TextView>(R.id.tv_warp_generate_status) ?: return
+        val status = profileGenerationStatusView() ?: return
 
         lifecycleScope.launch(Dispatchers.IO) {
 
@@ -5273,62 +5331,6 @@ class SettingsActivity : AppCompatActivity() {
                 maybeApplyProtocolChangeImmediately(selectedValue)
 
             }
-
-        }
-
-    }
-
-
-
-    private fun updateWarpConfigsSummary(textView: TextView) {
-        textView.text = "Загрузка..."
-        scope.launch {
-            val summary = withContext(Dispatchers.IO) {
-                val configs = clientData.getWarpVerifiedConfigs()
-                val builtInCount = configs.count(clientData::isBundledSeed)
-                val importedCount = configs.count { it.userImported && !it.manual }
-                val manualCount = configs.count { it.manual }
-                when {
-                    builtInCount > 0 || importedCount > 0 || manualCount > 0 -> {
-                        buildString {
-                            append("Встроенных: ")
-                            append(builtInCount)
-                            if (importedCount > 0) {
-                                append(" • импортировано: ")
-                                append(importedCount)
-                            }
-                            if (manualCount > 0) {
-                                append(" • вручную: ")
-                                append(manualCount)
-                            }
-                        }
-                    }
-                    else -> "Открыть список встроенных, импортированных и ручных конфигураций"
-                }
-            }
-            textView.text = summary
-        }
-        return
-
-        val count = clientData.getWarpVerifiedConfigs().size
-
-        val importedCount = clientData.getWarpVerifiedConfigs().count { it.userImported && !it.manual }
-
-        textView.text = if (count > 0) {
-
-            if (importedCount > 0) {
-
-                "Сохранено конфигураций: $count • импортировано: $importedCount"
-
-            } else {
-
-                "Сохранено конфигураций: $count"
-
-            }
-
-        } else {
-
-            "Открыть список встроенных, импортированных и ручных конфигураций"
 
         }
 

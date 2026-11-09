@@ -178,12 +178,12 @@ class RoutesActivity : AppCompatActivity() {
             card.addView(subButton)
         }
 
-        // Публичные подписки из стокового PC-форка: четыре источника
+        // Публичные подписки из стокового PC-форка: шесть источников
         // (`profiles/subscriptions.json`), как в PC. Кнопка нужна, когда своей
         // подписки ещё нет: без профилей VLESS MULTI остаётся на DESYNC и не
         // может обойти блокировку YouTube.
         val publicStatus = TextView(this).apply {
-            text = "Публичные подписки VLESS (4 источника, сток PC, узлы нестабильны)"
+            text = "Публичные подписки VLESS (6 источников, сток PC, узлы нестабильны)"
             setTextColor(0xFF7FA98C.toInt())
             textSize = 11f
             setPadding(0, dp(10), 0, 0)

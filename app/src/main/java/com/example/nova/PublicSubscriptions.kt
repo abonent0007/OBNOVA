@@ -7,7 +7,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * Публичные подписки VLESS из PC-версии: четыре источника, один общий список
+ * Публичные подписки VLESS из PC-версии: шесть источников, один общий список
  * профилей.
  *
  * Зачем отдельно от [VlessSubscriptionManager]. Пользовательская подписка — одна
@@ -65,6 +65,9 @@ object PublicSubscriptions {
         val app = context.applicationContext
         val previous = read(app)
         val previousByUrl = previous.sources.associateBy { it.url }
+        // Удалённые как мёртвые VLESS-профили не должны возвращаться из
+        // публичного фида при следующем обновлении.
+        val deadIdentities = UnifiedProfileStore.deadIdentities(app)
         val freshLinks = ArrayList<String>()
         val removalIdentities = HashSet<String>()
         val updated = LinkedHashMap<String, SourceState>()
@@ -116,22 +119,24 @@ object PublicSubscriptions {
                 }
 
                 is VlessSubscriptionFetcher.Result.Ok -> {
-                    if (result.configs.isEmpty()) {
-                        // Пустой ответ не повод удалять живые профили источника.
+                    val usable = result.configs.filterNot { it.identity in deadIdentities }
+                    if (usable.isEmpty()) {
+                        // Пустой ответ или все профили уже помечены мёртвыми —
+                        // не повод удалять живые профили источника.
                         failedSources++
                         errors += "${source.name}: пустой ответ"
                         old?.let { updated[source.url] = it }
                         continue
                     }
                     okSources++
-                    val links = result.configs.map { it.toUri() }
+                    val links = usable.map { it.toUri() }
                     freshLinks += links
                     old?.identities?.let(removalIdentities::addAll)
                     updated[source.url] = SourceState(
                         url = source.url,
                         etag = result.validators.etag,
                         lastModified = result.validators.lastModified,
-                        identities = result.configs.map { it.identity },
+                        identities = usable.map { it.identity },
                     )
                 }
             }
