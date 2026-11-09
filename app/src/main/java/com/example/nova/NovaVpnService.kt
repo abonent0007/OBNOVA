@@ -7,6 +7,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
+import android.content.Context
 import android.net.DnsResolver
 import android.net.VpnService
 import android.os.Build
@@ -20,6 +21,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.operaproxy.ProxyVpnService as OperaNativeVpnService
 import nova.Nova // Import generated Go wrapper
+import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigInteger
 import java.net.Inet4Address
@@ -30,6 +32,12 @@ import java.net.HttpURLConnection
 import java.net.Proxy
 import java.net.Socket
 import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.security.SecureRandom
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import java.util.ArrayDeque
 import android.net.TrafficStats
 import java.util.Locale
@@ -1223,7 +1231,7 @@ class NovaVpnService : OperaNativeVpnService() {
          * `zieng2/wl` четверть рабочих узлов отвечала на первый запрос за 3,5–6,7 с
          * (Xray на ПК, 8 узлов параллельно) и отбраковывалась как мёртвая.
          */
-        private const val VLESS_CANDIDATE_PROBE_BUDGET_MS = 4_000L
+        private const val VLESS_CANDIDATE_PROBE_BUDGET_MS = 15_000L
 
         /**
          * Сколько ждём ответа узла в уже поднятой сессии.
@@ -9518,7 +9526,7 @@ class NovaVpnService : OperaNativeVpnService() {
             // узле полный оборот занимает под два, и жёсткий потолок отбраковывал бы
             // живые записи ровно на границе. Не поднявшийся инбаунд отказывает мгновенно,
             // так что на повторную попытку время всё равно остаётся.
-            if (hasLocalSocksConnectivity(socksPort, remainingMs.toInt())) {
+            if (deep || hasLocalSocksConnectivity(socksPort, remainingMs.toInt())) {
                 // Для выбора профиля мало HTTP: публичные узлы отдают страницу по 80,
                 // но молча роняют TLS на 443 — снаружи это «приложение активно, а
                 // YouTube не играет». Глубинная проба поднимает настоящий TLS до
@@ -9922,6 +9930,10 @@ class NovaVpnService : OperaNativeVpnService() {
 
     @Volatile
     private var multiCfProxyPort = 0
+    @Volatile
+    private var multiVlessPort = 0
+    @Volatile
+    private var multiAwgPort = 0
 
     @Volatile
     private var multiVlessActive = false
@@ -9988,9 +10000,168 @@ class NovaVpnService : OperaNativeVpnService() {
      * Пробует до 8 профилей в пределах 20 секунд; первый живой остаётся
      * работать. Возвращает порт SOCKS5 или 0, если живого профиля нет.
      */
-    private fun startVlessSocksForMulti(clientData: ClientData, connectGenerationId: Int): Int {
-        val profiles = clientData.getVlessProfileLinks()
-            .mapNotNull { link -> VlessConfig.parse(link)?.let { link to it } }
+    /**
+     * VLESS для Telegram поднимаем в фоне: холодная загрузка libnovaxray на
+     * телефоне занимает десятки секунд, и MULTI/YouTube не должны её ждать.
+     * Когда слот готов, reloadRouterConfig добавляет `vless` в маршруты.
+     */
+    private fun startAwgForTelegram(context: Context): Boolean {
+        val seeds = runCatching {
+            val raw = context.assets.open("warp_verified_seeds.json")
+                .bufferedReader().use { it.readText() }
+            JSONArray(raw)
+        }.getOrNull() ?: return false
+        // PC-схема: Telegram идёт в WARP AWG. Разные WARP-личности дают разный
+        // egress; пробуем до 20 проверенных семян и оставляем то, чей egress
+        // реально отвечает на MTProto нужного DC (4/2/5).
+        val targets = listOf(
+            4 to "149.154.167.91",
+            2 to "149.154.167.99",
+        )
+        for (index in 0 until minOf(seeds.length(), 12)) {
+            val item = seeds.optJSONObject(index) ?: continue
+            var config = item.optString("raw_config").trim()
+            if (config.isEmpty()) continue
+            if (!config.contains("NovaMode", ignoreCase = true)) {
+                config = config.replaceFirst(
+                    "[Interface]",
+                    "[Interface]\nNovaMode = warp-awg-exact",
+                )
+            }
+            if (!AwgSocksBridge.startWithConfig(config)) continue
+            for ((dc, host) in targets) {
+                if (probeAwgMtprotoDc(host, dc)) {
+                    LogManager.log(
+                        "MULTI: AWG seed #$index (${item.optString("host")}:${item.optInt("port")}) " +
+                            "прошёл MTProto-пробу DC$dc ($host)."
+                    )
+                    return true
+                }
+            }
+            AwgSocksBridge.stop()
+        }
+        AwgSocksBridge.stop()
+        return false
+    }
+
+    private fun probeAwgMtprotoDc(host: String, dc: Int): Boolean {
+        return try {
+            openSocksTunnel(AwgSocksBridge.LISTEN_PORT, host, 443, 6_000)?.use { socket ->
+                socket.soTimeout = 6_000
+                val output = socket.getOutputStream()
+                output.write(buildMtprotoProbe(dc))
+                output.flush()
+                val buffer = ByteArray(256)
+                socket.getInputStream().read(buffer) > 0
+            } ?: false
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
+     * obfuscated2 init + req_pq_multi, как в PC `_build_native_probe`.
+     * Telegram отвечает resPQ до авторизации — это честная проверка DC.
+     */
+    private fun buildMtprotoProbe(dc: Int): ByteArray {
+        val random = SecureRandom()
+        val badFirst = setOf(
+            0x44414548, 0x54534F50, 0x20544547, 0x4954504F,
+            0xDDDDDDDD.toInt(), 0xEEEEEEEE.toInt(), 0x02010316,
+        )
+        val init = ByteArray(64)
+        while (true) {
+            random.nextBytes(init)
+            val first = ByteBuffer.wrap(init).order(ByteOrder.LITTLE_ENDIAN).getInt(0)
+            val second = ByteBuffer.wrap(init).order(ByteOrder.LITTLE_ENDIAN).getInt(4)
+            if (first in badFirst || second == 0 || init[0] == 0xEF.toByte()) continue
+            break
+        }
+        init[56] = 0xEF.toByte()
+        init[57] = 0xEF.toByte()
+        init[58] = 0xEF.toByte()
+        init[59] = 0xEF.toByte()
+        init[60] = dc.toByte()
+        init[61] = 0
+        val cipher = Cipher.getInstance("AES/CTR/NoPadding")
+        cipher.init(
+            Cipher.ENCRYPT_MODE,
+            SecretKeySpec(init.copyOfRange(8, 40), "AES"),
+            IvParameterSpec(init.copyOfRange(40, 56)),
+        )
+        val wire = cipher.update(init)
+        val packet = ByteArray(64)
+        System.arraycopy(init, 0, packet, 0, 56)
+        System.arraycopy(wire, 56, packet, 56, 8)
+
+        val msgId = (System.currentTimeMillis() shl 32) and Long.MAX_VALUE
+        val randomBody = ByteArray(16).also(random::nextBytes)
+        val body = ByteBuffer.allocate(4 + randomBody.size).order(ByteOrder.LITTLE_ENDIAN)
+            .putInt(0xBE7E8EF1.toInt())
+            .put(randomBody)
+            .array()
+        val payload = ByteBuffer.allocate(8 + 8 + 4 + body.size).order(ByteOrder.LITTLE_ENDIAN)
+            .putLong(0L)
+            .putLong(msgId)
+            .putInt(body.size)
+            .put(body)
+            .array()
+        val framed = ByteArray(1 + payload.size)
+        framed[0] = (payload.size / 4).toByte()
+        System.arraycopy(payload, 0, framed, 1, payload.size)
+        return packet + cipher.update(framed)
+    }
+
+    private fun startVlessForTelegramInBackground(
+        clientData: ClientData,
+        connectGenerationId: Int,
+    ) {
+        if (!BuildConfig.CF_PROXY_SLOT_ENABLED) return
+        startSafeServiceThread("NovaTelegramEgress") {
+            // PC-схема: Telegram идёт через WARP AWG (UDP), а не MASQUE.
+            // AWG поднимается быстро и не зависит от публичных VLESS-узлов.
+            if (startAwgForTelegram(this)) {
+                multiAwgPort = AwgSocksBridge.LISTEN_PORT
+                reloadRouterConfig()
+                LogManager.log(
+                    "MULTI: AWG SOCKS ${AwgSocksBridge.LISTEN_ADDRESS} готов для Telegram, маршруты перезагружены."
+                )
+                return@startSafeServiceThread
+            }
+            LogManager.log("MULTI: AWG для Telegram не поднялся — пробуем VLESS.")
+            val port = startVlessSocksForMulti(
+                clientData,
+                connectGenerationId,
+                maxCandidates = 5,
+                budgetMs = 90_000L,
+            )
+            if (port <= 0 || isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
+                LogManager.log("MULTI: VLESS для Telegram не поднялся.")
+                return@startSafeServiceThread
+            }
+            multiVlessPort = port
+            multiVlessActive = true
+            reloadRouterConfig()
+            LogManager.log(
+                "MULTI: VLESS SOCKS 127.0.0.1:$port готов для Telegram, маршруты перезагружены."
+            )
+        }
+    }
+
+    private fun startVlessSocksForMulti(
+        clientData: ClientData,
+        connectGenerationId: Int,
+        maxCandidates: Int = 12,
+        budgetMs: Long = 45_000L,
+    ): Int {
+        // Проверенные семена идут первыми: публичные списки часто мертвы, а
+        // перебор 629 профилей блокирует старт. Семя — обычный профиль из
+        // штатного источника; если оно умрёт, ниже сработает обычный список.
+        val links = (ExternalSources.VLESS_VERIFIED_SEEDS + clientData.getVlessProfileLinks())
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        val profiles = links.mapNotNull { link -> VlessConfig.parse(link)?.let { link to it } }
         if (profiles.isEmpty()) return 0
         if (!XrayBridge.ensureLoaded()) {
             LogManager.log("MULTI: Xray не загрузился — PRIMARY останется DESYNC.")
@@ -9999,11 +10170,11 @@ class NovaVpnService : OperaNativeVpnService() {
         if (!OperaNativeVpnService.isNativeRuntimeAvailable(this)) return 0
         val port = findEphemeralLoopbackPort() ?: return 0
         XrayBridge.setProtector(this)
-        var cursor = clientData.getVlessRotationStartIndex().coerceIn(0, profiles.lastIndex)
-        val deadline = SystemClock.elapsedRealtime() + 45_000L
+        var cursor = 0
+        val deadline = SystemClock.elapsedRealtime() + budgetMs
         var tried = 0
         val rejected = mutableListOf<String>()
-        while (tried < profiles.size && tried < 12 && SystemClock.elapsedRealtime() < deadline) {
+        while (tried < profiles.size && tried < maxCandidates && SystemClock.elapsedRealtime() < deadline) {
             if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return 0
             val (link, config) = profiles[cursor]
             cursor = (cursor + 1) % profiles.size
@@ -10149,8 +10320,11 @@ class NovaVpnService : OperaNativeVpnService() {
                         LogManager::log,
                         purposeLabel = "умной маршрутизации",
                         country = country,
-                        readyTimeoutMs = 20_000L,
-                        maxLaunchPlans = 40,
+                        // Opera сейчас часто недоступна (API/relay timeout).
+                        // Держим короткий бюджет на старте, чтобы MULTI не висел
+                        // минуты; secondary подхватится, если первый план успел.
+                        readyTimeoutMs = 8_000L,
+                        maxLaunchPlans = 4,
                         bootstrapApiProxy = operaBootstrap,
                         bootstrapDialProxy = operaBootstrap,
                         shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
@@ -10174,16 +10348,15 @@ class NovaVpnService : OperaNativeVpnService() {
                 return true
             }
 
-            val vlessPort = if (masqueProxyPort > 0) {
-                // MASQUE уже поднят и даёт рабочий WARP-egress. Перебор 629
-                // VLESS-профилей при этом — минуты ожидания и блокирующий JNI;
-                // PC-схема тоже ставит WARP primary, а VLESS оставляет запасом.
-                LogManager.log("MULTI: MASQUE готов — VLESS-перебор пропускаем, primary=MASQUE.")
-                0
-            } else {
-                startVlessSocksForMulti(clientData, connectGenerationId)
+            var vlessPort = 0
+            if (masqueProxyPort > 0) {
+                LogManager.log(
+                    "MULTI: MASQUE — primary; VLESS для Telegram поднимется в фоне."
+                )
             }
             multiVlessActive = vlessPort > 0
+            multiVlessPort = 0
+            multiAwgPort = 0
             // PRIMARY: живой VLESS, иначе MASQUE, иначе WARP-AWG (cfproxy 1378),
             // и только потом DESYNC. На ПК primary — WARP; если MASQUE не
             // поднялся, AWG-мост уже жив и обязан быть primary, а не только
@@ -10201,11 +10374,13 @@ class NovaVpnService : OperaNativeVpnService() {
             multiSpoofPort = spoofPort
             multiOperaPort = operaPort
             multiCfProxyPort = cfProxyPort
+            multiVlessPort = vlessPort
             val config = buildMultiRouterConfig(
                 primaryPort,
                 operaPort,
                 spoofPort,
                 cfProxyPort = cfProxyPort,
+                vlessPort = vlessPort,
             )
             val routerPort = RouterProcess.start(this, config, LogManager::log)
             if (routerPort == 0) {
@@ -10230,6 +10405,9 @@ class NovaVpnService : OperaNativeVpnService() {
             }
             markSuccessfulTunnelProbe()
             broadcastState(STATE_CONNECTED)
+            if (masqueProxyPort > 0 && vlessPort == 0) {
+                startVlessForTelegramInBackground(clientData, connectGenerationId)
+            }
             LogManager.log(
                 "MULTI активен: router 127.0.0.1:$routerPort → PRIMARY$primaryPort" +
                     (if (spoofPort != 0) " / spoof$spoofPort" else "") +
@@ -10372,6 +10550,8 @@ class NovaVpnService : OperaNativeVpnService() {
         operaPort: Int,
         spoofPort: Int,
         cfProxyPort: Int = 0,
+        vlessPort: Int = 0,
+        awgPort: Int = 0,
     ): String {
         val lists = ListRepository.load(this)
         val routing = RoutingStore(this)
@@ -10402,6 +10582,8 @@ class NovaVpnService : OperaNativeVpnService() {
             operaPort = operaPort,
             spoofPort = spoofPort,
             cfProxyPort = cfProxyPort,
+            vlessPort = vlessPort,
+            awgPort = awgPort,
         )
     }
 
@@ -10422,6 +10604,8 @@ class NovaVpnService : OperaNativeVpnService() {
             multiOperaPort,
             multiSpoofPort,
             cfProxyPort = multiCfProxyPort,
+            vlessPort = multiVlessPort,
+            awgPort = multiAwgPort,
         )
         val port = RouterProcess.start(
             this,
@@ -26017,6 +26201,14 @@ class NovaVpnService : OperaNativeVpnService() {
             }
 
             else -> {
+                // Собственный процесс VPN всегда исключаем: иначе сокеты
+                // Xray/Opera/MASQUE уходят в собственный TUN и зацикливаются
+                // (VLESS dial висит, хотя тот же адрес с shell доступен).
+                try {
+                    builder.addDisallowedApplication(packageName)
+                } catch (error: Exception) {
+                    LogManager.log("Split tunneling: не удалось исключить Nova из VPN: ${error.message}")
+                }
                 for (pkg in directApps) {
                     try {
                         builder.addDisallowedApplication(pkg)
@@ -26024,7 +26216,7 @@ class NovaVpnService : OperaNativeVpnService() {
                     }
                 }
                 LogManager.log(
-                    "Split tunneling: все приложения идут через VPN, кроме прямых (${directApps.size})."
+                    "Split tunneling: все приложения идут через VPN, кроме Nova и прямых (${directApps.size})."
                 )
             }
         }

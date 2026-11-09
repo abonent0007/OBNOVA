@@ -58,11 +58,15 @@ object RouterConfigFactory {
         operaPort: Int = 0,
         spoofPort: Int = 0,
         cfProxyPort: Int = 0,
+        vlessPort: Int = 0,
+        awgPort: Int = 0,
     ): String {
         require(primaryPort in 1..65535) { "primaryPort вне диапазона: $primaryPort" }
         val opera = operaPort in 1..65535
         val spoof = spoofPort in 1..65535
         val cfProxy = cfProxyPort in 1..65535
+        val vless = vlessPort in 1..65535
+        val awg = awgPort in 1..65535
         val killSwitch = input.killSwitch
         val rules = mutableListOf<RouterConfig.RuleSpec>()
 
@@ -112,9 +116,16 @@ object RouterConfigFactory {
         // реле и уходил в primary, хотя IP уже шли через реле.
         val telegramPreferredOrder = if (input.overrides["telegram"] == null) {
             buildList {
-                if (input.telegramRelayUrl.isNotBlank()) add("ws")
-                if (cfProxy) add("cfproxy")
+                // Telegram MTProto DC (149.154.*, 91.108.*) через MASQUE не
+                // соединяется (curl: 000), поэтому первым идёт VLESS-слот:
+                // проверенное семя Xray отвечает на DC2. Затем Opera, DESYNC,
+                // cfproxy/primary — запас. WSS `kws*.web.telegram.org/apiws`
+                // отдаёт 487/106 и closes — Telegram на нём зацикливается.
+                if (awg) add("awg")
+                if (vless) add("vless")
                 if (opera) add("secondary")
+                if (spoof) add("spoof")
+                if (cfProxy) add("cfproxy")
                 add("primary")
             }
         } else {
@@ -147,6 +158,12 @@ object RouterConfigFactory {
         if (cfProxy) {
             slots["cfproxy"] = RouterConfig.SlotSpec("socks5", "127.0.0.1:$cfProxyPort")
         }
+        if (vless) {
+            slots["vless"] = RouterConfig.SlotSpec("socks5", "127.0.0.1:$vlessPort")
+        }
+        if (awg) {
+            slots["awg"] = RouterConfig.SlotSpec("socks5", "127.0.0.1:$awgPort")
+        }
         if (input.telegramRelayUrl.isNotBlank()) {
             slots["ws"] = RouterConfig.SlotSpec(
                 type = "ws",
@@ -178,13 +195,12 @@ object RouterConfigFactory {
         }
         val ru = listOf("primary") + tail
         val eu = (if (opera) listOf("secondary") else emptyList()) + ru
-        // YouTube/AI: Opera первой, затем PRIMARY (MASQUE/WARP), и только потом
-        // DESYNC. Раньше spoof стоял выше primary из-за нерабочего MASQUE;
-        // теперь MASQUE-личность поднимается, и видео YouTube/Telegram должно
-        // идти через primary, а DESYNC остаётся обходом DPI.
+        // YouTube: primary (MASQUE/WARP) первым — он реально тянет
+        // www.youtube.com и googlevideo (проверено curl через SOCKS 1379).
+        // Opera — второй слот, DESYNC — обход DPI, direct — последний.
         val google = buildList {
-            if (opera) add("secondary")
             add("primary")
+            if (opera) add("secondary")
             if (spoof) add("spoof")
             if (!killSwitch) add("direct")
         }

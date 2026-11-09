@@ -143,6 +143,45 @@ object ExternalSources {
     )
 
     /** Нейтральный адрес: по нему проверяется, что узел пропускает TLS. */
+    /**
+     * Проверенные вручную VLESS-семена (2026-11-09): узел из штатного источника
+     * Delta-Kronecker REALITY. Через Xray он даёт YouTube 200 и отвечает на
+     * Telegram DC2. Это не новый источник, а приоритетная проба: если узел
+     * умрёт, MULTI перейдёт к обычному списку профилей.
+     */
+    val VLESS_VERIFIED_SEEDS = listOf(
+        // 2026-11-09, проверено Xray 26.10.31: TLS WS, SNI мобильный DPI
+        // пропускает (200), YouTube 200 и Telegram DC2 302.
+        "vless://95f85937-7b95-45c4-8d69-95da6a978569@95.129.236.248:443" +
+            "?alpn=http%2F1.1&encryption=none" +
+            "&path=%2Fgateway%2Fv1%2Fws%2F791f9a4d19f715c2ffaedfbaf99d88bd" +
+            "&security=tls&sni=chat.gpt.prem-ai.shop&host=chat.gpt.prem-ai.shop" +
+            "&type=ws&fp=firefox#OBNOVA%20seed%20prem-ai",
+        // 2026-11-09, проверено Xray 26.10.31 с PC и SNI-проба с телефона:
+        // эти SNI мобильный DPI не блокирует (200/403, не 000).
+        "vless://dd5bed0b-ee77-481b-9f2c-250a632ddd9f@185.189.45.195:443" +
+            "?security=reality&encryption=none" +
+            "&pbk=BIy6H-jndn24Ukyw83ML8LDB1HL8WLJmfCADEy8lzVs" +
+            "&headerType=none&fp=chrome&spx=/&type=tcp&flow=xtls-rprx-vision" +
+            "&sni=get.jarbook.net&sid=c6f97313#OBNOVA%20seed%20jarbook",
+        "vless://c82031be-e90f-4b15-ab4f-7ccef236d3ca@83.171.241.153:443" +
+            "?encryption=none&pbk=ixnCbdlT5sAVd-ilp2nG11CvnNsBCf9xPD56TlXxlR4" +
+            "&security=reality&sid=a91531ad58c8611c&sni=d58daft.plp1.h1cloud.net" +
+            "&type=tcp&fp=edge#OBNOVA%20seed%20h1cloud",
+        "vless://3bb97d46-789b-4229-88f6-9beb222a4137@217.25.93.165:443" +
+            "?security=reality&encryption=none" +
+            "&pbk=ZJlfiMh4ebjrTl2_kwAk_zXMAaCiwNS7yMd5XzlUgmI" +
+            "&headerType=none&fp=chrome&type=tcp&flow=xtls-rprx-vision" +
+            "&sni=yoy-api.bachidze.com#OBNOVA%20seed%20bachidze",
+        // Старое семя оставлено запасным: на проводном канале работает, но
+        // мобильный DPI блокирует его SNI.
+        "vless://f8d52ece-fad4-478d-875d-df6eed3befa7@193.25.216.88:443" +
+            "?type=tcp&security=reality&encryption=none&sni=sw.golangwikito.cfd" +
+            "&fp=chrome&pbk=Kb8SsVPprs46BJSUNp5JvWLI-TFEiHmlBOXLQd37Glg" +
+            "&sid=a1037b25dcef6aa7&headerType=none&flow=xtls-rprx-vision" +
+            "#OBNOVA%20seed%20golangwikito",
+    )
+
     const val NEUTRAL_HTTPS_PROBE_HOST = "example.com"
 
     /**

@@ -7,26 +7,37 @@
 
 ```text
 ./gradlew testGithubDebugUnitTest assembleGithubRelease assembleGithubDebug
-BUILD SUCCESSFUL; 82 класса / 661 тест, 0 падений
+BUILD SUCCESSFUL; 83 класса / 666 тестов, 0 падений
 
-A30AC7D184555D3771A4C0A31C6337097DA95798D48F49870B66EF4E36180FC3  OBNOVA_1.34.11-arm64-v8a.apk
+release:
+C41DBB247735453FB9528A6798670D0DA095E4441553AA6C7E0C2F53CB5FE080  OBNOVA_1.34.11-arm64-v8a.apk
+079B77F939F1527EF116B367D604FFA9AD55FFDAC5C8ED136036AA8971BC8803  OBNOVA_1.34.11-armeabi-v7a.apk
+5EA58A2441C28FB463A39643878349E435201E984C76A7A2C5636970FC426FA5  OBNOVA_1.34.11-universal.apk
+
+debug:
+3E007A0DBA31457D4FE7CE5485CA9FD143ED4FDE86DADA5D91217E700FD4FAA9  OBNOVA_1.34.11-debug-arm64-v8a.apk
+8B563BBEE0043EE700234915E2D52B0AF5336A49EB387B31CAA9C7C890705D7A  OBNOVA_1.34.11-debug-armeabi-v7a.apk
+7EDFE686DD4007832727CFC0520DCF6837C32635E4F79DB61B68408FC5471C52  OBNOVA_1.34.11-debug-universal.apk
 ```
 
-- **MULTI primary:** при отсутствии VLESS/MASQUE primary берёт AWG-мост
-  cfproxy (1378); если MASQUE 1379 жив, перебор 629 VLESS пропускается.
-  DESYNC остаётся spoof.
+- **YouTube — зелёный:** после фикса `nova-router` (IP → домен из SNI для
+  SOCKS-слота) открыто **новое** видео, не Shorts из кэша; кадры, звук и
+  таймер идут, `googlevideo` обслуживается через `primary`. Проверено
+  пользователем на RMX3370.
+- **Telegram — зелёный (PC-путь):** `Telegram → awg 1378 → WARP AWG → DC`.
+  В логах: `AWG seed #3 (8.6.112.*:8742) прошёл MTProto-пробу DC4`,
+  `149.154.* → awg`; Telegram online, аватары загружены, сообщения
+  отправляются. Пользователь подтвердил.
+- **AWG data-plane:** Google через `127.0.0.1:1378` — `204`; входящие
+  `AWG recv passthrough` идут; `NovaMode = warp-awg-exact`, fake off.
+- **VLESS:** `allowInsecure` удалён (Xray 26.10.31), проверенные семена
+  идут первыми; VLESS остаётся запасом, если AWG не поднялся.
+- **Apps VPN:** режим «Все приложения через VPN»; YouTube больше не исключён.
+  Nova исключена из VPN, иначе Xray/MASQUE/Opera зацикливаются в TUN.
 - **Футер:** `OBNOVA v1.34.11` — проверено на устройстве.
-- **Apps VPN:** на телефоне стоял режим «Всё, кроме выбранных», YouTube был
-  исключён — router вообще не видел YouTube. Переключено на «Все приложения
-  через VPN».
-- **Живой тест:** MULTI поднялся `PRIMARY1379`; Opera через MASQUE один раз
-  дошла до `MULTI: NO` (затем регистрация снова 502/backoff). При отсутствии
-  Opera YouTube уходит в primary и получает `Ok(N), Ok(0)`; видео не идёт.
-  Пиксель-тест YouTube-видео не пройден — нужен стабильный Opera/secondary.
-- Второе нажатие CONNECT_SMART во время CONNECTING больше не обрывает Opera
-  (добавлена идемпотентность).
-
-1.34.11 **не опубликован**: нужен зелёный live-тест YouTube/Telegram.
+- **Opera:** остаётся необязательной; upstream API/egress иногда даёт
+  timeout/502, MULTI её не блокирует.
+- 1.34.11 **опубликован** после зелёных YouTube/Telegram.
 
 ## 2026-11-09 — 1.34.10 / versionCode 174 (сборка)
 

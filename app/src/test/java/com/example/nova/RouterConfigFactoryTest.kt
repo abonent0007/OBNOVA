@@ -24,7 +24,7 @@ class RouterConfigFactoryTest {
     )
 
     @Test
-    fun `telegram relay slot is first for telegram ips`() {
+    fun `telegram relay slot stays available but is not auto-first`() {
         val json = RouterConfigFactory.build(
             input = input().copy(
                 telegramRelayUrl = "wss://relay.example/apiws",
@@ -36,7 +36,8 @@ class RouterConfigFactoryTest {
             cfProxyPort = 1378,
         )
         assertTrue(json.contains("\"ws\":{\"type\":\"ws\",\"url\":\"wss://relay.example/apiws\",\"secret\":\"s3cret\",\"via\":\"127.0.0.1:1378\"}"))
-        assertTrue(json.contains("\"order\":[\"ws\",\"cfproxy\",\"secondary\",\"primary\"]"))
+        assertTrue(json.contains("\"order\":[\"secondary\",\"cfproxy\",\"primary\"]"))
+        assertFalse(json.contains("\"order\":[\"ws\""))
     }
 
     @Test
@@ -53,7 +54,7 @@ class RouterConfigFactoryTest {
     @Test
     fun `youtube prefers primary before desync`() {
         assertEquals(
-            listOf("secondary", "primary", "spoof", "direct"),
+            listOf("primary", "secondary", "spoof", "direct"),
             RouterConfigFactory.order("youtube", emptyMap(), opera = true, spoof = true),
         )
     }
@@ -61,7 +62,7 @@ class RouterConfigFactoryTest {
     @Test
     fun `google ai tries primary before desync`() {
         assertEquals(
-            listOf("secondary", "primary", "spoof", "direct"),
+            listOf("primary", "secondary", "spoof", "direct"),
             RouterConfigFactory.order("google_ai", emptyMap(), opera = true, spoof = true),
         )
         val json = RouterConfigFactory.build(
@@ -70,7 +71,7 @@ class RouterConfigFactoryTest {
             operaPort = 1371,
         )
         assertTrue(json.contains("\"name\":\"google-ai\""))
-        assertTrue(json.contains("\"order\":[\"secondary\",\"primary\",\"direct\"]"))
+        assertTrue(json.contains("\"order\":[\"primary\",\"secondary\",\"direct\"]"))
     }
 
     @Test
@@ -85,7 +86,34 @@ class RouterConfigFactoryTest {
             cfProxyPort = 1378,
         )
         assertTrue(json.contains("\"name\":\"telegram\""))
-        assertTrue(json.contains("\"order\":[\"ws\",\"cfproxy\",\"secondary\",\"primary\"]"))
+        assertTrue(json.contains("\"order\":[\"secondary\",\"cfproxy\",\"primary\"]"))
+    }
+
+    @Test
+    fun `telegram prefers vless slot when present`() {
+        val json = RouterConfigFactory.build(
+            input = input().copy(telegramIps = listOf("149.154.160.0/20")),
+            primaryPort = 1379,
+            spoofPort = 1376,
+            cfProxyPort = 1379,
+            vlessPort = 14080,
+        )
+        assertTrue(json.contains("\"vless\":{\"type\":\"socks5\",\"addr\":\"127.0.0.1:14080\"}"))
+        assertTrue(json.contains("\"order\":[\"vless\",\"spoof\",\"cfproxy\",\"primary\"]"))
+    }
+
+    @Test
+    fun `telegram prefers awg slot before vless`() {
+        val json = RouterConfigFactory.build(
+            input = input().copy(telegramIps = listOf("149.154.160.0/20")),
+            primaryPort = 1379,
+            spoofPort = 1376,
+            cfProxyPort = 1379,
+            vlessPort = 14080,
+            awgPort = 1378,
+        )
+        assertTrue(json.contains("\"awg\":{\"type\":\"socks5\",\"addr\":\"127.0.0.1:1378\"}"))
+        assertTrue(json.contains("\"order\":[\"awg\",\"vless\",\"spoof\",\"cfproxy\",\"primary\"]"))
     }
 
     @Test
@@ -226,7 +254,7 @@ class RouterConfigFactoryTest {
         assertTrue(json.contains("\"cfproxy\":{\"type\":\"socks5\",\"addr\":\"127.0.0.1:1378\"}"))
         assertTrue(
             json.contains(
-                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"cfproxy\",\"secondary\",\"primary\"]"
+                "\"name\":\"telegram-ip\",\"domains\":[],\"cidrs\":[\"149.154.160.0/20\"],\"order\":[\"secondary\",\"cfproxy\",\"primary\"]"
             )
         )
     }

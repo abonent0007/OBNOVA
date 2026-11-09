@@ -5,19 +5,37 @@
 
 ## 2026-11-09 — 1.34.11 / versionCode 175
 
-- **MULTI primary:** если VLESS и MASQUE не поднялись, primary берёт живой
-  WARP-AWG SOCKS (cfproxy 1378), а DESYNC остаётся только spoof-слотом.
-- **MASQUE — приоритетный WARP:** если MASQUE SOCKS 1379 поднят, перебор 629
-  VLESS не запускается (он блокировал старт на минуты); primary=MASQUE,
-  DESYNC=spoof. Opera bootstrap идёт через MASQUE, AWG/DESYNC — запас.
-- **YouTube/AI:** порядок `secondary → primary → spoof → direct`; при живой
-  Opera YouTube идёт в secondary. Раньше spoof стоял выше primary.
+- **YouTube-видео (главный фикс):** `nova-router` для SOCKS-слота теперь
+  отправляет в MASQUE **домен из SNI**, если tun2proxy принёс IP. Раньше
+  MASQUE получал IP и закрывал соединение (`Ok(N), Ok(0)`), поэтому
+  работали только превью. Проверено на живом видео (не Shorts из кэша):
+  кадры/звук/таймер идут, `googlevideo` обслуживается через `primary`.
+- **Nova исключена из VPN** в режиме «все приложения»: без этого сокеты
+  Xray/MASQUE/Opera уходили в собственный TUN и зацикливались (VLESS dial
+  висел, хотя тот же адрес с shell был доступен).
+- **Telegram — путь PC-версии:** `Telegram → WARP AWG → DC`, а не MASQUE.
+  MASQUE не маршрутизирует MTProto DC (`149.154.*` → timeout). Добавлен
+  слот `awg` (SOCKS 1378), проверенный AWG-seed из `warp_verified_seeds.json`
+  и MTProto-проба DC4/DC2: приложение перебирает до 12 семян и оставляет
+  то, чей egress реально отвечает `resPQ`. Проверено: `AWG seed #3
+  (8.6.112.*:8742) прошёл MTProto-пробу DC4`, Telegram online, аватары
+  загружены, пользователь подтвердил работу.
+- **AWG data-plane:** `NovaMode = warp-awg-exact` (как PC), fake-пакеты
+  выключены; Google через 1378 отдаёт `204`, входящие AWG-пакеты идут.
+- **VLESS:** проверенные семена (TLS WS `chat.gpt.prem-ai.shop`, REALITY
+  `get.jarbook.net`, `d58daft.plp1.h1cloud.net`, `yoy-api.bachidze.com`,
+  `sw.golangwikito.cfd`) идут первыми; `allowInsecure` удалён — Xray
+  26.10.31 не грузит конфиг с этим полем.
+- **YouTube/AI порядок:** `primary → secondary → spoof → direct`; Opera
+  остаётся SECONDARY, DESYNC — обход DPI.
 - **Повторный CONNECT_SMART** во время `CONNECTING` игнорируется: второе
   нажатие «Подключить» больше не инвалидирует поколение и не убивает Opera.
 - **Футер настроек:** `Nova v…` заменён на `OBNOVA v…`.
 - **Apps VPN:** на устройстве режим был «Всё, кроме выбранных», YouTube
   исключён — router не видел его трафика. Для проверки выставлен «Все
   приложения через VPN»; это настройка, не код.
+- **Opera:** остаётся необязательной — upstream API/egress периодически
+  даёт timeout/502; MULTI не ждёт её 40 планов, а догоняет в фоне.
 - Остальное — как в 1.34.10.
 
 ## 2026-11-09 — 1.34.10 / versionCode 174

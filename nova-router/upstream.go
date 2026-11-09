@@ -70,7 +70,17 @@ func dialSlot(slot Slot, host string, port int, sni string) (net.Conn, error) {
 	case SlotDirect:
 		return dialDirect(host, port, dialTimeout)
 	case SlotSocks5:
-		return dialSocks5(slot.Addr, host, port)
+		// MASQUE-SOCKS (127.0.0.1:1379) не соединяет по IP: CONNECT с ATYP=IPv4
+		// возвращает 000. Тот же хост по домену работает (проверено curl:
+		// --socks5 → 000, --socks5-hostname → 200/404). Если tun2proxy принёс
+		// IP, а в ClientHello есть валидный SNI, отдаём прокси имя.
+		targetHost := host
+		if net.ParseIP(host) != nil {
+			if candidate, err := validSNI(sni); err == nil {
+				targetHost = candidate
+			}
+		}
+		return dialSocks5(slot.Addr, targetHost, port)
 	case SlotHTTP:
 		targetHost := host
 		if candidate, err := validSNI(sni); err == nil {

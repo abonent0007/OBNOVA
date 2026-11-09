@@ -39,9 +39,46 @@ object AwgSocksBridge {
         return isListening()
     }
 
+    fun startWithConfig(config: String): Boolean {
+        if (!BuildConfig.CF_PROXY_SLOT_ENABLED) return false
+        stop()
+        val status = runCatching {
+            Nova.startAwgSocks(config, LISTEN_ADDRESS, true)
+        }.getOrElse { error ->
+            LogManager.log("MULTI: AWG seed не запустился: ${error.javaClass.simpleName}: ${error.message}")
+            return false
+        }
+        if (!status.contains("\"running\":true")) {
+            LogManager.log("MULTI: AWG seed статус: $status")
+            return false
+        }
+        val deadline = System.currentTimeMillis() + 2_000L
+        while (System.currentTimeMillis() < deadline) {
+            if (isListening()) return true
+            Thread.sleep(50)
+        }
+        return false
+    }
+
     fun startFromBundled(context: Context): String {
         if (!BuildConfig.CF_PROXY_SLOT_ENABLED) {
             return "CF_PROXY_SLOT_ENABLED=false"
+        }
+        // Проверенный AWG-профиль из PC-версии (полный AmneziaWG: Jc/Jmin/
+        // Jmax/H1..H4/I1). Bootstrap-профиль без obfuscation часто не
+        // пробивает UDP, а этот уже работает в PC-маршруте Telegram.
+        val seed = runCatching {
+            context.assets.open("warp_awg_seed.conf").bufferedReader().use { it.readText() }
+        }.getOrNull()
+        if (!seed.isNullOrBlank()) {
+            val seedStatus = runCatching {
+                Nova.startAwgSocks(seed, LISTEN_ADDRESS, true)
+            }.getOrElse { error -> "Ошибка AWG seed: ${error.javaClass.simpleName}: ${error.message}" }
+            if (seedStatus.contains("\"running\":true")) {
+                LogManager.log("MULTI: AWG-мост из проверенного PC-профиля (assets/warp_awg_seed.conf).")
+                return seedStatus
+            }
+            LogManager.log("MULTI: AWG seed не поднялся: $seedStatus")
         }
         return runCatching {
             val clientData = ClientData(context.applicationContext)

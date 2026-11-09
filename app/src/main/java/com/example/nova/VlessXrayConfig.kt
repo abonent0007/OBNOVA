@@ -22,11 +22,31 @@ object VlessXrayConfig {
         socksPort: Int,
         socksHost: String = "127.0.0.1",
         logLevel: String = "warning",
+        dialerProxyPort: Int = 0,
     ): String {
         val root = JSONObject()
         root.put("log", JSONObject().put("loglevel", logLevel))
         root.put("inbounds", JSONArray().put(buildSocksInbound(socksHost, socksPort)))
-        root.put("outbounds", JSONArray().put(buildVlessOutbound(config)))
+        val outbounds = JSONArray().put(buildVlessOutbound(config, dialerProxyPort))
+        if (dialerProxyPort in 1..65535) {
+            outbounds.put(
+                JSONObject()
+                    .put("tag", "router")
+                    .put("protocol", "socks")
+                    .put(
+                        "settings",
+                        JSONObject().put(
+                            "servers",
+                            JSONArray().put(
+                                JSONObject()
+                                    .put("address", "127.0.0.1")
+                                    .put("port", dialerProxyPort)
+                            )
+                        )
+                    )
+            )
+        }
+        root.put("outbounds", outbounds)
         return root.toString()
     }
 
@@ -49,7 +69,7 @@ object VlessXrayConfig {
             .put("sniffing", sniffing)
     }
 
-    private fun buildVlessOutbound(config: VlessConfig): JSONObject {
+    private fun buildVlessOutbound(config: VlessConfig, dialerProxyPort: Int): JSONObject {
         val user = JSONObject()
             .put("id", config.uuid)
             .put("encryption", config.encryption.ifBlank { "none" })
@@ -63,11 +83,18 @@ object VlessXrayConfig {
             .put("port", config.port)
             .put("users", JSONArray().put(user))
 
+        val stream = buildStreamSettings(config)
+        if (dialerProxyPort in 1..65535) {
+            // Соединение к VLESS-серверу идёт через nova-router: он видит
+            // ClientHello, применяет spoof/MASQUE и обходит DPI по SNI.
+            stream.put("sockopt", JSONObject().put("dialerProxy", "router"))
+        }
+
         return JSONObject()
             .put("tag", "proxy")
             .put("protocol", "vless")
             .put("settings", JSONObject().put("vnext", JSONArray().put(vnext)))
-            .put("streamSettings", buildStreamSettings(config))
+            .put("streamSettings", stream)
     }
 
     private fun buildStreamSettings(config: VlessConfig): JSONObject {
@@ -147,7 +174,9 @@ object VlessXrayConfig {
     private fun buildTlsSettings(config: VlessConfig): JSONObject {
         val tls = JSONObject()
             .put("serverName", config.sni.ifBlank { config.hostHeader.ifBlank { config.host } })
-            .put("allowInsecure", config.allowInsecure)
+        // Xray 26.10.31 удалил allowInsecure: поле ломает загрузку конфига.
+        // Публичные узлы имеют валидный сертификат; для self-signed остаются
+        // pinnedPeerCertSha256/verifyPeerCertByName (пока не используются).
         if (config.fingerprint.isNotBlank()) tls.put("fingerprint", config.fingerprint)
         if (config.alpn.isNotEmpty()) {
             tls.put("alpn", JSONArray().apply { config.alpn.forEach { put(it) } })
