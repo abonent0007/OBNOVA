@@ -24,10 +24,33 @@ DB6EDA7FCCECFD13D17299C97E013D0E083A19C258C86261CA80D9A8BDE12940  OBNOVA_1.34.10
 `row_logs_container` (это контейнер, не кликабельная строка), есть обработчик
 в `SettingsActivity`. «Конфигурации» отсутствуют.
 
-Живой прогон меню и функций на RMX3370 в этот раз не выполнен: `adb devices`
-пуст, устройство не отдаёт transport. Нужно разблокировать телефон, разрешить
-отладку по USB и переподключить кабель; после этого — установка 1.34.10 и
-проход всех экранов.
+Живой прогон меню и функций на RMX3370 (Android 13, `97db202c`), 1.34.10:
+
+- Установлена 1.34.10 (174); главный экран и футер показывают версию.
+- Настройки: блок «Профили и подписки», «Слить» → **969** профилей
+  (warp 102, vless 684, proton 180, masque 3); диалог генерации WARP
+  открывается/закрывается.
+- Селектор: AUTO → WARP → OPERA → MASQUE → PROTON → TOR → DNS все
+  переключаются; возврат на MULTI.
+- Открылись экраны: Routes, Slots, Strategies, DiagnosticsReport, DnsSettings,
+  DomainBypass, DirectFlow, LocalProxy, BackgroundSettings, ThemeSettings,
+  NotificationSettings, SniMaskSettings; диалоги DNS-профиля, MTU, Opera API
+  proxy и WARP+ открываются.
+- «Проверить обновления»: GitHub API ответил, найден 1.34.9 (до публикации
+  1.34.10); «Поделиться» открывает chooser; Apps VPN показывает список
+  приложений и режимы «Все / Только выбранные / Всё, кроме выбранных».
+- MULTI: `CONNECTED (backend=MULTI)`, бейдж `MULTI: RU`, router 1373 →
+  PRIMARY1376 / DIRECT.
+- WARP: `CONNECTED (backend=WARP)`, бейдж `WARP: RU`.
+- MASQUE: `CONNECTED (backend=WARP, транспорт=MASQUE)`, бейдж `MASQUE: RU`.
+- PROTON: за 60 с перебирал endpoint-ы (`AWG Proton`), до CONNECTED не дошёл —
+  сеть режет UDP; это ожидаемое поведение перебора, не падение.
+- Opera: WARP-AWG мост поднялся как cfproxy, но к моменту Opera умер; попытки
+  через DESYNC/релей дали `anonymous registration ... context deadline
+  exceeded` (502/таймаут). Opera не поднялась, YouTube-лента не загрузилась
+  (роутер не видел youtube-запросов), Telegram показал список чатов, но статус
+  «Соединение…». Это сетевая/Opera-проблема, не падение приложения.
+
 
 ## 2026-11-09 — KALIOPA parity, Phase 1 + device smoke
 
