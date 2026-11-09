@@ -1,0 +1,14 @@
+# Google AI / opencode: PC routing puts them on Opera first, then WARP.
+# These domains stay in ai.txt too; this list is the higher-priority override.
+gemini.google.com
+aistudio.google.com
+generativelanguage.googleapis.com
+makersuite.google.com
+openai.com
+api.openai.com
+chatgpt.com
+chat.openai.com
+claude.ai
+api.anthropic.com
+opencode.ai
+api.opencode.ai

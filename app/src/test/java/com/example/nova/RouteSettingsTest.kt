@@ -27,6 +27,7 @@ class RouteSettingsTest {
             RouteClass.WHATSAPP,
             RouteClass.DISCORD,
             RouteClass.AI,
+            RouteClass.GOOGLE_AI,
         )
         for (routeClass in classes) {
             assertEquals(routeClass, RouteSettings.parseOverride(RouteSettings.encodeOverride(routeClass)))
@@ -51,6 +52,7 @@ class RouteSettingsTest {
         assertEquals("PRIMARY → DIRECT", RouteSettings.chainHint(RouteClass.RU))
         assertEquals("SECONDARY → PRIMARY → DIRECT", RouteSettings.chainHint(RouteClass.EU))
         assertEquals("SECONDARY → PRIMARY → DIRECT", RouteSettings.chainHint(RouteClass.YOUTUBE))
+        assertEquals("SECONDARY → PRIMARY → DIRECT", RouteSettings.chainHint(RouteClass.GOOGLE_AI))
         assertEquals("PRIMARY", RouteSettings.chainHint(RouteClass.TELEGRAM))
         assertTrue(!RouteSettings.chainHint(RouteClass.TELEGRAM).contains("DIRECT"))
     }
@@ -58,7 +60,7 @@ class RouteSettingsTest {
     @Test
     fun `service list keeps stable keys`() {
         assertEquals(
-            listOf("ru", "eu", "youtube", "telegram", "whatsapp", "discord", "ai", "other"),
+            listOf("ru", "eu", "youtube", "telegram", "whatsapp", "discord", "ai", "google_ai", "other"),
             RouteSettings.SERVICES.map { it.key },
         )
     }

@@ -18,6 +18,7 @@ enum class RouteClass {
     WHATSAPP,
     DISCORD,
     AI,
+    GOOGLE_AI,
     BLOCK,
 }
 
@@ -54,6 +55,8 @@ interface RoutingLists {
     fun inSecond(host: String): Boolean
     fun inMain(host: String): Boolean
     fun inAi(host: String): Boolean
+    /** Google AI/opencode: Opera первой, затем primary, DESYNC — запас. */
+    fun inGoogleAi(host: String): Boolean = false
     fun inYoutube(host: String): Boolean
     fun inTelegram(host: String): Boolean
     fun inWhatsapp(host: String): Boolean

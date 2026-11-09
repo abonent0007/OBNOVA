@@ -12,6 +12,7 @@ class RoutingListsSnapshot(
     private val second: DomainList = DomainList.EMPTY,
     private val main: DomainList = DomainList.EMPTY,
     private val ai: DomainList = DomainList.EMPTY,
+    private val googleAi: DomainList = DomainList.EMPTY,
     private val youtube: DomainList = DomainList.EMPTY,
     private val telegram: DomainList = DomainList.EMPTY,
     private val whatsapp: DomainList = DomainList.EMPTY,
@@ -27,6 +28,7 @@ class RoutingListsSnapshot(
     override fun inSecond(host: String) = second.contains(host)
     override fun inMain(host: String) = main.contains(host)
     override fun inAi(host: String) = ai.contains(host)
+    override fun inGoogleAi(host: String) = googleAi.contains(host)
     override fun inYoutube(host: String) = youtube.contains(host)
     override fun inTelegram(host: String) = telegram.contains(host)
     override fun inWhatsapp(host: String) = whatsapp.contains(host)
@@ -45,6 +47,7 @@ class RoutingListsSnapshot(
     fun secondDomains(): List<String> = second.domains()
     fun mainDomains(): List<String> = main.domains()
     fun aiDomains(): List<String> = ai.domains()
+    fun googleAiDomains(): List<String> = googleAi.domains()
     fun youtubeDomains(): List<String> = youtube.domains()
     fun telegramDomains(): List<String> = telegram.domains()
     fun whatsappDomains(): List<String> = whatsapp.domains()

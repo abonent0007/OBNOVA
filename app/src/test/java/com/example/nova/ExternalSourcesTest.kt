@@ -143,6 +143,23 @@ class ExternalSourcesTest {
     }
 
     @Test
+    fun `opera eu endpoints prefer the working 244 pool`() {
+        val ordered = ExternalSources.prioritizeOperaEndpoints(
+            listOf(
+                "77.111.247.37:443",
+                "77.111.245.10:443",
+                "77.111.244.37:443",
+            ),
+        )
+        assertEquals(
+            listOf("77.111.244.37:443", "77.111.245.10:443", "77.111.247.37:443"),
+            ordered,
+        )
+        assertTrue(ExternalSources.isWeakOperaEndpoint("77.111.247.37:443"))
+        assertTrue(!ExternalSources.isWeakOperaEndpoint("77.111.244.37:443"))
+    }
+
+    @Test
     fun `warp and proton bootstrap sources keep fallback order`() {
         val warp = ExternalSources.WARP_CONFIG_FEED_BASES
         assertEquals(6, warp.size)

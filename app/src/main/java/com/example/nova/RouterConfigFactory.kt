@@ -27,6 +27,7 @@ object RouterConfigFactory {
         val main: List<String> = emptyList(),
         val second: List<String> = emptyList(),
         val ai: List<String> = emptyList(),
+        val googleAi: List<String> = emptyList(),
         val youtube: List<String> = emptyList(),
         /** IP-литералы YouTube/Google: Cronet обходит доменные правила. */
         val youtubeIps: List<String> = emptyList(),
@@ -91,6 +92,7 @@ object RouterConfigFactory {
                 cidrs = MTPROTO_PROXY_CIDRS,
             )
         }
+        add(rules, input.googleAi, order("google_ai", input.overrides, opera, spoof, killSwitch), "google-ai")
         add(rules, input.ai, order("ai", input.overrides, opera, spoof, killSwitch), "ai")
         add(rules, input.second, order("eu", input.overrides, opera, spoof, killSwitch), "eu")
         if (input.youtubeIps.isNotEmpty()) {
@@ -182,6 +184,15 @@ object RouterConfigFactory {
             add("primary")
             if (!killSwitch) add("direct")
         }
+        // Google AI/opencode по PC-схеме: Opera NL, затем WARP/PRIMARY, и только
+        // потом DESYNC. Это отличается от общего AI, где DESYNC идёт раньше
+        // primary из-за MASQUE-egress Google; для Google AI PC ставит WARP выше.
+        val googlePrimaryFirst = buildList {
+            if (opera) add("secondary")
+            add("primary")
+            if (spoof) add("spoof")
+            if (!killSwitch) add("direct")
+        }
         // Telegram в PC-политике закреплён за relay/PRIMARY и не должен уходить
         // в DIRECT: иначе при отказе слота он молча пойдёт мимо туннеля.
         val pinned = buildList {
@@ -194,11 +205,13 @@ object RouterConfigFactory {
             RouteClass.RU -> ru
             RouteClass.EU -> eu
             RouteClass.YOUTUBE, RouteClass.AI -> google
+            RouteClass.GOOGLE_AI -> googlePrimaryFirst
             RouteClass.TELEGRAM -> pinned
             RouteClass.WHATSAPP, RouteClass.DISCORD -> ru
             null -> when (service) {
                 "eu" -> eu
                 "youtube", "ai" -> google
+                "google_ai" -> googlePrimaryFirst
                 "telegram" -> pinned
                 else -> ru
             }

@@ -572,7 +572,10 @@ object OperaProxyManager {
             OperaEndpointFeed.refreshBeforeLaunch(
                 clientData = clientData,
                 hasUsableCache = clientData.getOperaPinnedEndpoints(requestedCountry)
-                    .any { !clientData.isOperaPinnedEndpointCoolingDown(requestedCountry, it) },
+                    .any {
+                        !clientData.isOperaPinnedEndpointCoolingDown(requestedCountry, it) &&
+                            !ExternalSources.isWeakOperaEndpoint(it)
+                    },
                 logger = launchLogger,
             )
             val pinnedEndpoints = clientData.getOperaPinnedEndpoints(requestedCountry)

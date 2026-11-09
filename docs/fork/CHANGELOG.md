@@ -30,8 +30,17 @@
   конфигураций внутри движка не затронута.
 - **Telegram:** доменные правила теперь, как и IP, первым используют WSS-реле
   (если оно настроено), затем cfproxy/Opera/primary; раньше домены обходили реле.
-- **Проверки:** unit-тесты и `assembleGithubDebug` зелёные; новые
-  `UnifiedProfileStoreTest`, расширенный `RouterConfigFactoryTest`. Lint — см.
+- **Google AI / opencode:** отдельный `google_ai.txt` и правило
+  `secondary → primary → spoof → direct` (PC: Opera NL → WARP). Общий AI
+  (`ai.txt`) не тронут: у него по-прежнему `secondary → spoof → primary`.
+- **Opera EU endpoint:** `77.111.244.*` поднимается в голову очереди,
+  `77.111.247.*` — в хвост; если кэш состоит только из слабого пула, лента
+  перезапрашивается. На RMX3370 оба пула в текущем сеансе вернули 502 от
+  upstream, поэтому причина не только в адресе: нужен рабочий API-сеанс/релей
+  Opera; это следующий шаг.
+- **Проверки:** 82 класса / 660 тестов, 0 падений; `RouteSettingsTest` 5/5,
+  `RouterConfigFactoryTest` 16/16, `ExternalSourcesTest` 11/11;
+  `assembleGithubDebug` и release-сборка для устройства успешны. Lint — см.
   `docs/fork/VERIFICATION.md`.
 
 ## 2026-11-08 — аудит источников и логических цепочек (без выпуска)

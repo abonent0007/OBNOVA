@@ -80,7 +80,7 @@ object OperaEndpointFeed {
                     if (endpoint.isNotBlank() && endpoint !in this) add(endpoint)
                 }
             }
-            if (endpoints.isNotEmpty()) parsed[region] = endpoints
+            if (endpoints.isNotEmpty()) parsed[region] = ExternalSources.prioritizeOperaEndpoints(endpoints)
         }
         return parsed
     }

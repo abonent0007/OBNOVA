@@ -145,6 +145,25 @@ object ExternalSources {
     /** Нейтральный адрес: по нему проверяется, что узел пропускает TLS. */
     const val NEUTRAL_HTTPS_PROBE_HOST = "example.com"
 
+    /**
+     * PC-схема прямо предупреждает: EU-пул Opera на `77.111.247.*` отдаёт
+     * `/sorry`/502, рабочий — `77.111.244.*`. Ставим `.244` в голову очереди,
+     * `.247` — в хвост; остальные не трогаем. Это не выбор страны: страну
+     * задаёт регион, здесь только порядок уже полученных endpoint-ов.
+     */
+    fun prioritizeOperaEndpoints(endpoints: List<String>): List<String> =
+        endpoints.sortedBy { endpoint ->
+            when {
+                endpoint.startsWith("77.111.244.") -> 0
+                endpoint.startsWith("77.111.247.") -> 2
+                else -> 1
+            }
+        }
+
+    /** Слабый EU-пул: с него не начинаем, если есть свежий feed. */
+    fun isWeakOperaEndpoint(endpoint: String): Boolean =
+        endpoint.startsWith("77.111.247.")
+
     /** Зеркала фида: порядок важен — первым идёт основной raw-адрес. */
     fun listMirrors(relativePath: String): List<String> = listOf(
         "https://raw.githubusercontent.com/$LIST_REPO/main/$relativePath",

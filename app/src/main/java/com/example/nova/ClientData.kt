@@ -2937,18 +2937,19 @@ class ClientData(context: Context) {
                     val endpoint = normalizeOperaEndpoint(array.optString(index))
                     if (endpoint.isNotBlank() && endpoint !in this) add(endpoint)
                 }
-            }
+            }.let(ExternalSources::prioritizeOperaEndpoints)
         } catch (_: Exception) {
             emptyList()
         }
     }
 
     fun saveOperaPinnedEndpoints(country: String, endpoints: List<String>) {
-        val normalized = endpoints
-            .map(::normalizeOperaEndpoint)
-            .filter { it.isNotBlank() }
-            .distinct()
-            .take(16)
+        val normalized = ExternalSources.prioritizeOperaEndpoints(
+            endpoints
+                .map(::normalizeOperaEndpoint)
+                .filter { it.isNotBlank() }
+                .distinct(),
+        ).take(16)
         val key = operaPinnedEndpointsKey(country)
         editOperaState { state ->
             if (normalized.isEmpty()) {

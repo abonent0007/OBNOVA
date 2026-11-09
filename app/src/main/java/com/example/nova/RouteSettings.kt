@@ -26,6 +26,7 @@ object RouteSettings {
         Service("whatsapp", "WhatsApp", RouteClass.WHATSAPP),
         Service("discord", "Discord", RouteClass.DISCORD),
         Service("ai", "AI (Gemini, ChatGPT)", RouteClass.AI),
+        Service("google_ai", "Google AI / opencode", RouteClass.GOOGLE_AI),
         Service("other", "Остальной трафик", RouteClass.RU),
     )
 
@@ -45,6 +46,7 @@ object RouteSettings {
             "whatsapp" -> RouteClass.WHATSAPP
             "discord" -> RouteClass.DISCORD
             "ai" -> RouteClass.AI
+            "google_ai" -> RouteClass.GOOGLE_AI
             else -> null
         }
     }
@@ -61,6 +63,7 @@ object RouteSettings {
             RouteClass.WHATSAPP -> "whatsapp"
             RouteClass.DISCORD -> "discord"
             RouteClass.AI -> "ai"
+            RouteClass.GOOGLE_AI -> "google_ai"
         }
 
     /** Человеческая подпись выбора для строки экрана. */
@@ -75,6 +78,7 @@ object RouteSettings {
         RouteClass.WHATSAPP -> "PRIMARY"
         RouteClass.DISCORD -> "PRIMARY"
         RouteClass.AI -> "SECONDARY"
+        RouteClass.GOOGLE_AI -> "SECONDARY"
     }
 
     /**
@@ -94,5 +98,6 @@ object RouteSettings {
         RouteClass.WHATSAPP -> "PRIMARY → DIRECT"
         RouteClass.DISCORD -> "PRIMARY → DIRECT"
         RouteClass.AI -> "SECONDARY → PRIMARY → DIRECT"
+        RouteClass.GOOGLE_AI -> "SECONDARY → PRIMARY → DIRECT"
     }
 }

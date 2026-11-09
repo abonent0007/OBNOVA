@@ -40,6 +40,21 @@ class RouterConfigFactoryTest {
     }
 
     @Test
+    fun `google ai tries primary before desync`() {
+        assertEquals(
+            listOf("secondary", "primary", "spoof", "direct"),
+            RouterConfigFactory.order("google_ai", emptyMap(), opera = true, spoof = true),
+        )
+        val json = RouterConfigFactory.build(
+            input = input().copy(googleAi = listOf("gemini.google.com")),
+            primaryPort = 1376,
+            operaPort = 1371,
+        )
+        assertTrue(json.contains("\"name\":\"google-ai\""))
+        assertTrue(json.contains("\"order\":[\"secondary\",\"primary\",\"direct\"]"))
+    }
+
+    @Test
     fun `telegram domains use relay even without telegram ips`() {
         val json = RouterConfigFactory.build(
             input = input().copy(

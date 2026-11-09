@@ -3,16 +3,17 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
-## 2026-11-09 — KALIOPA parity, Phase 1
+## 2026-11-09 — KALIOPA parity, Phase 1 + device smoke
 
 ```text
 ./gradlew testGithubDebugUnitTest
-BUILD SUCCESSFUL; classes=82 tests=658 failures=0 errors=0
+BUILD SUCCESSFUL; classes=82 tests=660 failures=0 errors=0
   UnifiedProfileStoreTest: 3/3
-  RouterConfigFactoryTest: 15/15 (включая relay-first для Telegram-доменов)
-  ExternalSourcesTest: 10/10 (6 источников VLESS)
+  RouteSettingsTest: 5/5
+  RouterConfigFactoryTest: 16/16 (relay-first Telegram, google_ai order)
+  ExternalSourcesTest: 11/11 (6 источников VLESS, Opera .244 priority)
 
-./gradlew assembleGithubDebug
+./gradlew assembleGithubDebug / assembleGithubRelease
 BUILD SUCCESSFUL
 
 ./gradlew lintGithubDebug
@@ -21,14 +22,28 @@ Lint снова упал внутри ObjectAnimatorDetector (NPE "Text range mi
 end source") — дефект детектора, отчёт создан.
 
 python tools/audit_diff.py --base HEAD --strict
-audit: files=12 unused_imports=0 unguarded_calls=0
+audit: files=16 unused_imports=0 unguarded_calls=0
 ```
 
-Устройство RMX3370 в этот прогон было отключено (`adb devices` пуст), а
-arm64-AVD на x86_64-хосте не запускается (`FATAL: Avd's CPU Architecture
-'arm64' is not supported by the QEMU2 emulator on x86_64 host`). Поэтому
-UI-смоук меню на устройстве остаётся следующим шагом; сборка, ресурсы,
-unit-тесты и lint проверены.
+Устройство RMX3370 (Android 13, `97db202c`) — смоук нового меню:
+
+```text
+merge:  «В базе 591: живых 0, мёртвых 0, не проверено 591
+        (warp 95, vless 396, proton 100)»
+check:  «В базе 591: живых 141, мёртвых 355, не проверено 95»
+update: «Профили: +288 / −55, всего 629; источников 6/6;
+        в базе 882 (warp 95, vless 684, proton 100, masque 3)»
+WARP:   «выпущено 7, добавлено 7, всего 52»
+```
+
+Настройки генерации WARP открываются из нового блока; «Конфигурации» в меню
+отсутствуют.
+
+Opera EU на этом сеансе не поднялась: и `77.111.247.*`, и `77.111.244.*`
+вернули `502 Bad Gateway` от upstream. Приоритет `.244` сработал (в журнале
+видно переход на `.244`), но причина глубже — API-сеанс/релей Opera, а не
+только адрес. Поэтому проверка Google AI/opencode на живом маршруте остаётся
+открытой; unit-тест порядка слоёв зелёный.
 
 ## 2026-11-08 — статический аудит (без выпуска)
 

@@ -129,7 +129,10 @@
 - [x] `UnifiedProfileStore`: merge/dedup/stats/sync/check/removeDead, dead-registry.
 - [x] Верхний блок «Профили и подписки» и удаление «Конфигураций».
 - [x] Telegram-домены идут через relay первыми.
-- [x] Unit-тесты: 82 класса / 658 тестов, 0 падений; debug-сборка.
-- [ ] UI-смоук на RMX3370: устройство было offline, arm64-AVD на x86_64 не
-      запускается. Следующий шаг — подключить телефон и пройти меню.
-- [ ] Phase 2: google_ai/opencode, spotify/direct, Opera endpoint, engine-адаптеры.
+- [x] `google_ai`/`opencode` отдельным правилом (Opera → primary → DESYNC).
+- [x] Opera EU: `.244` приоритетнее `.247`, слабый кэш перезапрашивает ленту.
+- [x] Unit-тесты: 82 класса / 660 тестов, 0 падений; debug-сборка.
+- [ ] Opera на RMX3370: оба пула дали 502 на текущем сеансе — нужен рабочий
+      API-сеанс/релей, это не только выбор IP. Проверить после релея.
+- [ ] UI-смоук других экранов и Spotify/Discord-правила — Phase 2.
+- [ ] Phase 3: PC-порядок primary и engine-адаптеры единой базы.

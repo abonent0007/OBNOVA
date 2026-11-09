@@ -81,6 +81,12 @@ object SlotResolver {
                 primary?.let { add(SlotKind.PRIMARY) }
                 addAll(lastResort)
             }
+
+            RouteClass.GOOGLE_AI -> buildList {
+                secondary?.let { add(SlotKind.SECONDARY) }
+                primary?.let { add(SlotKind.PRIMARY) }
+                addAll(lastResort)
+            }
         }
     }
 
