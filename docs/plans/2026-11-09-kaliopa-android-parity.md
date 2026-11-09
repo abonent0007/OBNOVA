@@ -132,10 +132,10 @@
 - [x] `google_ai`/`opencode` отдельным правилом (Opera → primary → DESYNC).
 - [x] Opera EU: `.244` приоритетнее `.247`, слабый кэш перезапрашивает ленту.
 - [x] Opera: API и tunnel в одном прогоне используют один egress.
+- [x] Opera: bootstrap через WARP-AWG `AwgSocksBridge` (PC-схема), MASQUE — запас.
 - [x] Spotify — отдельное DIRECT-правило.
 - [x] Unit-тесты: 82 класса / 661 тест, 0 падений; debug-сборка.
-- [ ] Opera на RMX3370: локальный MASQUE не регистрирует API (timeout), релей
-      как `-proxy` тоже timeout; 502/регистрация остаются внешней проблемой.
-      Первичный MULTI при этом поднимается без Opera.
+- [ ] Opera на RMX3370: WARP-AWG bootstrap собран; live-тест ждёт
+      разблокировки телефона (PIN). MASQUE-регистрация даёт timeout.
 - [ ] UI-смоук других экранов, Discord/WhatsApp direct и per-app — Phase 2.
 - [ ] Phase 3: PC-порядок primary и engine-адаптеры единой базы.

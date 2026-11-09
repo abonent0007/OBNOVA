@@ -10115,13 +10115,23 @@ class NovaVpnService : OperaNativeVpnService() {
                     LogManager.log("MULTI: старый backoff Opera игнорируем — Stage 2 поднимает её через мост.")
                 }
                 var ready = OperaProxyManager.ReadyState.FAILED
-                // PC-схема: Opera API и tunnel должны выходить с одного IP.
-                // Локальный MASQUE/DESYNC — единственный egress, который умеет
-                // и DNS, и CONNECT без внешнего релея; релей не подошёл как
-                // `-proxy` (API через него уходит в timeout), поэтому fallback
-                // на него не ставим.
+                // PC-схема: Opera API и tunnel диалятся через WARP full-proxy.
+                // В Android это AwgSocksBridge (userspace AWG, SOCKS 1378) —
+                // MASQUE-egress не умеет резолвить API и не успевает
+                // зарегистрировать сессию. Если WARP-мост не поднялся, остаётся
+                // локальный MASQUE/DESYNC как запас.
                 val operaBootstrapPort = if (masqueProxyPort > 0) masqueProxyPort else desyncPort
-                val operaBootstrap = "socks5h://127.0.0.1:$operaBootstrapPort"
+                val awgBootstrap = if (AwgSocksBridge.startAndWait(this)) {
+                    LogManager.log(
+                        "MULTI: Opera bootstrap через WARP AWG SOCKS ${AwgSocksBridge.LISTEN_ADDRESS}."
+                    )
+                    "socks5h://${AwgSocksBridge.LISTEN_ADDRESS}"
+                } else {
+                    ""
+                }
+                val operaBootstrap = awgBootstrap.ifEmpty {
+                    "socks5h://127.0.0.1:$operaBootstrapPort"
+                }
                 // EU первым, AS — резерв: азиатский узел в ленте жив, когда EU/AM не отвечают.
                 for (country in listOf("EU", "AS")) {
                     ready = OperaProxyManager.ensureReady(
