@@ -9,11 +9,15 @@ class ServiceProbeTargetsTest {
     private fun snapshot(
         main: List<String> = emptyList(),
         second: List<String> = emptyList(),
+        ai: List<String> = emptyList(),
+        googleAi: List<String> = emptyList(),
         youtube: List<String> = emptyList(),
         telegram: List<String> = emptyList(),
     ) = RoutingListsSnapshot(
         main = DomainList.parse(main.asSequence()),
         second = DomainList.parse(second.asSequence()),
+        ai = DomainList.parse(ai.asSequence()),
+        googleAi = DomainList.parse(googleAi.asSequence()),
         youtube = DomainList.parse(youtube.asSequence()),
         telegram = DomainList.parse(telegram.asSequence()),
     )
@@ -41,6 +45,15 @@ class ServiceProbeTargetsTest {
         assertEquals("example.org", targets.first { it.name == "US" }.hosts.first())
         assertEquals("www.youtube.com", targets.first { it.name == "YouTube" }.hosts.first())
         assertEquals("t.me", targets.first { it.name == "Telegram" }.hosts.first())
+    }
+
+    @Test
+    fun `ai probes cover gemini and chatgpt`() {
+        val targets = ServiceProbe.targetsFor(snapshot())
+        val gemini = targets.first { it.name == "Gemini" }.hosts
+        val chatgpt = targets.first { it.name == "ChatGPT" }.hosts
+        assertTrue(gemini.contains("gemini.google.com"))
+        assertTrue(chatgpt.contains("chatgpt.com"))
     }
 
     @Test

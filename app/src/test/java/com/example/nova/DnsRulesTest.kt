@@ -188,12 +188,13 @@ class DnsRulesTest {
     @Test
     fun `the owner rule can be pointed at either transport`() {
         val rule = DnsRulesStore.defaults().first { it.id == "owner" }
+        val known = PriorityDns.KNOWN_ADDRESSES.joinToString("|")
         assertEquals(
-            "${PriorityDns.DOH_URL}|192.144.59.14|186.246.49.127",
+            "${PriorityDns.DOH_URL}|$known",
             rule.toUpstream(DnsRouteMode.DIRECT, PriorityDns.DOH_URL),
         )
         assertEquals(
-            "${PriorityDns.DOT_URL}|192.144.59.14|186.246.49.127",
+            "${PriorityDns.DOT_URL}|$known",
             rule.toUpstream(DnsRouteMode.DIRECT, PriorityDns.DOT_URL),
         )
     }

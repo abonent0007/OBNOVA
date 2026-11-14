@@ -104,8 +104,19 @@ val tgCfWsSecret: String = run {
  * `NOVA_OPERA_RELAY_PASSWORD` остаётся аварийной подменой — но сборка с ней
  * перестаёт быть воспроизводимой, поэтому публиковать её нельзя.
  */
-val relayKeyId: String = "nova-android-164"
+val relayKeyId: String =
+    System.getenv("NOVA_RELAY_KEY_ID")?.trim()?.takeIf { it.isNotEmpty() } ?: "nova-android-164"
 val relayKeyToken: String = "lT9I8ANMn7SONxgv0MGU7pAG8kALlm1_"
+
+/**
+ * Пробовать ли собственный релей API SurfEasy в этой сборке.
+ *
+ * По умолчанию выключено: у обычного выпуска ключ Android привязан к
+ * versionCode, а в личном форке он может быть погашен. Для проверки релея
+ * собирайте с `NOVA_OPERA_RELAY_ENABLED=true` и актуальным ключом.
+ */
+val operaRelayEnabled: Boolean =
+    (System.getenv("NOVA_OPERA_RELAY_ENABLED") ?: "false").trim().equals("true", ignoreCase = true)
 
 val operaRelayPassword: String = run {
     val override = System.getenv("NOVA_OPERA_RELAY_PASSWORD")?.trim()?.takeIf { it.isNotEmpty() }
@@ -171,8 +182,8 @@ android {
         // упаковывается (проверка ниже), а быстрая и диагностическая сборки идут с
         // прежним ключом, который сервер принимает. Провернуть ключ в обход сервера —
         // получить `407` у всех пользователей.
-        versionCode = 175
-        versionName = "1.34.11"
+        versionCode = 176
+        versionName = "1.34.12"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -296,6 +307,7 @@ android {
             buildConfigField("String", "TG_CF_WS_SECRET", "\"$tgCfWsSecret\"")
             buildConfigField("String", "OPERA_RELAY_PASSWORD", operaRelayPassword.asBuildConfigString())
             buildConfigField("String", "RELAY_KEY_ID", relayKeyId.asBuildConfigString())
+            buildConfigField("boolean", "OPERA_RELAY_ENABLED", operaRelayEnabled.toString())
         }
         debug {
             // Для отладочных сборок пустой секрет допустим: подпись просто не
@@ -303,6 +315,7 @@ android {
             buildConfigField("String", "TG_CF_WS_SECRET", "\"$tgCfWsSecret\"")
             buildConfigField("String", "OPERA_RELAY_PASSWORD", operaRelayPassword.asBuildConfigString())
             buildConfigField("String", "RELAY_KEY_ID", relayKeyId.asBuildConfigString())
+            buildConfigField("boolean", "OPERA_RELAY_ENABLED", operaRelayEnabled.toString())
         }
     }
 

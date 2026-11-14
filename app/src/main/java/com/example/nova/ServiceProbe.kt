@@ -36,13 +36,20 @@ object ServiceProbe {
     private val FALLBACK_US = listOf("www.cnn.com", "example.org", "www.wikipedia.org")
     private val FALLBACK_YOUTUBE = listOf("www.youtube.com", "youtube.com")
     private val FALLBACK_TELEGRAM = listOf("telegram.org", "t.me")
+    private val FALLBACK_GEMINI = listOf("gemini.google.com", "aistudio.google.com")
+    private val FALLBACK_CHATGPT = listOf("chatgpt.com", "api.openai.com")
 
-    fun targetsFor(lists: RoutingListsSnapshot): List<Target> = listOf(
-        Target("RU", chooseHosts(FALLBACK_RU, lists.mainDomains())),
-        Target("US", chooseHosts(FALLBACK_US, lists.secondDomains())),
-        Target("YouTube", chooseHosts(FALLBACK_YOUTUBE, lists.youtubeDomains())),
-        Target("Telegram", chooseHosts(FALLBACK_TELEGRAM, lists.telegramDomains())),
-    )
+    fun targetsFor(lists: RoutingListsSnapshot): List<Target> {
+        val aiListed = lists.aiDomains() + lists.googleAiDomains()
+        return listOf(
+            Target("RU", chooseHosts(FALLBACK_RU, lists.mainDomains())),
+            Target("US", chooseHosts(FALLBACK_US, lists.secondDomains())),
+            Target("YouTube", chooseHosts(FALLBACK_YOUTUBE, lists.youtubeDomains())),
+            Target("Telegram", chooseHosts(FALLBACK_TELEGRAM, lists.telegramDomains())),
+            Target("Gemini", chooseHosts(FALLBACK_GEMINI, aiListed)),
+            Target("ChatGPT", chooseHosts(FALLBACK_CHATGPT, aiListed)),
+        )
+    }
 
     fun run(
         context: Context? = null,

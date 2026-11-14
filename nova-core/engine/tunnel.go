@@ -32,6 +32,7 @@ var stateMu sync.Mutex
 // запоминается при подъёме туннеля. Пир у нас всегда ровно один.
 var activePeerKey device.NoisePublicKey
 var activePeerKeySet bool
+
 // Границы MTU туннеля, общие с ползунком в настройках.
 //
 // Потолок 1440: канал телефона 1500 Б, а на IPv4-эндпоинт уходит 60 Б обвязки
@@ -721,11 +722,11 @@ type AndroidTUN struct {
 }
 
 func CreateAndroidTUN(fd int) (tun.Device, error) {
-	dupFD, err := syscall.Dup(fd)
+	dup, err := dupFD(fd)
 	if err != nil {
 		return nil, fmt.Errorf("failed to dup Android TUN fd: %w", err)
 	}
-	file := os.NewFile(uintptr(dupFD), "tun")
+	file := os.NewFile(uintptr(dup), "tun")
 	tunReadLogBudget.Store(12)
 	tunWriteLogBudget.Store(12)
 	mtu := int(tunnelMtu.Load())

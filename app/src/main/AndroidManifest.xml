@@ -83,7 +83,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
-        
+
         <!--
             Самодиагностика. Включается только сборкой с `-PnovaDiagnostics`; в
             обычных сборках компонент выключен и в лаунчере не виден.

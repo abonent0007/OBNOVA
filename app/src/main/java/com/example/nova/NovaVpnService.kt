@@ -875,6 +875,16 @@ class NovaVpnService : OperaNativeVpnService() {
         const val ACTION_SWITCH_VLESS_PROFILE = "SWITCH_VLESS_PROFILE"
 
         /**
+         * Горячая смена профиля MULTI — без разрыва TUN.
+         *
+         * REAPPLY останавливает tun2proxy и сносит интерфейс; в MULTI это ещё и
+         * не меняет профиль, потому что extras ручного WARP-шага эта фаза не
+         * читает. Здесь перезапускается только PRIMARY-мост (MASQUE/AWG), а
+         * tun2proxy продолжает смотреть в тот же loopback-порт роутера.
+         */
+        const val ACTION_SWITCH_MULTI_PROFILE = "SWITCH_MULTI_PROFILE"
+
+        /**
          * Ручной шаг по цепочке транспортов — кнопка «следующий профиль» на главном
          * экране, дошедшая до конца текущего списка.
          *
@@ -1574,6 +1584,16 @@ class NovaVpnService : OperaNativeVpnService() {
         private const val CONNECTED_WARP_CONSECUTIVE_FAILURE_LIMIT = 4
         private const val CONNECTED_WARP_HEALTH_FAILURE_PERCENT = 50
         private const val CONNECTED_WARP_HEALTH_GRACE_MS = 30_000L
+
+        /** Проба PRIMARY в MULTI: бюджет с запасом на mobile-сеть и DESYNC. */
+        private const val MULTI_SESSION_PROBE_TIMEOUT_MS = 4_500
+        /** Сколько подряд неудачных проб считаем отказом PRIMARY. */
+        private const val MULTI_PRIMARY_FAILURE_THRESHOLD = 3
+        /** Первые секунды после CONNECTED не штрафуем: слоты ещё прогреваются. */
+        private const val MULTI_PRIMARY_PROBE_GRACE_MS = 20_000L
+        /** Не чаще одного горячего перезапуска PRIMARY за полминуты. */
+        private const val MULTI_PRIMARY_RESTART_COOLDOWN_MS = 30_000L
+
         @Volatile
         private var lastStoppedStateCleanupAtMs = 0L
         @Volatile
@@ -1922,6 +1942,33 @@ class NovaVpnService : OperaNativeVpnService() {
             return handleBackgroundHeartbeat(clientData, startId)
         }
 
+        if (intent?.action == ACTION_SWITCH_MULTI_PROFILE) {
+            if (!isRunning || currentState != STATE_CONNECTED || currentBackendLabel != BACKEND_MULTI) {
+                LogManager.log(
+                    "MULTI: смена профиля пропущена — сеанс не активен " +
+                        "(state=$currentState, backend=$currentBackendLabel)."
+                )
+                return START_NOT_STICKY
+            }
+            startSafeServiceThread("NovaMultiProfileSwitch") {
+                val clientData = ClientData(this)
+                val switched = rotateMultiPrimary(clientData, reason = "manual-switch")
+                if (switched) {
+                    multiRetryAttempt = 0
+                    publishTransportNotice(
+                        clientData,
+                        "Профиль MULTI сменён: ${multiProfileLabel()}",
+                    )
+                } else {
+                    publishTransportNotice(
+                        clientData,
+                        "Сменить профиль MULTI не удалось — оставлен прежний.",
+                    )
+                }
+            }
+            return START_STICKY
+        }
+
         if (intent?.action == ACTION_PROBE_MASQUE) {
             probeMasqueFromServiceProcess(clientData)
             return START_NOT_STICKY
@@ -2118,6 +2165,45 @@ class NovaVpnService : OperaNativeVpnService() {
         val warpQualityDiagnosticsStart = intent?.action == ACTION_START_WARP_QUALITY_DIAGNOSTICS
         val regionPreference = intent?.getStringExtra(EXTRA_EXIT_REGION)
 
+        // Strict проверяется до всех веток запуска: явный WARP-интент (с
+        // privateKey/IPV4…), Opera-only и ручной регион не должны даже дойти до
+        // построения TUN. Остановка и служебные действия (reapply, probes) сюда
+        // не относятся — они не меняют data plane.
+        val strictFullTunnelStart = RoutingStore(this).getRoutePolicyMode().isStrictFullTunnel
+        if (strictFullTunnelStart) {
+            val strictRequestedRegion = normalizeRegionPreference(
+                regionPreference ?: clientData.getExitRegionPreference()
+            )
+            val strictRegionAllowsMulti = strictRequestedRegion == "auto" ||
+                strictRequestedRegion == ConnectionSelectorPolicy.CHIP_MULTI
+            // Явные WARP-параметры — команда «поднимай WARP», кроме smart-пути:
+            // в AUTO/MULTI service сам решает data plane и параметры игнорирует.
+            val explicitWarp = privateKey != null && ipv4 != null && ipv6 != null &&
+                peerPub != null && peerEndpoint != null &&
+                !((smartConnectStart || diagnosticsStart) && strictRegionAllowsMulti)
+            val smartRequestedNonMulti = (smartConnectStart || diagnosticsStart) &&
+                !strictRegionAllowsMulti
+            if (explicitWarp || operaOnlyStart || warpBootstrapStart || smartRequestedNonMulti) {
+                val requested = when {
+                    explicitWarp || warpBootstrapStart -> "WARP"
+                    operaOnlyStart -> "OPERA"
+                    else -> strictRequestedRegion
+                }
+                LogManager.log(
+                    "STRICT: запуск $requested отклонён — Strict Full Tunnel работает только в MULTI."
+                )
+                val client = ClientData(this)
+                client.clearTransientConnectingPending()
+                client.clearSoftReapplyPending()
+                client.clearRestartSession()
+                publishTransportNotice(client, "Strict: доступен только MULTI.", keepOnStop = true)
+                isRunning = false
+                broadcastState(STATE_STOPPED)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+
         // После ветки выше intent не null и это не RESTORE_LAST_SESSION:
         // повторная проверка того же условия была недостижимой.
         applyExplicitReapplyOverrides(intent, clientData)
@@ -2155,6 +2241,9 @@ class NovaVpnService : OperaNativeVpnService() {
         }
 
         if (smartConnectStart || diagnosticsStart) {
+            // Явный пуск пользователем начинает счёт повторов заново; авто-
+            // восстановление приходит действием RESTORE и backoff не сбрасывает.
+            if (smartConnectStart) multiRetryAttempt = 0
             isUserStopped = false
             explicitStopRequested = false
             suppressSessionRestore = false
@@ -2485,6 +2574,8 @@ class NovaVpnService : OperaNativeVpnService() {
             currentAttemptTotal,
             currentTransportLabel,
             currentTransportNotice,
+            alwaysOn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) isAlwaysOn else null,
+            lockdown = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) isLockdownEnabled else null,
         )
         if (state == STATE_CONNECTING || state == STATE_CONNECTED) {
             scheduleBackgroundKeepAlive(clientData, state)
@@ -2559,7 +2650,18 @@ class NovaVpnService : OperaNativeVpnService() {
             if (!isDeviceInteractiveNow()) {
                 if (currentVpn != null && isVpnNetworkNotForeign(connectivityManager, currentVpn)) {
                     logVpnOwnershipRescueIfNeeded(connectivityManager, currentVpn)
-                    connectedHealthProbeFailures = 0
+                    // Наличие интерфейса не значит, что трафик ходит: MASQUE-мост
+                    // и роутер могут быть живы, а data-plane уже мёртв. Проверяем
+                    // раз в сердцебиение, но реконнект запускаем после двух
+                    // промахов подряд (см. evaluateNetworkRecoveryNeed).
+                    if (currentState == STATE_CONNECTED &&
+                        !isDnsBackendLabel(currentBackendLabel) &&
+                        !isTorBackendLabel(currentBackendLabel)
+                    ) {
+                        scheduleNetworkRecoveryCheck("background-heartbeat")
+                    } else {
+                        connectedHealthProbeFailures = 0
+                    }
                     return START_STICKY
                 }
                 LogManager.log(
@@ -4352,6 +4454,24 @@ class NovaVpnService : OperaNativeVpnService() {
         if (session != persistedSession) {
             clientData.saveRestartSession(session)
         }
+        if (RoutingStore(this).getRoutePolicyMode().isStrictFullTunnel && session.kind != "multi") {
+            // После включения Strict старая WARP/Opera-сессия не восстанавливается:
+            // иначе авто-реконнект поднял бы backend, который Strict запрещает.
+            LogManager.log(
+                "STRICT: восстановление сессии ${session.kind} отклонено — работает только MULTI."
+            )
+            clientData.clearRestartSession()
+            isRunning = false
+            broadcastState(STATE_STOPPED)
+            return false
+        }
+        // Поток повтора и будильник приходят почти одновременно. Второй
+        // RESTORE поверх идущего подключения раньше помечал фазу к перезапуску
+        // и обрывал уже поднятый MASQUE. Если сеанс уже поднимается — не мешаем.
+        if (isRunning && currentState == STATE_CONNECTING) {
+            LogManager.log("restorePersistedSession: подключение уже идёт — повтор не заводим.")
+            return true
+        }
         if (suppressSessionRestore) {
             LogManager.log("restorePersistedSession: восстановление подавлено текущим состоянием сервиса.")
             return false
@@ -4371,6 +4491,7 @@ class NovaVpnService : OperaNativeVpnService() {
             )
         }
         val expectedBackendHint = when (session.kind) {
+            "multi" -> BACKEND_MULTI
             "opera" -> getOperaFallbackSequence(session.region).firstOrNull()?.second?.let { "$BACKEND_OPERA-$it" }
                 ?: BACKEND_OPERA
             else -> BACKEND_WARP
@@ -4391,6 +4512,11 @@ class NovaVpnService : OperaNativeVpnService() {
         val connectGenerationId = beginConnectGeneration(stopExisting = true)
         startSafeServiceThread("NovaRestoreSession") {
             when (session.kind) {
+                "multi" -> startSmartConnection(
+                    regionPreferenceOverride = ConnectionSelectorPolicy.CHIP_MULTI,
+                    diagnosticsMode = false,
+                    connectGenerationId = connectGenerationId,
+                )
                 "opera" -> configureAndStartOperaOnly(
                     regionPreferenceOverride = session.region,
                     connectGenerationId = connectGenerationId,
@@ -6027,20 +6153,61 @@ class NovaVpnService : OperaNativeVpnService() {
         val warpAllowed = shouldUseWarpTransport(regionPreference, clientData)
         val operaAllowed = shouldAllowOperaTransport(regionPreference, clientData)
         val explicitMulti = regionPreference == ConnectionSelectorPolicy.CHIP_MULTI
+        val routingStore = RoutingStore(this)
+        val strictFullTunnel = routingStore.getRoutePolicyMode().isStrictFullTunnel
+        if (strictFullTunnel && !explicitMulti && regionPreference != "auto") {
+            // Strict не подменяет backend молча и не оставляет старую политику
+            // под видом Strict: подключение не начинается вовсе.
+            val message = "STRICT: backend $regionPreference отклонён — Strict Full Tunnel работает только в MULTI."
+            LogManager.log(message)
+            clientData.clearTransientConnectingPending()
+            clientData.clearSoftReapplyPending()
+            clientData.clearRestartSession()
+            publishTransportNotice(clientData, "Strict: доступен только MULTI.", keepOnStop = true)
+            isRunning = false
+            broadcastState(STATE_STOPPED)
+            stopSelf()
+            return
+        }
+        val policyRequirements = RouterPolicyRequirements.evaluate(
+            smartRouting = routingStore.isSmartRoutingEnabled(),
+            overrides = RouteSettings.SERVICES.associate { service ->
+                service.key to routingStore.getRouteOverride(service.key)
+            },
+            killSwitch = routingStore.isKillSwitch(),
+        )
+        // Политика AUTO может выбрать MULTI; ручной WARP/MASQUE/OPERA не
+        // подменяем даже при активных сервисных правилах. Strict требует MULTI
+        // независимо от остальных требований.
+        val policyMulti = strictFullTunnel ||
+            (regionPreference == "auto" && policyRequirements.requiresMulti)
         try {
             if (!ensureFreshTransportState(connectGenerationId, "smart-connect")) return
-            if (explicitMulti || RoutingStore(this).isSmartRoutingEnabled()) {
+            if (explicitMulti || policyMulti) {
                 if (runMultiPhase(clientData, connectGenerationId)) return
                 if (isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) return
-                if (explicitMulti) {
-                    LogManager.log("MULTI выбран явно и не поднялся — другим транспортом не подменяем.")
-                    publishTransportNotice(clientData, "MULTI не поднялся.", keepOnStop = true)
-                    isRunning = false
-                    broadcastState(STATE_STOPPED)
-                    stopSelf()
+                val reason = if (explicitMulti) {
+                    "MULTI выбран явно"
+                } else {
+                    "MULTI обязателен: ${policyRequirements.reasons.joinToString(",")}"
+                }
+                LogManager.log("$reason — другим транспортом не подменяем.")
+                publishTransportNotice(clientData, "MULTI не поднялся — пробуем ещё раз.", keepOnStop = true)
+                // Фаза могла выйти до `finally`-очистки: снимаем локальные
+                // слоты, иначе новый цикл упрётся в занятые порты 1373/1378/1379.
+                stopMultiLocalTransports()
+                if (scheduleMultiRetryInsteadOfStopping(
+                        clientData = clientData,
+                        connectGenerationId = connectGenerationId,
+                        reason = "MULTI не поднялся",
+                    )
+                ) {
                     return
                 }
-                LogManager.log("MULTI не поднялся — продолжаем обычным транспортом.")
+                isRunning = false
+                broadcastState(STATE_STOPPED)
+                stopSelf()
+                return
             }
             // Tor проверяется раньше всего остального: `shouldUseWarpTransport`
             // отвечает на него `false`, и без этой ветки выбранный TOR уезжал бы во
@@ -7885,6 +8052,93 @@ class NovaVpnService : OperaNativeVpnService() {
         }
     }
 
+    /**
+     * Повтор MULTI вместо STOPPED.
+     *
+     * Раньше явный MULTI при любом отказе уходил в `STATE_STOPPED`, и сеанс
+     * возвращался только ручным нажатием. Теперь, если авто-реконнект включён,
+     * сохраняется `RestartSession(kind = "multi")` и через нарастающую паузу
+     * поднимается новый сеанс. Ручная остановка и выключенный авто-реконнект
+     * по-прежнему останавливают всё сразу.
+     */
+    private fun scheduleMultiRetryInsteadOfStopping(
+        clientData: ClientData,
+        connectGenerationId: Int,
+        reason: String,
+    ): Boolean {
+        if (isUserStopped || explicitStopRequested || cleanupInProgress.get()) return false
+        if (!clientData.getAutoReconnect()) return false
+        if (!isConnectGenerationCurrent(connectGenerationId)) return false
+        if (!RouterProcess.isAvailable(this)) return false
+        // Живой цикл уже сам запланирует повтор, когда увидит флаг и выйдет.
+        // Второй планировщик поверх него только удвоил бы попытки.
+        if (multiPhaseActive.get()) {
+            multiRestartRequested = true
+            broadcastState(STATE_CONNECTING)
+            return true
+        }
+        // В AUTO MULTI — только одна из фаз; сохранять его как выбранный режим
+        // нельзя, иначе после перезапуска пользователь получит другой транспорт.
+        if (normalizeRegionPreference(clientData.getExitRegionPreference()) !=
+            ConnectionSelectorPolicy.CHIP_MULTI
+        ) {
+            return false
+        }
+
+        val delayMs = when (multiRetryAttempt) {
+            0 -> 2_500L
+            1 -> 5_000L
+            2 -> 15_000L
+            3 -> 30_000L
+            else -> 60_000L
+        }
+        multiRetryAttempt = (multiRetryAttempt + 1).coerceAtMost(5)
+        clientData.saveRestartSession(
+            RestartSession(
+                kind = "multi",
+                region = ConnectionSelectorPolicy.CHIP_MULTI,
+            )
+        )
+        clientData.markTransientConnectingPending((delayMs + 12_000L).coerceAtLeast(12_000L))
+        LogManager.log(
+            "$reason. Вместо STOPPED планируем новый MULTI-цикл через " +
+                "${delayMs / 1000} с (попытка $multiRetryAttempt)."
+        )
+        broadcastState(STATE_CONNECTING)
+        // Будильник переживает смерть процесса :vpn: поток ниже поднимет сеанс
+        // только если процесс ещё жив. Оба пути идемпотентны — restore сначала
+        // пытается принять уже здоровый VPN.
+        scheduleSessionRestoreAfterProcessExit()
+        startSafeServiceThread("NovaScheduleMultiRetry") {
+            try {
+                Thread.sleep(delayMs)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return@startSafeServiceThread
+            }
+            if (isUserStopped || explicitStopRequested || cleanupInProgress.get()) return@startSafeServiceThread
+            if (!isConnectGenerationCurrent(connectGenerationId)) return@startSafeServiceThread
+            if (tun2proxyForceStopAtMs != 0L) {
+                // Остановка tun2proxy уже обрекла этот процесс: поднимать сеанс
+                // здесь бессмысленно, нужен свежий :vpn.
+                LogManager.log("MULTI recovery: процесс :vpn обречён — просим свежий процесс.")
+                requestRestartFromMainProcess()
+                return@startSafeServiceThread
+            }
+            runCatching {
+                ContextCompat.startForegroundService(
+                    applicationContext,
+                    Intent(applicationContext, NovaVpnService::class.java).apply {
+                        action = ACTION_RESTORE_LAST_SESSION
+                    }
+                )
+            }.onFailure { error ->
+                LogManager.log("Не удалось запустить MULTI recovery: ${error.message}")
+            }
+        }
+        return true
+    }
+
     private fun scheduleWarpRetryInsteadOfStopping(
         clientData: ClientData,
         connectGenerationId: Int,
@@ -9150,6 +9404,7 @@ class NovaVpnService : OperaNativeVpnService() {
         // спорит с туннелем за тот же узкий канал. Адреса ниже — только чтобы у
         // интерфейса был DNS: запросы на :53 перехватывает tun2proxy.
         val isDnsTunnel = isDnsBackendLabel(backendLabel)
+        val strictFullTunnel = isStrictFullTunnel()
         val (resolvedDnsServers, dnsLabel) = if (isDnsTunnel) {
             LocalDnsProxyManager.stop(LogManager::log)
             listOf("1.1.1.1", "1.0.0.1") to "без правил Nova (режим DNS-туннеля)"
@@ -9170,6 +9425,10 @@ class NovaVpnService : OperaNativeVpnService() {
             // каскад от прошлого WARP продолжал бы числиться включённым (замер
             // 2026-09-29: «DNS intercept enabled» в начале DNS-сеанса).
             applyPlainDnsIntercept(emptyList(), reason = "dns-tunnel")
+        } else if (strictFullTunnel) {
+            // Strict: никаких DNS-carve-outs. Старую политику ядра гасим, чтобы
+            // она не пережила переключение с WARP.
+            applyPlainDnsIntercept(emptyList(), reason = "strict-full-tunnel")
         } else {
             applyCoreDnsInterceptConfig(
                 clientData = clientData,
@@ -9179,7 +9438,13 @@ class NovaVpnService : OperaNativeVpnService() {
                 dnsLabel = "",
             )
         }
-        applyCoreDomainBypassPolicy(clientData, backendLabel)
+        if (strictFullTunnel) {
+            runCatching { Nova.setDomainBypassPolicy(false, "", "", false) }
+            runCatching { Nova.setDomainBypassPinned("") }
+            LogManager.log("STRICT: обход по доменам и зонам отключён.")
+        } else {
+            applyCoreDomainBypassPolicy(clientData, backendLabel)
+        }
         if (isTorBackendLabel(backendLabel)) {
             applyTorSplitTunnelPolicy(builder, clientData)
         } else {
@@ -9211,6 +9476,11 @@ class NovaVpnService : OperaNativeVpnService() {
                         "имена разрешает выходной узел."
                 )
                 emptySet()
+            } else if (strictFullTunnel) {
+                LogManager.log(
+                    "STRICT: DNS и домены не выводятся мимо VPN — ни одного excludeRoute."
+                )
+                emptySet()
             } else if (isDnsTunnel) {
                 domainBypassAddresses(underlyingNetwork)
             } else {
@@ -9222,6 +9492,7 @@ class NovaVpnService : OperaNativeVpnService() {
                     ownerDnsViaTunnel = true,
                 ) + domainBypassAddresses(underlyingNetwork)
             },
+            bypassLocalNetworks = !strictFullTunnel,
         )
         applyUnderlyingNetworkHint(
             builder = builder,
@@ -9233,6 +9504,11 @@ class NovaVpnService : OperaNativeVpnService() {
         // просит выключить (подсказка «Отключите DoT», как у Tor).
         if (isDnsTunnel) {
             LogManager.log("DNS: системный «Частный DNS» оставлен как есть — правила Nova не применяются.")
+        } else if (strictFullTunnel) {
+            LogManager.log(
+                "STRICT: Private DNS bypass отключён — сервер остаётся внутри туннеля, " +
+                    "без excludeRoute."
+            )
         } else applyPrivateDnsBypass(
             builder = builder,
             connectivityManager = connectivityManager,
@@ -9930,6 +10206,13 @@ class NovaVpnService : OperaNativeVpnService() {
 
     @Volatile
     private var multiCfProxyPort = 0
+
+    /**
+     * Транспорт cfproxy-слота: "masque", "awg" или "". UDP-capability
+     * определяется этим полем при создании слота, а не номером порта.
+     */
+    @Volatile
+    private var multiCfProxyKind = ""
     @Volatile
     private var multiVlessPort = 0
     @Volatile
@@ -9937,6 +10220,73 @@ class NovaVpnService : OperaNativeVpnService() {
 
     @Volatile
     private var multiVlessActive = false
+
+    /**
+     * Транспорты MULTI с фактически проверенным non-RU egress.
+     * Заполняется только после ExitAddressV4.viaProxy; при reconnect
+     * сбрасывается. AI-правила без этого набора остаются fail-closed.
+     */
+    @Volatile
+    private var multiNonRuSlots: Set<String> = emptySet()
+
+    /** Какой порт Opera/VLESS уже проверялся, чтобы не запускать probe-цикл. */
+    @Volatile
+    private var multiOperaProbedPort = 0
+    @Volatile
+    private var multiVlessProbedPort = 0
+
+    /** Поколение egress-проверок: старый probe не должен менять новый сеанс. */
+    @Volatile
+    private var multiEgressGeneration = 0
+
+    /**
+     * Каким транспортом сейчас поднят PRIMARY в MULTI.
+     *
+     * Нужен кнопке «след. профиль» и сторожу: без него они не знают, что именно
+     * перезапускать — MASQUE-мост, AWG-мост, VLESS-ядро или DESYNC.
+     */
+    @Volatile
+    private var multiPrimaryKind = ""
+
+    /** Активный endpoint MASQUE: следующий профиль начинается не с него. */
+    @Volatile
+    private var multiMasqueEndpoint = ""
+
+    /** Активный AWG-конфиг: им восстанавливаемся, если следующий seed не поднялся. */
+    @Volatile
+    private var multiAwgActiveConfig = ""
+    @Volatile
+    private var multiAwgSeedLabel = ""
+
+    /** Локальный DESYNC-порт: после переезда PRIMARY он остаётся слотом spoof. */
+    @Volatile
+    private var multiDesyncPort = 0
+
+    private var multiAwgSeedCursor = 0
+
+    /** Счётчик неудачных фоновых проверок data-plane в MULTI. */
+    @Volatile
+    private var multiPrimaryProbeFailures = 0
+
+    /** Когда PRIMARY последний раз перезапускали по отказу трафика. */
+    @Volatile
+    private var multiLastPrimaryRestartAtMs = 0L
+
+    /** Сколько раз подряд не удалось восстановить MULTI. Растёт только в отказе. */
+    private var multiRetryAttempt = 0
+
+    /** Один перезапуск PRIMARY за раз: кнопка и сторож могут прийти одновременно. */
+    private val multiProfileSwitchActive = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Просьба сторожу выйти из цикла MULTI и отдать сеанс новому циклу.
+     *
+     * Нельзя запускать `restore` поверх живого `runMultiPhase`: фаза увидит
+     * `multiPhaseActive` и второй заход молча пропустит. Поэтому сначала
+     * выходим из цикла, затем `startSmartConnection` планирует повтор.
+     */
+    @Volatile
+    private var multiRestartRequested = false
 
     @Volatile
     private var desyncPhaseGeneration = -1
@@ -10112,6 +10462,50 @@ class NovaVpnService : OperaNativeVpnService() {
         return packet + cipher.update(framed)
     }
 
+    /**
+     * Поднимает VLESS SOCKS в фоне как кандидат на non-RU выход.
+     *
+     * WARP/MASQUE/AWG на этом операторе выходят из РФ; для приложений, которым
+     * нужен IP другой страны, остаётся VLESS. Порт живёт в router-слоте `vless`,
+     * поэтому после успешной пробы достаточно reloadRouterConfig().
+     */
+    private fun startVlessForForeignEgressInBackground(
+        clientData: ClientData,
+        connectGenerationId: Int,
+    ) {
+        if (!BuildConfig.CF_PROXY_SLOT_ENABLED) return
+        startSafeServiceThread("NovaVlessForeign") {
+            // Новый профиль/порт: старый egress-результат больше не годится.
+            multiEgressGeneration++
+            multiVlessProbedPort = 0
+            updateNonRuSlot("vless", false)
+            if (clientData.getVlessProfileLinks().isEmpty()) {
+                // Чистая установка: подписки ещё не загружены. Тянем их здесь,
+                // иначе VLESS-слот стартует с одними встроенными семенами.
+                runCatching {
+                    val updated = ProfileUpdateCoordinator.updateAll(applicationContext)
+                    LogManager.log("MULTI: подписки для VLESS — ${updated.message}")
+                }.onFailure {
+                    LogManager.log("MULTI: подписки для VLESS не обновились — ${it.message}")
+                }
+            }
+            val port = startVlessSocksForMulti(
+                clientData = clientData,
+                connectGenerationId = connectGenerationId,
+                maxCandidates = 6,
+                budgetMs = 75_000L,
+            )
+            if (port <= 0 || isUserStopped || !isConnectGenerationCurrent(connectGenerationId)) {
+                LogManager.log("MULTI: VLESS для non-RU выхода не поднялся.")
+                return@startSafeServiceThread
+            }
+            multiVlessPort = port
+            multiVlessActive = true
+            reloadRouterConfig()
+            LogManager.log("MULTI: VLESS SOCKS 127.0.0.1:$port готов как non-RU выход.")
+        }
+    }
+
     private fun startVlessForTelegramInBackground(
         clientData: ClientData,
         connectGenerationId: Int,
@@ -10129,6 +10523,9 @@ class NovaVpnService : OperaNativeVpnService() {
                 return@startSafeServiceThread
             }
             LogManager.log("MULTI: AWG для Telegram не поднялся — пробуем VLESS.")
+            multiEgressGeneration++
+            multiVlessProbedPort = 0
+            updateNonRuSlot("vless", false)
             val port = startVlessSocksForMulti(
                 clientData,
                 connectGenerationId,
@@ -10221,10 +10618,19 @@ class NovaVpnService : OperaNativeVpnService() {
      */
     private fun runMultiPhase(clientData: ClientData, connectGenerationId: Int): Boolean {
         if (!multiPhaseActive.compareAndSet(false, true)) {
-            LogManager.log("MULTI: фаза уже идёт — второй заход не заводим.")
-            return true
+            // Не «тихо пропускаем»: вызывающий решит, что сеанс уже поднят, и
+            // ничего не сделает. Просим живой цикл завершиться — тогда новый
+            // заход начнётся после его выхода, а не поверх него.
+            LogManager.log("MULTI: фаза уже идёт — просим её завершиться и повторить.")
+            multiRestartRequested = true
+            return false
         }
         try {
+            // Новый сеанс: старые egress-проверки недействительны.
+            multiEgressGeneration++
+            multiNonRuSlots = emptySet()
+            multiOperaProbedPort = 0
+            multiVlessProbedPort = 0
             if (!RouterProcess.isAvailable(this)) {
                 LogManager.log("MULTI: нет libnova-router.so для ABI ${Build.SUPPORTED_ABIS.joinToString()}.")
                 publishTransportNotice(clientData, "MULTI недоступен на этом устройстве.", keepOnStop = true)
@@ -10232,6 +10638,32 @@ class NovaVpnService : OperaNativeVpnService() {
             }
             setCurrentBackend(BACKEND_MULTI)
             currentTransportLabel = TRANSPORT_MULTI
+            multiRestartRequested = false
+            // Чистая установка: сохранённой WARP-конфигурации нет. Кладём
+            // bundled bootstrap, иначе AWG-мост стартует только с asset-seed,
+            // который на этой сети уже не проходит.
+            runCatching {
+                val bootstrap = clientData.resolveWarpConfigForReuse(repairWithBootstrap = true)
+                if (bootstrap?.source == "bootstrap-seed") {
+                    LogManager.log("MULTI: сохранён bundled WARP bootstrap (${bootstrap.config.peerEndpoint}).")
+                }
+            }.onFailure {
+                LogManager.log("MULTI: bundled WARP bootstrap не сохранился — ${it.message}")
+            }
+            // MULTI теперь переживает смерть процесса: без этой записи
+            // `restorePersistedSession` не знал, что поднимать, и после отказа
+            // оставался STOPPED до ручного нажатия. В AUTO-режиме MULTI — лишь
+            // одна из фаз, и записывать его как выбранный режим нельзя.
+            if (normalizeRegionPreference(clientData.getExitRegionPreference()) ==
+                ConnectionSelectorPolicy.CHIP_MULTI
+            ) {
+                clientData.saveRestartSession(
+                    RestartSession(
+                        kind = "multi",
+                        region = ConnectionSelectorPolicy.CHIP_MULTI,
+                    )
+                )
+            }
             broadcastState(STATE_CONNECTING)
             installSocketProtector()
 
@@ -10259,16 +10691,19 @@ class NovaVpnService : OperaNativeVpnService() {
             val operaRetryAfter = routingStore.operaRetryAfterMs()
             val nowMs = System.currentTimeMillis()
             var cfProxyPort = 0
+            var cfProxyKind = ""
             var masqueProxyPort = 0
             if (BuildConfig.CF_PROXY_SLOT_ENABLED) {
                 // Сначала MASQUE/443: на этой сети UDP WireGuard режется, а
                 // QUIC проходит. AWG оставлен запасным для сетей без QUIC.
                 if (MasqueSocksBridge.startAndWait(this)) {
                     cfProxyPort = MasqueSocksBridge.LISTEN_PORT
+                    cfProxyKind = "masque"
                     masqueProxyPort = cfProxyPort
                     LogManager.log("MULTI: cfproxy = MASQUE SOCKS ${MasqueSocksBridge.LISTEN_ADDRESS}.")
                 } else if (AwgSocksBridge.startAndWait(this)) {
                     cfProxyPort = AwgSocksBridge.LISTEN_PORT
+                    cfProxyKind = "awg"
                     LogManager.log("MULTI: cfproxy = AWG SOCKS ${AwgSocksBridge.LISTEN_ADDRESS}.")
                 } else {
                     LogManager.log("MULTI: cfproxy не поднялся — Telegram пойдёт через резервные слоты.")
@@ -10292,6 +10727,11 @@ class NovaVpnService : OperaNativeVpnService() {
                     "MULTI: Opera недавно не поднялась — SECONDARY пропускаем ещё " +
                         "${(operaRetryAfter - nowMs) / 1000} с."
                 )
+            } else if (multiRetryAttempt > 0) {
+                // После сбоя не ждём Opera 30+ секунд: сначала поднимаем
+                // PRIMARY и возвращаем интернет, Opera догонит в фоне.
+                LogManager.log("MULTI: повтор после сбоя — Opera не ждём, поднимаем PRIMARY.")
+                routingStore.setOperaRetryAfterMs(System.currentTimeMillis() + 60_000L)
             } else if (OperaProxyManager.isTransportSupportedOnDevice(this)) {
                 if (nowMs < operaRetryAfter) {
                     // Старый backoff накоплен прямым запуском без моста. С Stage 2
@@ -10323,10 +10763,13 @@ class NovaVpnService : OperaNativeVpnService() {
                         // Opera сейчас часто недоступна (API/relay timeout).
                         // Держим короткий бюджет на старте, чтобы MULTI не висел
                         // минуты; secondary подхватится, если первый план успел.
-                        readyTimeoutMs = 8_000L,
-                        maxLaunchPlans = 4,
-                        bootstrapApiProxy = operaBootstrap,
-                        bootstrapDialProxy = operaBootstrap,
+                        readyTimeoutMs = 5_000L,
+                        maxLaunchPlans = 2,
+                        // PC-схема: API — напрямую, туннель набирается тоже
+                        // напрямую. Через MASQUE Opera получала 502 на API и
+                        // code 12 на server-selection.
+                        bootstrapApiProxy = "",
+                        bootstrapDialProxy = "",
                         shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
                     )
                     if (ready != OperaProxyManager.ReadyState.FAILED) break
@@ -10374,14 +10817,42 @@ class NovaVpnService : OperaNativeVpnService() {
             multiSpoofPort = spoofPort
             multiOperaPort = operaPort
             multiCfProxyPort = cfProxyPort
+            multiCfProxyKind = cfProxyKind
             multiVlessPort = vlessPort
-            val config = buildMultiRouterConfig(
-                primaryPort,
-                operaPort,
-                spoofPort,
-                cfProxyPort = cfProxyPort,
-                vlessPort = vlessPort,
-            )
+            multiPrimaryKind = when {
+                masquePrimary -> "masque"
+                cfProxyPort > 0 -> "awg"
+                vlessPort > 0 -> "vless"
+                else -> "desync"
+            }
+            multiMasqueEndpoint = if (masquePrimary) MasqueSocksBridge.lastStartedEndpoint else ""
+            if (!masquePrimary && cfProxyPort > 0) {
+                // Первый AWG-мост поднят из bundled seed. Запоминаем его, чтобы
+                // кнопка «след. профиль» могла вернуться к рабочему профилю,
+                // если следующий seed не поднимется.
+                multiAwgActiveConfig = runCatching {
+                    assets.open("warp_awg_seed.conf").bufferedReader().use { it.readText() }
+                }.getOrDefault("")
+                multiAwgSeedLabel = "bundled seed"
+            }
+            multiDesyncPort = desyncPort
+            multiPrimaryProbeFailures = 0
+            multiLastPrimaryRestartAtMs = 0L
+            val config = try {
+                buildMultiRouterConfig(
+                    primaryPort,
+                    operaPort,
+                    spoofPort,
+                    cfProxyPort = cfProxyPort,
+                    vlessPort = vlessPort,
+                )
+            } catch (error: IllegalArgumentException) {
+                // Strict-конфигурация не собирается (например, DIRECT-override).
+                // Молча подставлять старую или обычную политику запрещено.
+                LogManager.log("STRICT: RouterConfig отклонён — ${error.message}")
+                stopMultiLocalTransports()
+                return false
+            }
             val routerPort = RouterProcess.start(this, config, LogManager::log)
             if (routerPort == 0) {
                 DesyncProxyManager.stop(LogManager::log)
@@ -10405,8 +10876,26 @@ class NovaVpnService : OperaNativeVpnService() {
             }
             markSuccessfulTunnelProbe()
             broadcastState(STATE_CONNECTED)
-            if (masqueProxyPort > 0 && vlessPort == 0) {
-                startVlessForTelegramInBackground(clientData, connectGenerationId)
+            multiRetryAttempt = 0
+            publishTransportNotice(clientData, "MULTI: ${multiProfileLabel()}")
+            // После чистого install единая база пуста, хотя bundled/seed-профили
+            // уже есть. Сливаем их один раз в фоне, чтобы меню не показывало
+            // «профилей нет» при рабочем соединении.
+            if (runCatching { UnifiedProfileStore.read(this).isEmpty() }.getOrDefault(false)) {
+                startSafeServiceThread("NovaUnifiedAutoMerge") {
+                    runCatching {
+                        val merged = UnifiedProfileStore.syncFromLegacy(this)
+                        LogManager.log("Профили: автоперенос после чистого старта — ${merged.summary()}")
+                    }.onFailure {
+                        LogManager.log("Профили: автоперенос не удался — ${it.message}")
+                    }
+                }
+            }
+            if (vlessPort == 0) {
+                // VLESS нужен не только Telegram: это единственный кандидат на
+                // non-RU egress, когда Opera/WARP выходят из РФ. Поднимаем в
+                // фоне и добавляем в маршруты после успешной пробы.
+                startVlessForForeignEgressInBackground(clientData, connectGenerationId)
             }
             LogManager.log(
                 "MULTI активен: router 127.0.0.1:$routerPort → PRIMARY$primaryPort" +
@@ -10432,8 +10921,10 @@ class NovaVpnService : OperaNativeVpnService() {
                             country = "EU",
                             readyTimeoutMs = 20_000L,
                             maxLaunchPlans = 40,
-                            bootstrapApiProxy = "socks5h://127.0.0.1:${if (masqueProxyPort > 0) masqueProxyPort else desyncPort}",
-                            bootstrapDialProxy = "socks5h://127.0.0.1:${if (masqueProxyPort > 0) masqueProxyPort else desyncPort}",
+                            // API и туннель — напрямую, как в PC-схеме; через
+                            // MASQUE регистрация даёт 502, а selection — code 12.
+                            bootstrapApiProxy = "",
+                            bootstrapDialProxy = "",
                             shouldAbort = { isUserStopped || !isConnectGenerationCurrent(connectGenerationId) },
                         )
                         if (ready != OperaProxyManager.ReadyState.FAILED) {
@@ -10453,7 +10944,13 @@ class NovaVpnService : OperaNativeVpnService() {
 
             val tunThread = operaTunThread
             var desyncDownTicks = 0
+            var lastPrimaryProbeAtMs = 0L
             while (!isUserStopped && isConnectGenerationCurrent(connectGenerationId)) {
+                if (multiRestartRequested) {
+                    multiRestartRequested = false
+                    LogManager.log("MULTI: сторож просит новый цикл — выходим из текущего.")
+                    return false
+                }
                 if (tunThread != null && !tunThread.isAlive) {
                     LogManager.log("MULTI: tun2proxy завершился — поднимаем сеанс заново.")
                     return false
@@ -10475,6 +10972,47 @@ class NovaVpnService : OperaNativeVpnService() {
                         return false
                     }
                 }
+                // Процессы живы — не значит, что трафик ходит: MASQUE-мост
+                // остаётся запущенным и после того, как перестал возить байты.
+                // Проба идёт через сам роутер, тем же путём, что tun2proxy.
+                val nowMs = SystemClock.elapsedRealtime()
+                val probeIntervalMs = if (isDeviceInteractiveNow()) 6_000L else 15_000L
+                if (nowMs - lastPrimaryProbeAtMs >= probeIntervalMs) {
+                    lastPrimaryProbeAtMs = nowMs
+                    // После hot-reload порт роутера может смениться (он просит
+                    // прежний, но занятый отдаёт свободный) — спрашиваем живой.
+                    val activeRouterPort = RouterProcess.port().takeIf { it in 1..65535 } ?: routerPort
+                    val probeOk = hasLocalSocksConnectivity(activeRouterPort, MULTI_SESSION_PROBE_TIMEOUT_MS)
+                    if (probeOk) {
+                        multiPrimaryProbeFailures = 0
+                        markSuccessfulTunnelProbe()
+                    } else if (nowMs - lastConnectedAtMs >= MULTI_PRIMARY_PROBE_GRACE_MS) {
+                        multiPrimaryProbeFailures += 1
+                        LogManager.log(
+                            "MULTI: проба через роутер не прошла " +
+                                "($multiPrimaryProbeFailures/$MULTI_PRIMARY_FAILURE_THRESHOLD)."
+                        )
+                        if (multiPrimaryProbeFailures >= MULTI_PRIMARY_FAILURE_THRESHOLD &&
+                            nowMs - multiLastPrimaryRestartAtMs >= MULTI_PRIMARY_RESTART_COOLDOWN_MS
+                        ) {
+                            multiLastPrimaryRestartAtMs = nowMs
+                            LogManager.log(
+                                "MULTI: PRIMARY ($multiPrimaryKind) не пропускает трафик — " +
+                                    "перезапускаем профиль без разрыва TUN."
+                            )
+                            if (rotateMultiPrimary(clientData, reason = "data-plane")) {
+                                multiPrimaryProbeFailures = 0
+                                markSuccessfulTunnelProbe()
+                            } else {
+                                LogManager.log(
+                                    "MULTI: горячий перезапуск PRIMARY не удался — " +
+                                        "поднимаем сеанс заново."
+                                )
+                                return false
+                            }
+                        }
+                    }
+                }
                 Thread.sleep(1_500L)
             }
             return true
@@ -10491,6 +11029,263 @@ class NovaVpnService : OperaNativeVpnService() {
             }
             multiPhaseActive.set(false)
         }
+    }
+
+    /**
+     * Горячая смена PRIMARY в MULTI — без остановки TUN и tun2proxy.
+     *
+     * Обычный REAPPLY сносит интерфейс и может уронить процесс через
+     * `tun2proxy_stop`; здесь меняется только локальный мост, а роутер и
+     * tun2proxy продолжают работать на прежнем loopback-порту.
+     */
+    private fun rotateMultiPrimary(clientData: ClientData, reason: String): Boolean {
+        if (!multiProfileSwitchActive.compareAndSet(false, true)) {
+            LogManager.log("MULTI rotate: уже идёт другая смена профиля — пропускаем ($reason).")
+            return false
+        }
+        LogManager.log(
+            "MULTI rotate: старт ($reason), backend=$currentBackendLabel, state=$currentState, " +
+                "kind=$multiPrimaryKind."
+        )
+        return try {
+            rotateMultiPrimaryLocked(clientData, reason)
+        } finally {
+            multiProfileSwitchActive.set(false)
+        }
+    }
+
+    private fun rotateMultiPrimaryLocked(clientData: ClientData, reason: String): Boolean {
+        if (currentBackendLabel != BACKEND_MULTI || !isRunning) {
+            LogManager.log(
+                "MULTI rotate: сеанс не активен — backend=$currentBackendLabel, running=$isRunning."
+            )
+            return false
+        }
+        // Сторож переводит экран в CONNECTING до вызова recovery, поэтому
+        // горячая смена обязана работать и в этом состоянии: иначе ветка
+        // watchdog всегда упиралась бы в отказ и уходила в полный перезапуск.
+        if (currentState != STATE_CONNECTED && currentState != STATE_CONNECTING) {
+            LogManager.log("MULTI rotate: состояние $currentState не подходит для смены профиля.")
+            return false
+        }
+        if (!isConnectGenerationCurrent(connectGeneration.get())) {
+            LogManager.log("MULTI rotate: поколение подключения уже неактуально.")
+            return false
+        }
+
+        fun switchedToMasque(): Boolean {
+            val started = MasqueSocksBridge.startAndWait(
+                context = this,
+                avoidEndpoint = multiMasqueEndpoint,
+                budgetMs = 18_000L,
+            )
+            if (!started) {
+                LogManager.log("MULTI rotate: MASQUE-мост не поднялся (kind=$multiPrimaryKind).")
+                return false
+            }
+            multiMasqueEndpoint = MasqueSocksBridge.lastStartedEndpoint
+            multiCfProxyPort = MasqueSocksBridge.LISTEN_PORT
+            multiCfProxyKind = "masque"
+            multiPrimaryPort = multiCfProxyPort
+            multiPrimaryKind = "masque"
+            if (multiSpoofPort == 0 && multiDesyncPort > 0) multiSpoofPort = multiDesyncPort
+            multiPrimaryProbeFailures = 0
+            reloadRouterConfig()
+            LogManager.log(
+                "MULTI: PRIMARY переключён на MASQUE " +
+                    "${multiMasqueEndpoint}:${MasqueSocksBridge.lastStartedPort} " +
+                    "(sni=${MasqueSocksBridge.lastStartedSni.ifBlank { "default" }}, $reason)."
+            )
+            return true
+        }
+
+        fun restoreMasque(): Boolean {
+            if (multiMasqueEndpoint.isBlank()) return false
+            val restored = MasqueSocksBridge.startAndWait(
+                context = this,
+                preferEndpoint = multiMasqueEndpoint,
+                budgetMs = 12_000L,
+            )
+            if (!restored) return false
+            multiCfProxyPort = MasqueSocksBridge.LISTEN_PORT
+            multiCfProxyKind = "masque"
+            multiPrimaryPort = multiCfProxyPort
+            multiPrimaryKind = "masque"
+            multiPrimaryProbeFailures = 0
+            reloadRouterConfig()
+            LogManager.log("MULTI: прежний MASQUE-профиль восстановлен после неудачной смены.")
+            return true
+        }
+
+        fun switchedToAwg(): Boolean {
+            if (!startNextAwgPrimary(advance = true)) {
+                LogManager.log("MULTI rotate: AWG-seed не поднялся.")
+                return false
+            }
+            multiAwgPort = AwgSocksBridge.LISTEN_PORT
+            multiCfProxyPort = AwgSocksBridge.LISTEN_PORT
+            multiCfProxyKind = "awg"
+            multiPrimaryPort = AwgSocksBridge.LISTEN_PORT
+            multiPrimaryKind = "awg"
+            if (multiSpoofPort == 0 && multiDesyncPort > 0) multiSpoofPort = multiDesyncPort
+            multiPrimaryProbeFailures = 0
+            reloadRouterConfig()
+            LogManager.log("MULTI: PRIMARY переключён на AWG ${multiAwgSeedLabel} ($reason).")
+            return true
+        }
+
+        fun switchedToVless(): Boolean {
+            val port = startVlessSocksForMulti(
+                clientData = clientData,
+                connectGenerationId = connectGeneration.get(),
+                maxCandidates = 4,
+                budgetMs = 40_000L,
+            )
+            if (port <= 0) {
+                LogManager.log("MULTI rotate: живой VLESS-профиль не найден.")
+                return false
+            }
+            multiVlessPort = port
+            multiVlessActive = true
+            multiPrimaryPort = port
+            multiPrimaryKind = "vless"
+            if (multiSpoofPort == 0 && multiDesyncPort > 0) multiSpoofPort = multiDesyncPort
+            multiPrimaryProbeFailures = 0
+            reloadRouterConfig()
+            LogManager.log("MULTI: PRIMARY переключён на VLESS 127.0.0.1:$port ($reason).")
+            return true
+        }
+
+        when (multiPrimaryKind) {
+            "masque" -> {
+                // Останавливать живой MASQUE-мост нельзя: core ждёт закрытия
+                // туннеля и JNI-вызов может висеть минутами. Поэтому при живом
+                // мосте «следующий профиль» — это переезд на другой транспорт,
+                // без рестарта MASQUE.
+                if (MasqueSocksBridge.isListening()) {
+                    LogManager.log("MULTI rotate: MASQUE-мост занят — переключаемся на VLESS без рестарта.")
+                    if (switchedToVless()) return true
+                    if (!AwgSocksBridge.isListening() && switchedToAwg()) return true
+                    return false
+                }
+                if (switchedToMasque()) return true
+                LogManager.log("MULTI: следующий MASQUE-профиль не поднялся — возвращаем прежний.")
+                if (restoreMasque()) return true
+                LogManager.log("MULTI: прежний MASQUE не вернулся — пробуем VLESS.")
+                return switchedToVless()
+            }
+            "awg" -> {
+                // AWG, в отличие от MASQUE, останавливается быстро. Занятый мост
+                // не повод уходить в мёртвый VLESS: перебираем следующие seeds.
+                if (switchedToAwg()) return true
+                if (multiAwgActiveConfig.isNotBlank() &&
+                    AwgSocksBridge.startWithConfig(multiAwgActiveConfig)
+                ) {
+                    multiPrimaryKind = "awg"
+                    multiPrimaryProbeFailures = 0
+                    LogManager.log("MULTI: прежний AWG-профиль восстановлен после неудачной смены.")
+                    return true
+                }
+                LogManager.log("MULTI: AWG-профили не поднялись — пробуем MASQUE.")
+                if (switchedToMasque()) return true
+                LogManager.log("MULTI: MASQUE не поднялся — пробуем VLESS.")
+                return switchedToVless()
+            }
+            else -> {
+                // DESYNC/неизвестный PRIMARY: горячий шаг вперёд по цепочке.
+                LogManager.log("MULTI rotate: текущий PRIMARY — $multiPrimaryKind, пробуем MASQUE.")
+                if (switchedToMasque()) return true
+                LogManager.log("MULTI rotate: MASQUE не поднялся, пробуем AWG.")
+                if (switchedToAwg()) return true
+                LogManager.log("MULTI rotate: AWG не поднялся, пробуем VLESS.")
+                return switchedToVless()
+            }
+        }
+    }
+
+    /**
+     * Поднимает следующий проверенный AWG-seed как PRIMARY.
+     *
+     * Возвращает `false`, если ни одно семя не пропустило пробу. Активный
+     * конфиг сохраняется: им восстанавливаемся, если следующий профиль умер.
+     */
+    private fun startNextAwgPrimary(advance: Boolean): Boolean {
+        val seeds = runCatching {
+            val raw = assets.open("warp_verified_seeds.json").bufferedReader().use { it.readText() }
+            org.json.JSONArray(raw)
+        }.getOrNull() ?: return false
+        val total = seeds.length()
+        if (total <= 0) {
+            LogManager.log("MULTI rotate: в warp_verified_seeds.json нет семян.")
+            return false
+        }
+        val start = if (advance) {
+            (multiAwgSeedCursor + 1) % total
+        } else {
+            multiAwgSeedCursor.coerceIn(0, total - 1)
+        }
+        val attempts = minOf(total, 20)
+        for (offset in 0 until attempts) {
+            val index = (start + offset) % total
+            val item = seeds.optJSONObject(index) ?: continue
+            val host = item.optString("host").trim()
+            val port = item.optInt("port", 0)
+            var config = item.optString("raw_config").trim()
+            if (config.isEmpty()) continue
+            if (!config.contains("NovaMode", ignoreCase = true)) {
+                config = config.replaceFirst(
+                    "[Interface]",
+                    "[Interface]\nNovaMode = warp-awg-exact",
+                )
+            }
+            if (!AwgSocksBridge.startWithConfig(config)) {
+                if (offset < 3) {
+                    LogManager.log("MULTI rotate: AWG seed #$index не запустился.")
+                }
+                continue
+            }
+            if (hasLocalSocksConnectivity(AwgSocksBridge.LISTEN_PORT, 3_500)) {
+                multiAwgSeedCursor = index
+                multiAwgActiveConfig = config
+                multiAwgSeedLabel = "#$index (${host.ifBlank { "?" }}:${port.coerceAtLeast(0)})"
+                return true
+            }
+            if (offset < 3) {
+                LogManager.log("MULTI rotate: AWG seed #$index не прошёл пробу 1378.")
+            }
+            AwgSocksBridge.stop()
+        }
+        LogManager.log("MULTI rotate: ни одно AWG-семя не прошло пробу.")
+        return false
+    }
+
+    /** Снимает локальные слоты MULTI перед новым циклом в том же процессе. */
+    private fun stopMultiLocalTransports() {
+        RouterProcess.stop(LogManager::log)
+        DesyncProxyManager.stop(LogManager::log)
+        OperaProxyManager.stopManaged(LogManager::log)
+        stopAwgBridgeIfEnabled()
+        MasqueSocksBridge.stop()
+        if (multiVlessActive) {
+            runCatching { XrayBridge.stop() }
+            multiVlessActive = false
+        }
+        multiVlessPort = 0
+        multiAwgPort = 0
+        multiCfProxyPort = 0
+        multiCfProxyKind = ""
+        multiNonRuSlots = emptySet()
+        multiEgressGeneration++
+        multiOperaProbedPort = 0
+        multiVlessProbedPort = 0
+    }
+
+    private fun multiProfileLabel(): String = when (multiPrimaryKind) {
+        "masque" -> "MASQUE ${multiMasqueEndpoint.ifBlank { "?" }}:${MasqueSocksBridge.lastStartedPort}"
+        "awg" -> "AWG ${multiAwgSeedLabel.ifBlank { "seed" }}"
+        "vless" -> "VLESS"
+        "desync" -> "DESYNC"
+        else -> "PRIMARY"
     }
 
     private fun refreshUnderlyingNetworksIfChangedForLocalSlots(): Boolean {
@@ -10555,10 +11350,26 @@ class NovaVpnService : OperaNativeVpnService() {
     ): String {
         val lists = ListRepository.load(this)
         val routing = RoutingStore(this)
+        val strictFullTunnel = routing.getRoutePolicyMode().isStrictFullTunnel
         val overrides = RouteSettings.SERVICES.associate { service ->
             service.key to RouteSettings.parseOverride(routing.getRouteOverride(service.key))
         }
-        return RouterConfigFactory.build(
+        // UDP-capability задаётся транспортом, который создал слот, а не
+        // совпадением номера порта: порт — это адрес подключения, а
+        // capability — свойство транспорта. multiPrimaryKind и
+        // multiCfProxyKind фиксируются в момент запуска bridge; direct
+        // поддерживает UDP сам по себе. Автоматического fallback нет:
+        // слот без capability просто отбрасывает UDP в router.
+        val udpSlots = buildSet {
+            if (!strictFullTunnel) add("direct")
+            if (multiPrimaryKind == "awg") add("primary")
+            if (multiCfProxyKind == "awg") add("cfproxy")
+            if (multiAwgPort > 0) add("awg")
+        }
+        // Проверяем egress Opera/VLESS один раз на порт; результат обновит
+        // multiNonRuSlots и перезагрузит AI-правила. До проверки AI — DROP.
+        scheduleEgressProbes(operaPort, vlessPort)
+        val json = RouterConfigFactory.build(
             input = RouterConfigFactory.Input(
                 localTlds = lists.localTlds(),
                 exclude = lists.excludeDomains(),
@@ -10566,6 +11377,8 @@ class NovaVpnService : OperaNativeVpnService() {
                 second = lists.secondDomains(),
                 ai = lists.aiDomains(),
                 googleAi = lists.googleAiDomains(),
+                anthropic = lists.anthropicDomains(),
+                chinaAi = lists.chinaAiDomains(),
                 spotify = lists.spotifyDomains(),
                 youtube = lists.youtubeDomains(),
                 youtubeIps = lists.youtubeIps(),
@@ -10577,6 +11390,7 @@ class NovaVpnService : OperaNativeVpnService() {
                 discord = lists.discordDomains(),
                 overrides = overrides,
                 killSwitch = routing.isKillSwitch(),
+                strict = strictFullTunnel,
             ),
             primaryPort = primaryPort,
             operaPort = operaPort,
@@ -10584,7 +11398,81 @@ class NovaVpnService : OperaNativeVpnService() {
             cfProxyPort = cfProxyPort,
             vlessPort = vlessPort,
             awgPort = awgPort,
+            dnsAiUrl = PriorityDns.DOH_URL,
+            dnsAiBootstrap = runCatching { priorityDohAddresses() }
+                .getOrDefault(emptyList())
+                .joinToString(",")
+                .ifBlank { PriorityDns.KNOWN_ADDRESSES.joinToString(",") },
+            // Прямой DoH до DNS-AI в РФ режется; через PRIMARY тот же запрос
+            // проходит — так же, как в nova-core (`via=auto`).
+            dnsAiVia = "127.0.0.1:$primaryPort",
+            // TLS до релея DNS-AI на мобильной сети режет DPI. Как на ПК,
+            // соединение к релею идёт через живой WARP-слот (AWG/VLESS), а
+            // DESYNC остаётся запасом: он умеет IP-CONNECT и обфускацию.
+            dnsAiRelayVia = when {
+                awgPort in 1..65535 -> "127.0.0.1:$awgPort"
+                vlessPort in 1..65535 -> "127.0.0.1:$vlessPort"
+                spoofPort in 1..65535 -> "127.0.0.1:$spoofPort"
+                else -> ""
+            },
+            udpSlots = udpSlots,
+            nonRuSlots = multiNonRuSlots,
         )
+        if (strictFullTunnel) {
+            // Диагностическая строка для приёмки: не «обещание», а факт JSON.
+            LogManager.log(
+                "STRICT: RouterConfig strict=${json.contains("\"strict\":true")} " +
+                    "direct=${json.contains("\"direct\"")} len=${json.length}"
+            )
+        }
+        return json
+    }
+
+    /**
+     * Запускает проверку egress для Opera/VLESS, если порт ещё не проверялся.
+     * Проверка идёт через сам прокси, не через router, поэтому не зависит от
+     * текущей AI-политики.
+     */
+    private fun scheduleEgressProbes(operaPort: Int, vlessPort: Int) {
+        val generation = multiEgressGeneration
+        if (operaPort in 1..65535 && multiOperaProbedPort != operaPort) {
+            multiOperaProbedPort = operaPort
+            probeNonRuSlot("secondary", Proxy.Type.HTTP, operaPort, generation)
+        }
+        if (vlessPort in 1..65535 && multiVlessProbedPort != vlessPort) {
+            multiVlessProbedPort = vlessPort
+            probeNonRuSlot("vless", Proxy.Type.SOCKS, vlessPort, generation)
+        }
+    }
+
+    private fun probeNonRuSlot(slot: String, type: Proxy.Type, port: Int, generation: Int) {
+        startSafeServiceThread("NovaEgress-$slot") {
+            val observation = runCatching {
+                ExitAddressV4.viaProxy(Proxy(type, InetSocketAddress("127.0.0.1", port)))
+            }.getOrNull()
+            if (generation != multiEgressGeneration) {
+                LogManager.log("EGRESS $slot: устаревшая проверка поколения $generation — игнорируем.")
+                return@startSafeServiceThread
+            }
+            val currentPort = if (slot == "secondary") multiOperaProbedPort else multiVlessProbedPort
+            if (currentPort != port) {
+                LogManager.log("EGRESS $slot: порт $port устарел (сейчас $currentPort) — игнорируем.")
+                return@startSafeServiceThread
+            }
+            val country = observation?.country.orEmpty().uppercase()
+            val eligible = EgressEligibility.isEligible(observation?.ip, country)
+            updateNonRuSlot(slot, eligible)
+            LogManager.log(
+                "EGRESS $slot: ip=${observation?.ip.orEmpty()} country=$country eligible=$eligible"
+            )
+            if (RouterProcess.isRunning()) reloadRouterConfig()
+        }
+    }
+
+    private fun updateNonRuSlot(slot: String, eligible: Boolean) {
+        synchronized(this) {
+            multiNonRuSlots = if (eligible) multiNonRuSlots + slot else multiNonRuSlots - slot
+        }
     }
 
     /**
@@ -10599,14 +11487,21 @@ class NovaVpnService : OperaNativeVpnService() {
         val primaryPort = multiPrimaryPort
         if (primaryPort == 0 || !RouterProcess.isRunning()) return
         val oldPort = RouterProcess.port()
-        val config = buildMultiRouterConfig(
-            primaryPort,
-            multiOperaPort,
-            multiSpoofPort,
-            cfProxyPort = multiCfProxyPort,
-            vlessPort = multiVlessPort,
-            awgPort = multiAwgPort,
-        )
+        val config = try {
+            buildMultiRouterConfig(
+                primaryPort,
+                multiOperaPort,
+                multiSpoofPort,
+                cfProxyPort = multiCfProxyPort,
+                vlessPort = multiVlessPort,
+                awgPort = multiAwgPort,
+            )
+        } catch (error: IllegalArgumentException) {
+            // HOT-RELOAD от отклонённой Strict-конфигурации не должен ронять
+            // процесс: оставляем проверенные маршруты, пишем причину.
+            LogManager.log("STRICT: hot-reload отклонён — ${error.message}. Маршруты не меняем.")
+            return
+        }
         val port = RouterProcess.start(
             this,
             config,
@@ -16748,7 +17643,10 @@ class NovaVpnService : OperaNativeVpnService() {
         )
     }
 
-    private fun triggerReconnectForNetworkChange(clientData: ClientData) {
+    private fun triggerReconnectForNetworkChange(
+        clientData: ClientData,
+        reason: String = "network-change",
+    ) {
         if (reconnectingForNetworkChange) return
         reconnectingForNetworkChange = true
         clientData.markTransientConnectingPending(9000L)
@@ -16795,7 +17693,30 @@ class NovaVpnService : OperaNativeVpnService() {
                     }
                 }
                 if (currentBackendLabel == BACKEND_MULTI) {
-                    // MULTI тоже локальный: DESYNC и router не привязаны к
+                    val dataPlaneFailure = reason == "watchdog" ||
+                        reason == "background-heartbeat" ||
+                        reason == "health-followup" ||
+                        reason == "connected-proof-timeout"
+                    if (dataPlaneFailure && currentState == STATE_CONNECTED) {
+                        LogManager.log(
+                            "MULTI: watchdog не подтвердил трафик ($reason) — " +
+                                "перезапускаем PRIMARY без разрыва TUN."
+                        )
+                        if (rotateMultiPrimary(clientData, reason = "watchdog:$reason")) {
+                            markSuccessfulTunnelProbe()
+                            connectedHealthProbeFailures = 0
+                            broadcastState(STATE_CONNECTED)
+                            return@startSafeServiceThread
+                        }
+                        LogManager.log(
+                            "MULTI: горячий перезапуск PRIMARY не удался — " +
+                                "просим цикл MULTI завершиться и запустить новый."
+                        )
+                        multiRestartRequested = true
+                        broadcastState(STATE_CONNECTING)
+                        return@startSafeServiceThread
+                    }
+                    // Смена сети и локальные слоты: DESYNC и router не привязаны к
                     // интерфейсу, а пересборка TUN зовёт tun2proxy_stop и
                     // обрекает :vpn. Новые соединения уйдут через новую сеть.
                     LogManager.log(
@@ -17395,7 +18316,13 @@ class NovaVpnService : OperaNativeVpnService() {
         if (currentVpn != null && isVpnNetworkNotForeign(connectivityManager, currentVpn)) {
             if (!forceImmediateRecovery) {
                 connectedHealthProbeFailures += 1
-                val requiredFailures = healthReconnectFailureThreshold(health.reason)
+                // Фоновое сердцебиение приходит редко, и один промах пробы на
+                // спящем телефоне — обычное дрожание канала. Требуем два подряд.
+                val requiredFailures = if (reason == "background-heartbeat") {
+                    maxOf(2, healthReconnectFailureThreshold(health.reason))
+                } else {
+                    healthReconnectFailureThreshold(health.reason)
+                }
                 if (connectedHealthProbeFailures < requiredFailures) {
                     scheduleNetworkRecoveryCheck("health-followup")
                     LogManager.log(
@@ -17487,7 +18414,7 @@ class NovaVpnService : OperaNativeVpnService() {
             clearActiveWarpQualityTarget()
         }
         LogManager.log("$reconnectPrefix Запускаем реконнект.")
-        triggerReconnectForNetworkChange(clientData)
+        triggerReconnectForNetworkChange(clientData, reason)
     }
     
     private fun createNotificationChannel() {
@@ -26158,6 +27085,21 @@ class NovaVpnService : OperaNativeVpnService() {
      * бы в туннеле вопреки настройке.
      */
     private fun applySplitTunnelPolicy(builder: Builder, clientData: ClientData) {
+        if (isStrictFullTunnel()) {
+            // Strict: никаких пользовательских allow/disallow-списков и
+            // DirectAppsPolicy. Единственное исключение — служебный пакет Nova:
+            // без него сокеты router/tun2proxy/Xray замкнулись бы в свой TUN.
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (error: Exception) {
+                LogManager.log("STRICT: не удалось исключить служебный пакет Nova: ${error.message}")
+            }
+            LogManager.log(
+                "STRICT: full tunnel — split-tunnel и DirectAppsPolicy не применяются; " +
+                    "исключён только служебный пакет Nova."
+            )
+            return
+        }
         val splitMode = clientData.getSplitMode()
         val directApps = DirectAppsPolicy.resolve(this, clientData)
         val selectedApps = clientData.getSplitApps()
@@ -26285,6 +27227,21 @@ class NovaVpnService : OperaNativeVpnService() {
     }
 
     private fun applyOperaSplitTunnelPolicy(builder: Builder, clientData: ClientData) {
+        if (isStrictFullTunnel()) {
+            // MULTI идёт этим путём. Strict — full tunnel: ни выбранных
+            // приложений, ни закрытого списка «прямых». Служебный пакет Nova
+            // остаётся вне VPN по технической необходимости.
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (error: Exception) {
+                LogManager.log("STRICT: не удалось исключить служебный пакет Nova: ${error.message}")
+            }
+            LogManager.log(
+                "STRICT: MULTI full tunnel — DirectAppsPolicy и split-tunnel не применяются; " +
+                    "исключён только служебный пакет Nova."
+            )
+            return
+        }
         val splitMode = clientData.getSplitMode()
         val directApps = DirectAppsPolicy.resolve(this, clientData)
         val selectedApps = clientData.getSplitApps()
@@ -26363,6 +27320,10 @@ class NovaVpnService : OperaNativeVpnService() {
      * переопределение, которое запрещает I1, и тот же класс, что G51 и G53:
      * список известных значений, записанный дважды, расходится молча.
      */
+    /** Strict Full Tunnel — только явный режим, не «kill switch вообще». */
+    private fun isStrictFullTunnel(): Boolean =
+        RoutingStore(this).getRoutePolicyMode().isStrictFullTunnel
+
     private fun normalizeRegionPreference(value: String?): String =
         RegionTransportPolicy.normalizeKnown(value)
 
@@ -27013,13 +27974,21 @@ class NovaVpnService : OperaNativeVpnService() {
         underlyingNetwork: android.net.Network?,
         protectedAddresses: Set<String> = emptySet(),
         bypassAddresses: Set<String> = emptySet(),
+        bypassLocalNetworks: Boolean = true,
     ) {
-        val localPrefixes = buildLocalNetworkBypassPrefixes(
-            connectivityManager = connectivityManager,
-            underlyingNetwork = underlyingNetwork,
-            protectedAddresses = protectedAddresses,
-            bypassAddresses = bypassAddresses,
-        )
+        val localPrefixes = if (bypassLocalNetworks) {
+            buildLocalNetworkBypassPrefixes(
+                connectivityManager = connectivityManager,
+                underlyingNetwork = underlyingNetwork,
+                protectedAddresses = protectedAddresses,
+                bypassAddresses = bypassAddresses,
+            )
+        } else {
+            LogManager.log(
+                "STRICT: локальные сети не выводятся мимо VPN — LAN идёт в туннель или блокируется."
+            )
+            emptyList()
+        }
         val excludeRouteMethod = findExcludeRouteMethod(builder)
         if (excludeRouteMethod != null) {
             if (enableIpv6DefaultRoute) {
@@ -29127,6 +30096,18 @@ class NovaVpnService : OperaNativeVpnService() {
             GENERATED_WARP_BACKFILL_RETRY_MS - (System.currentTimeMillis() - failedAt)
         }
         if (alreadyIssued || cooldownLeftMs > 0L || WarpProfileGenerator.isRunning()) {
+            generatedWarpBackfillPending.set(false)
+            return false
+        }
+        // На чистой установке личности ещё нет. Автоматическая регистрация
+        // Cloudflare из РФ может висеть минутами и держать «регистрирую
+        // устройство»; для соединения достаточно bundled/feed. Генерацию
+        // запускает только явная кнопка в настройках.
+        if (snapshot?.identity == null) {
+            LogManager.log(
+                "WARP-генератор: личности ещё нет — работаем на bundled-профилях, " +
+                    "автоматическую регистрацию не запускаем ($reason)."
+            )
             generatedWarpBackfillPending.set(false)
             return false
         }

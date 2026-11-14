@@ -42,6 +42,8 @@ object ListRepository {
                 main = domains(app, "main.txt"),
                 ai = domains(app, "ai.txt"),
                 googleAi = domains(app, "google_ai.txt"),
+                anthropic = domains(app, "anthropic.txt"),
+                chinaAi = domains(app, "china_ai.txt"),
                 spotify = domains(app, "spotify.txt"),
                 youtube = domains(app, "youtube.txt"),
                 telegram = domains(app, "telegram.txt"),

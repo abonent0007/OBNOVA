@@ -52,7 +52,7 @@ class RouteSettingsTest {
         assertEquals("PRIMARY → DIRECT", RouteSettings.chainHint(RouteClass.RU))
         assertEquals("SECONDARY → PRIMARY → DIRECT", RouteSettings.chainHint(RouteClass.EU))
         assertEquals("SECONDARY → PRIMARY → DIRECT", RouteSettings.chainHint(RouteClass.YOUTUBE))
-        assertEquals("SECONDARY → PRIMARY → DIRECT", RouteSettings.chainHint(RouteClass.GOOGLE_AI))
+        assertEquals("DNS-AI → DIRECT → SECONDARY → VLESS/AWG → PRIMARY", RouteSettings.chainHint(RouteClass.GOOGLE_AI))
         assertEquals("PRIMARY", RouteSettings.chainHint(RouteClass.TELEGRAM))
         assertTrue(!RouteSettings.chainHint(RouteClass.TELEGRAM).contains("DIRECT"))
     }
@@ -60,7 +60,10 @@ class RouteSettingsTest {
     @Test
     fun `service list keeps stable keys`() {
         assertEquals(
-            listOf("ru", "eu", "youtube", "telegram", "whatsapp", "discord", "spotify", "ai", "google_ai", "other"),
+            listOf(
+                "ru", "eu", "youtube", "telegram", "whatsapp", "discord", "spotify",
+                "ai", "google_ai", "openai", "anthropic", "china_ai", "other",
+            ),
             RouteSettings.SERVICES.map { it.key },
         )
     }

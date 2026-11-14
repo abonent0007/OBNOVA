@@ -1,0 +1,8 @@
+# Китайские AI, доступные из России напрямую (DeepSeek, Qwen).
+# Отдельная группа: у неё свой порядок слотов, общий транспорт не меняется.
+deepseek.com
+chat.deepseek.com
+api.deepseek.com
+qwen.ai
+chat.qwen.ai
+dashscope.aliyuncs.com

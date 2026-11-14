@@ -114,7 +114,9 @@ func StartAwgSocks(awgConfig string, listenAddr string, enabled bool) (*AwgSocks
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	server := newAwgSocksServer(listener, netStack.DialContext)
+	server := newAwgSocksServer(listener, netStack.DialContext, func(ctx context.Context, host string, port int) (net.Conn, error) {
+		return dialAwgUDP(ctx, netStack, host, port)
+	})
 	instance := &AwgSocksInstance{
 		device:     dev,
 		net:        netStack,
@@ -244,6 +246,7 @@ func (i *AwgSocksInstance) Close() {
 type awgSocksServer struct {
 	listener net.Listener
 	dial     func(context.Context, string, string) (net.Conn, error)
+	dialUDP  func(context.Context, string, int) (net.Conn, error)
 	mu       sync.Mutex
 	conns    map[net.Conn]struct{}
 }
@@ -251,10 +254,12 @@ type awgSocksServer struct {
 func newAwgSocksServer(
 	listener net.Listener,
 	dial func(context.Context, string, string) (net.Conn, error),
+	dialUDP func(context.Context, string, int) (net.Conn, error),
 ) *awgSocksServer {
 	return &awgSocksServer{
 		listener: listener,
 		dial:     dial,
+		dialUDP:  dialUDP,
 		conns:    make(map[net.Conn]struct{}),
 	}
 }
@@ -330,7 +335,7 @@ func (s *awgSocksServer) handle(ctx context.Context, client net.Conn) {
 		return
 	}
 	command := request[1]
-	if command != 1 {
+	if command != 1 && command != 3 {
 		writeSocksReply(client, 0x07)
 		return
 	}
@@ -338,6 +343,13 @@ func (s *awgSocksServer) handle(ctx context.Context, client net.Conn) {
 	host, port, err := readSocksTarget(client, request[3])
 	if err != nil {
 		writeSocksReply(client, 0x08)
+		return
+	}
+	if command == 3 {
+		// UDP ASSOCIATE: host/port из запроса — ожидаемый адрес клиента,
+		// для relay он не нужен. Привязка идёт к TCP control connection.
+		_ = client.SetDeadline(time.Time{})
+		s.handleUDPAssociate(ctx, client, host, port)
 		return
 	}
 	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

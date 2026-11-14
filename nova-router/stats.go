@@ -8,11 +8,11 @@ import (
 )
 
 type SlotStats struct {
-	Attempts     int64   `json:"attempts"`
-	Successes    int64   `json:"successes"`
-	Failures     int64   `json:"failures"`
-	LastLatencyMs int64  `json:"lastLatencyMs"`
-	EwmaMs       float64 `json:"ewmaMs"`
+	Attempts      int64   `json:"attempts"`
+	Successes     int64   `json:"successes"`
+	Failures      int64   `json:"failures"`
+	LastLatencyMs int64   `json:"lastLatencyMs"`
+	EwmaMs        float64 `json:"ewmaMs"`
 }
 
 type Stats struct {

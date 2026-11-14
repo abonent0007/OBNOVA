@@ -331,6 +331,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var clientData: ClientData
     private var vpnState = NovaVpnService.STATE_STOPPED
     private var isActivityResumed = false
+    @Volatile
+    private var profileAutoRefreshRunning = false
     private var warpDiscoverySnapshot: WarpDiscoverySnapshot? = null
     private var lastRenderedDiscoveryRunning = false
 
@@ -582,6 +584,21 @@ class MainActivity : AppCompatActivity() {
                 }
                 val state = intent.getStringExtra(NovaVpnService.EXTRA_STATE)
                 val backend = intent.getStringExtra(NovaVpnService.EXTRA_BACKEND)
+                // Отказ Strict (ручной WARP/OPERA/VLESS) — это не «ещё
+                // подключаемся»: снимаем локальный старт-флоу и pending-флаги,
+                // иначе экран до минуты показывал «ПОДКЛЮЧЕНИЕ».
+                if (state == NovaVpnService.STATE_STOPPED &&
+                    clientData.getLastTransportNotice().startsWith("Strict:")
+                ) {
+                    cancelStartFlow()
+                    clientData.clearTransientConnectingPending()
+                    clientData.clearSoftReapplyPending()
+                    Toast.makeText(
+                        this@MainActivity,
+                        clientData.getLastTransportNotice(),
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
                 val incomingAttemptOrdinal = intent.getIntExtra(NovaVpnService.EXTRA_ATTEMPT_ORDINAL, 0)
                 val incomingAttemptTotal = intent.getIntExtra(NovaVpnService.EXTRA_ATTEMPT_TOTAL, 0)
                 if (
@@ -814,6 +831,23 @@ class MainActivity : AppCompatActivity() {
             // подбор заново — снаружи «кнопка не переключает, а перезапускает».
             val activeTransport = clientData.getServiceTransport()
             val activeBackend = clientData.getServiceBackend().uppercase(Locale.ROOT)
+            if (activeBackend == NovaVpnService.BACKEND_MULTI ||
+                activeTransport == NovaVpnService.TRANSPORT_MULTI
+            ) {
+                // В MULTI REAPPLY сносит TUN и не меняет профиль: extras ручного
+                // WARP-шага эта фаза не читает. Горячая смена перезапускает
+                // только PRIMARY-мост, tun2proxy продолжает работать.
+                LogManager.log("UI MULTI next-profile: горячая смена PRIMARY без разрыва TUN.")
+                manualProfileSwitchProgressHoldUntilMs = SystemClock.elapsedRealtime() + 25_000L
+                ContextCompat.startForegroundService(
+                    this,
+                    Intent(this, NovaVpnService::class.java).apply {
+                        action = NovaVpnService.ACTION_SWITCH_MULTI_PROFILE
+                        applyCurrentPreferenceExtras(this)
+                    }
+                )
+                return@setOnClickListener
+            }
             val nextChainStep = when {
                 NovaVpnService.isPublishedTransport(activeTransport, NovaVpnService.TRANSPORT_MASQUE) ->
                     if (importedOnly) NovaVpnService.MANUAL_STEP_VLESS else NovaVpnService.MANUAL_STEP_OPERA_EU
@@ -1712,6 +1746,7 @@ class MainActivity : AppCompatActivity() {
         refreshMainRegionSelector()
         refreshProtonAvailableCountries()
         refreshWarpDiscoverySnapshotFromStorage()
+        maybeAutoRefreshProfiles()
         statusHandler.post(statusRunnable)
         // Человек вернулся на экран — значит, системный установщик закрыт, и
         // плашке пора перестать обещать идущую установку.
@@ -5438,6 +5473,34 @@ class MainActivity : AppCompatActivity() {
         return normalized.contains("адаптац") || normalized.contains("data-plane")
     }
 
+    /**
+     * Фоновое обновление подписок при запуске: меню должно наполняться само,
+     * а не ждать, пока пользователь найдёт «Обновить всё». Не чаще раза в сутки
+     * и никогда на UI-потоке.
+     */
+    private fun maybeAutoRefreshProfiles() {
+        if (profileAutoRefreshRunning) return
+        val now = System.currentTimeMillis()
+        val last = clientData.getLastProfileRefreshAt()
+        if (last > 0L && now - last < 24L * 60L * 60L * 1000L) return
+        profileAutoRefreshRunning = true
+        Thread({
+            try {
+                val result = ProfileUpdateCoordinator.updateAll(applicationContext) { phase ->
+                    LogManager.d("Автообновление профилей: $phase")
+                }
+                if (result.okSources > 0) {
+                    clientData.setLastProfileRefreshAt(System.currentTimeMillis())
+                }
+                LogManager.log("Автообновление профилей при запуске: ${result.message}")
+            } catch (error: Throwable) {
+                LogManager.log("Автообновление профилей не удалось: ${error.message}")
+            } finally {
+                profileAutoRefreshRunning = false
+            }
+        }, "NovaProfileAutoRefresh").apply { isDaemon = true }.start()
+    }
+
     private fun refreshWarpDiscoverySnapshotFromStorage() {
         warpDiscoverySnapshot = clientData.getWarpDiscoverySnapshot()?.let { snapshot ->
             if (snapshot.running && !isNovaVpnServiceRunning()) {
@@ -5724,14 +5787,21 @@ class MainActivity : AppCompatActivity() {
         if (!isStartFlowCurrent(flowGeneration)) return
         // MULTI — не WARP-сессия: у неё своя фаза (DESYNC/VLESS PRIMARY + Opera),
         // поэтому legacy-путь с `PRIVATE_KEY` её не запускает. Передаём выбор
-        // службе тем же намерением, что плитка и виджет.
-        if (clientData.getExitRegionPreference().trim().lowercase() == ConnectionSelectorPolicy.CHIP_MULTI) {
+        // службе тем же намерением, что плитка и виджет. Strict тоже всегда идёт
+        // smart-путём: служба либо выберет MULTI (AUTO), либо отклонит backend.
+        val strictPolicy = RoutingStore(this).getRoutePolicyMode().isStrictFullTunnel
+        if (strictPolicy ||
+            clientData.getExitRegionPreference().trim().lowercase() == ConnectionSelectorPolicy.CHIP_MULTI
+        ) {
             currentTunnelBackend = NovaVpnService.BACKEND_MULTI
             pendingStatusText = buildConnectingStatusText()
             startFlowHandedToService = true
             markServiceConnectingLocally(NovaVpnService.BACKEND_MULTI)
             updateUiByState(NovaVpnService.STATE_CONNECTING)
-            NovaTunnelControl.start(this, "главный экран: MULTI")
+            NovaTunnelControl.start(
+                this,
+                if (strictPolicy) "главный экран: Strict" else "главный экран: MULTI",
+            )
             return
         }
         clientData.clearRestartSession()
@@ -6811,7 +6881,16 @@ class MainActivity : AppCompatActivity() {
                     vpnState == NovaVpnService.STATE_CONNECTING ||
                     vpnState == NovaVpnService.STATE_STOPPED
                 )
-        val text = if (relevant) notice else ""
+        val text = if (relevant) {
+            notice
+        } else if (isTunnelConnected() || vpnState == NovaVpnService.STATE_CONNECTING) {
+            RouterPolicyRequirements.dataPlaneHint(
+                clientData.getServiceBackend(),
+                RoutingStore(this).isKillSwitch(),
+            )
+        } else {
+            ""
+        }
         // Идемпотентность здесь не украшение, а условие того, что эту функцию
         // можно звать с тика.
         //

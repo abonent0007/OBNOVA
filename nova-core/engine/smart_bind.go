@@ -319,6 +319,7 @@ type SmartBind struct {
 	flowState  map[string]endpointFlowState
 	sendBudget atomic.Int64
 	recvBudget atomic.Int64
+	endpointOnce sync.Once
 }
 
 type endpointFlowState struct {
@@ -348,26 +349,38 @@ func (b *SmartBind) Open(port uint16) ([]conn.ReceiveFunc, uint16, error) {
 	}
 
 	// PROTECT SOCKET IF CALLBACK IS SET
+	protect4 := false
 	if GlobalProtector != nil {
 		// Use SyscallConn to get FD safely without Side Effects (Blocking Mode)
 		rc, err := b.conn.SyscallConn()
 		if err == nil {
-			rc.Control(func(fd uintptr) {
-				GlobalProtector(int(fd))
+			_ = rc.Control(func(fd uintptr) {
+				protect4 = GlobalProtector(int(fd))
 			})
 		}
 	}
+	log.Printf(
+		"[AWG-BIND] family=IPv4 protect_called=%v protect_result=%v local=%s",
+		GlobalProtector != nil, protect4, b.conn.LocalAddr(),
+	)
 
 	// IPv6 Listen (Best effort)
 	addr6 := net.UDPAddr{Port: int(port), IP: net.IPv6zero}
 	b.v6conn, _ = net.ListenUDP("udp6", &addr6)
+	protect6 := false
 	if b.v6conn != nil && GlobalProtector != nil {
 		rc, err := b.v6conn.SyscallConn()
 		if err == nil {
-			rc.Control(func(fd uintptr) {
-				GlobalProtector(int(fd))
+			_ = rc.Control(func(fd uintptr) {
+				protect6 = GlobalProtector(int(fd))
 			})
 		}
+	}
+	if b.v6conn != nil {
+		log.Printf(
+			"[AWG-BIND] family=IPv6 protect_called=%v protect_result=%v local=%s",
+			GlobalProtector != nil, protect6, b.v6conn.LocalAddr(),
+		)
 	}
 
 	// Get actual port
@@ -480,6 +493,9 @@ func (b *SmartBind) Send(buffs [][]byte, endpoint conn.Endpoint) error {
 	if !ok {
 		return fmt.Errorf("invalid endpoint type")
 	}
+	b.endpointOnce.Do(func() {
+		log.Printf("[AWG-BIND] first_send_endpoint=%s", novaEp.DstToString())
+	})
 
 	if fakePacketsEnabled && len(buffs) > 0 && len(buffs[0]) > 0 {
 		msgType := buffs[0][0]

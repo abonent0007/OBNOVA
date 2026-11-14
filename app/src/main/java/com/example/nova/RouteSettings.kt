@@ -28,6 +28,9 @@ object RouteSettings {
         Service("spotify", "Spotify", RouteClass.DIRECT),
         Service("ai", "AI (Gemini, ChatGPT)", RouteClass.AI),
         Service("google_ai", "Google AI / opencode", RouteClass.GOOGLE_AI),
+        Service("openai", "ChatGPT / OpenAI", RouteClass.AI),
+        Service("anthropic", "Claude / Anthropic", RouteClass.AI),
+        Service("china_ai", "DeepSeek / Qwen", RouteClass.DIRECT),
         Service("other", "Остальной трафик", RouteClass.RU),
     )
 
@@ -98,7 +101,7 @@ object RouteSettings {
         RouteClass.TELEGRAM -> "PRIMARY"
         RouteClass.WHATSAPP -> "PRIMARY → DIRECT"
         RouteClass.DISCORD -> "PRIMARY → DIRECT"
-        RouteClass.AI -> "SECONDARY → PRIMARY → DIRECT"
-        RouteClass.GOOGLE_AI -> "SECONDARY → PRIMARY → DIRECT"
+        RouteClass.AI -> "DNS-AI → DIRECT → SECONDARY → VLESS/AWG → PRIMARY"
+        RouteClass.GOOGLE_AI -> "DNS-AI → DIRECT → SECONDARY → VLESS/AWG → PRIMARY"
     }
 }

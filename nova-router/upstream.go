@@ -69,6 +69,16 @@ func dialSlot(slot Slot, host string, port int, sni string) (net.Conn, error) {
 	switch slot.Type {
 	case SlotDirect:
 		return dialDirect(host, port, dialTimeout)
+	case SlotDNSAI:
+		// tun2proxy может принести подставной IP виртуального DNS; в этом
+		// случае имя берём из SNI, иначе DNS-AI резолвил бы не тот хост.
+		targetHost := host
+		if net.ParseIP(host) != nil {
+			if candidate, err := validSNI(sni); err == nil {
+				targetHost = candidate
+			}
+		}
+		return dialDNSAI(slot, targetHost, port)
 	case SlotSocks5:
 		// MASQUE-SOCKS (127.0.0.1:1379) не соединяет по IP: CONNECT с ATYP=IPv4
 		// возвращает 000. Тот же хост по домену работает (проверено curl:

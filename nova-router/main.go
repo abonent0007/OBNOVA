@@ -84,7 +84,7 @@ func serveSOCKS(client net.Conn, router Router, verbose bool) error {
 		return err
 	}
 	if cmd == socksUDPAssociate {
-		return serveUDPAssociate(client)
+		return serveUDPAssociate(client, router)
 	}
 	clientReader := io.Reader(client)
 	sni := ""

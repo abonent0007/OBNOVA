@@ -125,7 +125,7 @@ func TestAwgSocksServerConnect(t *testing.T) {
 	}
 	server := newAwgSocksServer(socksListener, func(ctx context.Context, network, address string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
-	})
+	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go server.serve(ctx)
@@ -182,7 +182,7 @@ func TestAwgSocksServerRejectsUdpAssociate(t *testing.T) {
 	}
 	server := newAwgSocksServer(listener, func(ctx context.Context, network, address string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
-	})
+	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go server.serve(ctx)
@@ -216,7 +216,7 @@ func TestAwgSocksCloseUnblocksConnections(t *testing.T) {
 	}
 	server := newAwgSocksServer(listener, func(ctx context.Context, network, address string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
-	})
+	}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
 	wg.Add(1)

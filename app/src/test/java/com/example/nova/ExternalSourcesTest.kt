@@ -143,7 +143,7 @@ class ExternalSourcesTest {
     }
 
     @Test
-    fun `opera eu endpoints prefer the working 244 pool`() {
+    fun `opera eu endpoints prefer the working 247 pool`() {
         val ordered = ExternalSources.prioritizeOperaEndpoints(
             listOf(
                 "77.111.247.37:443",
@@ -152,11 +152,11 @@ class ExternalSourcesTest {
             ),
         )
         assertEquals(
-            listOf("77.111.244.37:443", "77.111.245.10:443", "77.111.247.37:443"),
+            listOf("77.111.247.37:443", "77.111.245.10:443", "77.111.244.37:443"),
             ordered,
         )
-        assertTrue(ExternalSources.isWeakOperaEndpoint("77.111.247.37:443"))
-        assertTrue(!ExternalSources.isWeakOperaEndpoint("77.111.244.37:443"))
+        assertTrue(ExternalSources.isWeakOperaEndpoint("77.111.244.37:443"))
+        assertTrue(!ExternalSources.isWeakOperaEndpoint("77.111.247.37:443"))
     }
 
     @Test

@@ -168,7 +168,7 @@ func StartMasqueSocks(
 		return nil, fmt.Errorf("SOCKS listen %s: %w", listenAddr, err)
 	}
 
-	server := newAwgSocksServer(listener, netStack.DialContext)
+	server := newAwgSocksServer(listener, netStack.DialContext, nil)
 	instance := &MasqueSocksInstance{
 		tunnel:     tunnel,
 		tunDev:     tunDevice,

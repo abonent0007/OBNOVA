@@ -30,6 +30,7 @@ class RoutesActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_routes)
         routing = RoutingStore(this)
+        routing.migratePolicyModeIfNeeded()
         container = findViewById(R.id.routes_container)
         switchDefaultVpn = findViewById<SwitchCompat>(R.id.sw_default_vpn)
         switchKillswitch = findViewById<SwitchCompat>(R.id.sw_killswitch)
@@ -41,6 +42,13 @@ class RoutesActivity : AppCompatActivity() {
         switchDefaultVpn.isChecked = routing.isForeignDefaultVpn()
         switchKillswitch.isChecked = routing.isKillSwitch()
         switchSmart.isChecked = routing.isSmartRoutingEnabled()
+        // foreign-default пока не участвует в RouterConfig: не показываем его
+        // как работающую настройку.
+        switchDefaultVpn.isEnabled = false
+        switchDefaultVpn.alpha = 0.45f
+        findViewById<TextView>(R.id.tv_mode_title)?.apply {
+            text = "Весь остальной трафик - через VPN (пока не подключено)"
+        }
         suppressCallbacks = false
 
         switchDefaultVpn.setOnCheckedChangeListener { _, checked ->
@@ -62,11 +70,166 @@ class RoutesActivity : AppCompatActivity() {
 
     private fun renderRows() {
         container.removeAllViews()
+        container.addView(policyCard())
         for (service in RouteSettings.SERVICES) {
             container.addView(buildRow(service))
         }
         container.addView(appsCard())
         container.addView(listsCard())
+    }
+
+    /**
+     * Состояние политики выхода и единственная точка включения Strict.
+     *
+     * Strict не показывается активным по одной лишь настройке: нужен живой
+     * MULTI (state=CONNECTED, backend=MULTI). Иначе экран честно пишет, что
+     * защита не подтверждена, — иначе пользователь считал бы Strict работающим
+     * поверх WARP или остановленного туннеля.
+     */
+    private fun policyCard(): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+            setBackgroundColor(0xFF121A14.toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ).apply { bottomMargin = dp(8) }
+        }
+        card.addView(TextView(this).apply {
+            text = "ПОЛИТИКА ВЫХОДА"
+            setTextColor(0xFF7FA98C.toInt())
+            textSize = 11f
+            letterSpacing = 0.18f
+        })
+
+        val mode = routing.getRoutePolicyMode()
+        val client = ClientData(this)
+        val state = client.getServiceState()
+        val backend = client.getServiceBackend()
+        // Смена режима сама по себе не делает Strict активным: нужен CONNECTED,
+        // записанный ПОСЛЕ смены режима, и backend MULTI.
+        val modeSetAt = routing.getRoutePolicyModeSetAt()
+        val stateUpdatedAt = client.getServiceStateUpdatedAt()
+        val appliedAfterModeChange = modeSetAt <= 0L || stateUpdatedAt >= modeSetAt
+        val strictActive = mode.isStrictFullTunnel &&
+            state == NovaVpnService.STATE_CONNECTED &&
+            backend == NovaVpnService.BACKEND_MULTI &&
+            appliedAfterModeChange
+
+        val scope = TextView(this).apply {
+            text = when {
+                strictActive ->
+                    "Strict Full Tunnel активен.\n\n" +
+                        "Сетевой трафик приложений устройства направляется через MULTI. " +
+                        "Служебный пакет Nova (UID 10997), необходимый для работы VPN-движка, " +
+                        "исключён из VPN и может использовать системную сеть. " +
+                        "Защита tethering не подтверждена."
+                mode.isStrictFullTunnel ->
+                    "STRICT выбран, но НЕ активен: MULTI не подтверждён после смены " +
+                        "режима (state=$state, backend=$backend)."
+                mode == RoutePolicyMode.LIMITED -> {
+                    val split = client.getSplitMode()
+                    val splitLabel = when (split) {
+                        1 -> "только выбранные приложения"
+                        2 -> "все, кроме выбранных"
+                        else -> "все приложения"
+                    }
+                    "LIMITED — Kill Switch; split-tunnel: $splitLabel; " +
+                        "DirectAppsPolicy действует. Это не Strict."
+                }
+                else -> "Обычный режим — DIRECT разрешён."
+            }
+            setTextColor(0xFFDFFFE7.toInt())
+            textSize = 13f
+            setPadding(0, dp(6), 0, 0)
+        }
+        card.addView(scope)
+
+        val strictSwitch = SwitchCompat(this).apply {
+            text = "Strict Full Tunnel (только MULTI)"
+            textSize = 13f
+            isChecked = mode.isStrictFullTunnel
+        }
+        var ignore = false
+        strictSwitch.setOnCheckedChangeListener { button, checked ->
+            if (ignore) return@setOnCheckedChangeListener
+            if (!checked) {
+                routing.exitStrictFullTunnel()
+                LogManager.log("ROUTES: Strict Full Tunnel выключен из UI")
+                renderRows()
+                return@setOnCheckedChangeListener
+            }
+            AlertDialog.Builder(this)
+                .setTitle("Включить Strict Full Tunnel?")
+                .setMessage(
+                    "Весь трафик приложений устройства пойдёт через MULTI. " +
+                        "Банки, госуслуги и приложения операторов тоже будут работать " +
+                        "через VPN и могут перестать открываться.\n\n" +
+                        "Split-tunnel, DirectAppsPolicy, DNS-обходы и LAN-bypass " +
+                        "временно отключаются (настройки сохраняются). Доступен только MULTI: " +
+                        "WARP/OPERA/VLESS будут отклонены.\n\n" +
+                        "Служебный пакет Nova (UID 10997) остаётся вне VPN — это нужно для " +
+                        "работы VPN-движка; tethering не гарантируется.\n\n" +
+                        "Strict станет активным только после успешного запуска MULTI."
+                )
+                .setPositiveButton("Включить Strict") { _, _ ->
+                    routing.enterStrictFullTunnel()
+                    LogManager.log("ROUTES: Strict Full Tunnel включён из UI")
+                    Toast.makeText(
+                        this,
+                        "Strict сохранён. Переподключите VPN — MULTI применит политику.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                    renderRows()
+                }
+                .setNegativeButton("Отмена") { _, _ ->
+                    ignore = true
+                    button.isChecked = false
+                    ignore = false
+                }
+                .show()
+        }
+        card.addView(strictSwitch)
+
+        card.addView(TextView(this).apply {
+            text = "Strict: банки/госуслуги/операторы идут через VPN; " +
+                "новые приложения попадают в full tunnel без обновления списков."
+            setTextColor(0xFF7FA98C.toInt())
+            textSize = 11f
+            setPadding(0, dp(4), 0, 0)
+        })
+
+        val serviceActive = state == NovaVpnService.STATE_CONNECTED ||
+            state == NovaVpnService.STATE_CONNECTING
+        val alwaysOn: Boolean? = if (serviceActive) {
+            client.getServiceAlwaysOn() ?: AlwaysOnVpn.readState(this)
+        } else {
+            AlwaysOnVpn.readState(this)
+        }
+        val lockdown: Boolean? = when {
+            serviceActive -> client.getServiceLockdown()
+                ?: if (alwaysOn == true) AlwaysOnVpn.isLockdown(this) else null
+            alwaysOn == false -> false
+            alwaysOn == true -> AlwaysOnVpn.isLockdown(this)
+            else -> null
+        }
+        card.addView(TextView(this).apply {
+            val prefix = if (state == NovaVpnService.STATE_CONNECTED) {
+                "Lockdown (если VPN остановится)"
+            } else {
+                "VPN STOPPED"
+            }
+            text = when (lockdown) {
+                true -> "$prefix: Lockdown ВКЛ — система блокирует трафик без VPN."
+                false -> "$prefix: Lockdown ВЫКЛ — защита при остановке VPN не гарантируется."
+                null -> "$prefix: Lockdown НЕИЗВЕСТНО — состояние не подтверждено."
+            } + if (alwaysOn == null) " Always-on: неизвестно." else ""
+            setTextColor(0xFF7FA98C.toInt())
+            textSize = 11f
+            setPadding(0, dp(6), 0, 0)
+        })
+        return card
     }
 
     /**

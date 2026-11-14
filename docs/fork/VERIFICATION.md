@@ -3,6 +3,836 @@
 > Только фактические прогоны. Если проверка не удалась из-за среды — это
 > записано отдельно, а не замаскировано словом «работает».
 
+## 2026-11-15 — Release 1.34.12 (176)
+
+- Версия: `versionName=1.34.12`, `versionCode=176`; `aapt2 dump badging`
+  подтверждает.
+- Release + R8: `assembleGithubRelease -PnovaCfProxySlot=true` — PASS.
+- Debug: `assembleGithubDebug` — PASS.
+- Kotlin: **706 тестов, 0 failures**; Go `nova-router` test + `-race` — PASS.
+- Release APK:
+  - `230699B2580A7DFFB6996F28A44991F28083F59E5C8D91C02C820163FB62C4B4` arm64-v8a
+  - `0024A6B96FA8AAC8D5BE7FE18D31D75456555B4535E92C082DCB9920C563C079` armeabi-v7a
+  - `093626679DD537F6F4C677483DC4205158E616D4663D55F86CF636C1EBF8CF17` universal
+- Debug APK:
+  - `5BA513B92C5855DE68A78CEE84587D479E9D9210BBCFE1D2B133D9DB639050F8` arm64-v8a
+  - `F2155B88F4C7FECFC903EA09763BD903BA686D8D880D611CDCA40D7CC0D72374` armeabi-v7a
+  - `3A919AA4D9496B8F743090962ABBBD533AA99032CB8D0D19D842FA2CB838C5BD` universal
+- Release notes: `docs/fork/RELEASE_1.34.12.md`.
+- Ограничения Strict (Nova UID 10997, tethering, user 0) — в release notes.
+
+
+## 2026-11-14 — P-E.2B.3.2: UI отказа и финальные runtime-проверки
+
+- UI Strict: точная формулировка области — «Strict Full Tunnel активен.
+  Сетевой трафик приложений устройства направляется через MULTI. Служебный
+  пакет Nova (UID 10997) … исключён из VPN … tethering не подтверждена».
+- После отказа ручного backend: служба очищает pending-флаги, UI отменяет
+  старт-флоу, показывает «НЕ ПОДКЛЮЧЕНО» и Toast с причиной
+  «Strict: доступен только MULTI». Зависание «ПОДКЛЮЧЕНИЕ» устранено.
+- Подтверждение включает предупреждение о банках/госуслугах/операторах,
+  исключении Nova и tethering.
+
+| Проверка | Результат | Маршрут/факт |
+|---|---|---|
+| Strict активен, все приложения | PASS | `ip rule`: UID 0-10996, 10998-20996, 20998-99999 → VPN table; Nova 10997 исключён |
+| Банки/госуслуги/оператор | PASS (route-level) | UID 10308/10251/10794/10863 в VPN-диапазоне |
+| Новое приложение | PASS | UID 10324 (`ipv6diag`) в VPN-диапазоне без обновления списков |
+| DirectAppsPolicy | PASS | в Strict не вызывается |
+| IPv4 | PASS | Firefox → `104.28.198.244` (через MULTI) |
+| IPv6 | PASS (fail-closed) | table VPN: `unreachable default`; IPv6-сайт не открывается |
+| AUTO + Strict | PASS | `CONNECTED backend=MULTI` |
+| Ручной WARP | PASS | `STRICT: запуск ru отклонён`; UI «НЕ ПОДКЛЮЧЕНО» + причина |
+| Отказ запуска MULTI | PASS (config-failure) | DIRECT-override в Strict → `RouterConfig отклонён`, WARP не поднят, MULTI retry; после возврата AUTO — CONNECTED |
+| Потеря upstream / всех слотов | PASS | `svc data disable`: VPN-процесс, `libnova-router.so`, `tun0`, table 1237 и UID-правила остались; Firefox не получил ответа; после `svc data enable` Strict-конфиг пересобран |
+| Потеря primary-процесса | NOT TESTED | `kill` дочернего `libnova-desync.so` из shell запрещён (UID 10997, `Operation not permitted`); root/debug-хука нет |
+| DNS failure (NXDOMAIN) | PASS | `nonexistent-probe.invalid`: Firefox «Адрес не найден», VPN остался ACTIVE, physical fallback не появился |
+| DNS resolver outage | NOT TESTED | без root: `settings put global private_dns_*` запрещён (`WRITE_SECURE_SETTINGS`), `android.settings.PRIVATE_DNS_SETTINGS` на ColorOS отсутствует; управляемого отказа резолвера нет |
+| Wi-Fi → LTE | PASS | LTE→Wi-Fi и Wi-Fi→LTE: MULTI rotate, `STRICT: RouterConfig strict=true`, соединение активно |
+| Дополнительные Android users | **NOT COVERED (route-level)** | VPN-правила `uidrange 0-99999` покрывают только user 0; user 10 (1010997) и user 999 вне диапазона. Strict не является межпользовательским |
+| Lockdown ON | PASS | системный экран: Always-on + Lockdown; служба отдала ВКЛ, UI «Lockdown ВКЛ» |
+| VPN остановлен + Lockdown ON | PASS | force-stop Nova при Lockdown ON: Firefox `NS_ERROR_OFFLINE` при живом LTE; настройки возвращены OFF |
+| Lockdown OFF | PASS | служба отдаёт `isLockdownEnabled=false`; UI «ВЫКЛ» |
+| VPN остановлен | PASS | Strict не активен, Lockdown UNKNOWN (Settings.Secure закрыт) |
+| Tethering | **NOT COVERED (platform)** | запрос `com.google.android.networkstack.tethering` идёт с `NOT_VPN`; клиентский runtime не проверялся; защита не заявляется |
+| Исключение Nova UID | PASS | единственный UID вне VPN — 10997; пользовательские приложения не исключены |
+
+- Kotlin: **706 тестов, 0 failures**; release + R8 — PASS.
+- Версия `1.34.11/175`; Strict на устройстве выключен, MULTI работает;
+  Selective Direct не начат. P0/P1, Go-core, tun2proxy, UDP dispatcher и
+  P-E.2A не менялись.
+
+## 2026-11-14 — P-E.2B.3.1: аудит исключения Nova
+
+- Полный аудит: `docs/fork/PE2B31-NOVA-EXCLUSION-AUDIT.md`.
+- `addDisallowedApplication(packageName)` исключает весь UID 10997, а
+  `protect()` действует только на конкретный fd в вызывающем процессе.
+- Без исключения пакета сейчас ломаются:
+  - `opera-proxy` — child-процесс, внешние регистрация/API/relay, protect нет;
+  - `nova-router` — child-процесс, `ws`-слот без `via` и `direct` (в Strict
+    direct отсутствует, `ws` остаётся);
+  - `tun2proxy` — in-process Rust, protect-callback в API нет;
+  - часть Java-сокетов (`AppUpdateManager`, `FeedHttp`, Opera bootstrap
+    `DnsProbe` с `protector=null`) — без protect; это не обход, но путь
+    меняется.
+- Точечно защищены: Go-core SmartBind (результат только логируется), DNS DoH
+  (fail-closed), MASQUE (bind к underlay), Xray (protect есть, результат не
+  проверяется).
+- Вывод: убрать исключение нельзя без отдельного этапа (protect-callback в
+  router/opera/tun2proxy или отдельный пакет/UID). Рекомендация — оставить
+  исключение и честно указывать область в UI.
+- Код не менялся; Strict на устройстве выключен, MULTI работает.
+
+## 2026-11-14 — P-E.2B.3: Android Strict Full Tunnel
+
+- `startSmartConnection`: Strict — явная проверка `getRoutePolicyMode() ==
+  STRICT_FULL`; AUTO/MULTI разрешены, ручной WARP/OPERA/VLESS/DNS/TOR
+  отклоняется до создания TUN. `policyMulti = strict || …`.
+- `onStartCommand`: центральный запрет для Strict — explicit WARP-параметры,
+  `ACTION_START_OPERA_ONLY`, `WARP_BOOTSTRAP` и ручной регион не запускаются.
+- `restorePersistedSession`: Strict не восстанавливает warp/opera-сессию,
+  только `multi`.
+- `buildMultiRouterConfig`: `strict=true` в JSON; `udpSlots` без direct;
+  лог `STRICT: RouterConfig strict=true direct=false`.
+- TUN (MULTI): `applyOperaSplitTunnelPolicy` в Strict не применяет
+  `DirectAppsPolicy`/split-списки; `applyPlainDnsIntercept(empty)` и
+  `setDomainBypassPolicy(false)`; DNS/domain `excludeRoute` не добавляются;
+  `applyPrivateDnsBypass` выключен; LAN-bypass выключен.
+- `protect()` сохранён для underlay-сокетов.
+- UI: карточка «Политика выхода» — FULL TUNNEL / STRICT выбран, но не активен /
+  LIMITED / обычный; Strict активен только при CONNECTED+MULTI и обновлении
+  состояния после смены режима (`policy_mode_set_at`). Подтверждение с
+  предупреждением о банках/госуслугах/операторах; выключение возвращает
+  прежний режим.
+- Lockdown в UI: служба снимает `VpnService.isAlwaysOn()`/
+  `isLockdownEnabled()` (API 29+) и пишет в `service_state.json`; UI читает
+  оттуда, при остановленном сервисе — `Settings.Secure`/UNKNOWN.
+
+| Проверка | Результат |
+|---|---|
+| Strict + все приложения | **PASS**: `ip rule` — uidrange 0-10996, 10998-20996, 20998-99999 → table 1224; исключён только UID 10997 (Nova) |
+| IPv4 default | **PASS**: `default dev tun0`; LAN-вычетов нет (`10.1.11.0/24 dev tun0` только адрес TUN) |
+| Банк/госуслуги/оператор | **PASS (route-level)**: UID 10308 (Sber), 10251 (Tinkoff), 10794 (Alfa), 10863 (Госуслуги) в диапазоне VPN |
+| Приложение из DirectAppsPolicy | **PASS (route-level)**: DirectAppsPolicy не вызывается в Strict |
+| Новое приложение после включения | **PASS**: `ipv6diag` UID 10324 установлен после Strict, попал в диапазон 0-10996 без обновления списков |
+| DNS failure | **NOT TESTED** (нет управляемого отказа) |
+| Потеря primary / всех слотов | **NOT TESTED** (нет root/управляемого отказа) |
+| AUTO + Strict | **PASS**: CONNECTED backend=MULTI |
+| Ручной WARP | **PASS**: `STRICT: запуск ru отклонён — Strict Full Tunnel работает только в MULTI`, туннель не поднят |
+| UI после отказа backend | **PARTIAL**: причина «Strict: доступен только MULTI» показана, но главный статус может остаться «ПОДКЛЮЧЕНИЕ» до перерисовки экрана |
+| Отказ MULTI | **NOT TESTED** |
+| Wi-Fi → LTE | **NOT TESTED** (Wi-Fi выключен на устройстве) |
+| IPv4 regression | **PASS**: Firefox `104.28.198.244` |
+| IPv6 | **PASS (fail-closed)**: table 1224 `unreachable default`; `ipv6.icanhazip.com` не открывается |
+| Underlay protect() | **PASS (косвенно)**: MULTI/tun2proxy работают через защищённые underlay-сокеты |
+| VPN остановлен + Lockdown | **PASS (UI)**: работающий Strict — «Lockdown ВЫКЛ»; после остановки — UNKNOWN, Strict не показывается активным |
+| Lockdown ON | **NOT TESTED**: нет `WRITE_SECURE_SETTINGS`, включается только системным экраном |
+| Tethering | **NOT TESTED**; защита не заявляется |
+
+- Отклонение от буквы задания: в Strict остаётся один
+  `addDisallowedApplication(packageName)` — служебный пакет Nova. Без него
+  router/tun2proxy/Xray-сокеты попадают в собственный TUN и MULTI
+  зацикливается; `protect()` не покрывает сокеты дочерних процессов.
+  Пользовательские приложения не исключаются (доказано диапазонами UID).
+- Runtime Strict: включался на устройстве; **в пользовательскую поставку не
+  включается** до отдельного решения по приёмке.
+- Версия `1.34.11/175`. P0/P1, P-E.2A, Go-core, tun2proxy и UDP dispatcher
+  не менялись.
+
+## 2026-11-14 — P-E.2B.2: Strict RouterConfig + Go-валидатор
+
+- `RouterConfig.build` пишет `"strict":true` только для Strict-конфигурации;
+  прежний JSON не изменился.
+- `RouterConfigFactory` в `strict`:
+  - слот `direct` не создаётся;
+  - правила `exclude` и `local-tld` не генерируются;
+  - правила `spotify` и `china-ai` не генерируются (трафик уходит в defaultOrder);
+  - любой `RouteClass.DIRECT` в overrides → `IllegalArgumentException`;
+  - `killSwitch` для strict считается включённым, поэтому `direct` не попадает
+    ни в `defaultOrder`, ни в хвост `order()`.
+- `nova-router.Config.Strict`: валидатор независимо отклоняет:
+  - слот с именем `direct` или типом `direct`;
+  - `direct` в `defaultOrder`/`defaultUdpOrder`;
+  - `direct` в `tcpOrder`/`udpOrder`/legacy `order` любого правила;
+  - правила `exclude` и `local-tld`.
+  Strict-проверка идёт **до** проверки ссылок на слоты, поэтому direct в
+  порядке отклоняется как strict-нарушение, даже если слота direct нет.
+  Валидатор ничего не исправляет и не удаляет direct.
+- `LoadConfig` при ошибке возвращает ошибку; автоматического отката к старой
+  или обычной конфигурации нет. Подключение к службе — B.2.3, runtime Strict
+  не включался.
+
+| Сценарий | Результат |
+|---|---|
+| STRICT_FULL без DIRECT | PASS (Kotlin + Go fixture) |
+| DIRECT slot | REJECT (Go) |
+| DIRECT-тип под другим именем | REJECT (Go) |
+| DIRECT в defaultOrder | REJECT (Go) |
+| DIRECT в defaultUdpOrder | REJECT (Go) |
+| DIRECT в tcpOrder | REJECT (Go) |
+| DIRECT в udpOrder | REJECT (Go) |
+| DIRECT в legacy order | REJECT (Go) |
+| DIRECT в правиле при чистом defaultOrder | REJECT (Go) |
+| exclude / local-tld | REJECT (Go) + не генерируются (Kotlin) |
+| RouteClass.DIRECT override | REJECT (Kotlin, исключение) |
+| Старая конфигурация без режима | PASS (direct разрешён, как раньше) |
+| LIMITED | PASS (direct-правила сохраняются, как раньше) |
+| Ошибка Strict-валидации → fallback | Нет fallback (ошибка `LoadConfig`) |
+| Фактический JSON Kotlin → Go | PASS: `nova-router/testdata/strict_config.json` собран фабрикой (`NOVA_WRITE_STRICT_FIXTURE=1`) и принят `LoadConfig` |
+
+- Kotlin: **706 тестов, 0 failures**; `RouterConfigFactoryTest` — 35.
+- Go: `go test ./...` — PASS; `go test -race -count=1 ./...` — PASS.
+- Release `assembleGithubRelease` + R8 — PASS.
+- Runtime Strict — **NOT TESTED** (в службе не включался, это B.2.3).
+
+Проверка вызовов `isKillSwitch()` после перехода на enum:
+
+| Место | Поведение |
+|---|---|
+| `RoutingStore` (источник) | `mode != OFF`; для LIMITED — как старый `true` |
+| `NovaVpnService:6110` (AUTO-требования) | LIMITED требует MULTI, как раньше |
+| `NovaVpnService:11292` (RouterConfigFactory) | LIMITED убирает direct-хвост, как раньше |
+| `MainActivity:6867` (dataPlaneHint) | предупреждение о backend — как раньше |
+| `RoutesActivity:43/58` | состояние тумблера и запись LIMITED/OFF |
+| `ClientData.isKillSwitch`/`setKillSwitch` | мёртвый код, ключ `routing_killswitch`, никем не вызывается; на новую модель не влияет |
+
+`SELECTIVE` нигде не выставляется, поэтому его `isKillSwitch=true` в runtime недостижим.
+
+## 2026-11-14 — P-E.2B.1 модель режимов (B.2.1)
+
+- Добавлен `RoutePolicyMode`: `OFF`, `LIMITED`, `STRICT_FULL`, `SELECTIVE`
+  (Selective — только резерв, функциональности нет).
+- `RoutingStore`: ключ `policy_mode`, ленивое чтение, миграция старого
+  `killswitch`; запись миграции — только из UI-процесса
+  (`/proc/self/cmdline`), чтобы не затирать prefs из `:vpn`.
+- Миграция: старый `killswitch=true` → **LIMITED** (не Strict), `false` →
+  `OFF`; явно сохранённый режим сильнее boolean; неизвестное значение →
+  fallback к старому boolean.
+- `setKillSwitch(true/false)` совместим: LIMITED/OFF, зеркало `killswitch`
+  пишется для отката версии. `isKillSwitch()` = `mode != OFF`.
+- UI Strict не добавлен; `STRICT_FULL` нигде не выставляется.
+
+| Проверка | Результат |
+|---|---|
+| Unit `RoutePolicyModeTest` | PASS (9 тестов: legacy true→LIMITED, false→OFF, stored wins, unknown fallback, case/trim) |
+| Полный unit-набор | PASS: 702 теста, 0 failures, 0 errors (было 693) |
+| Release `assembleGithubRelease` + R8 | PASS |
+| Device: старый `killswitch=true` → режим | PASS: `POLICY: старый killswitch мигрирован в режим limited`; тумблер остался включён |
+| Device: `setKillSwitch(false)` | PASS: тумблер выключен, режим OFF |
+| Device: MULTI после миграции | PASS: `CONNECTING → CONNECTED (backend=MULTI)`, egress `92.36.7.***` |
+| Профиль/данные после `install -r` | PASS: настройки и списки сохранились |
+| `STRICT_FULL` авто-включение | NOT PRESENT (ни одного пути) |
+
+- Ограничение: устройство проверялось на release-сборке без root; запись
+  `policy_mode` подтверждена логом миграции, файл prefs напрямую не читался.
+
+## 2026-11-14 — P-E.2A: controlled WARP IPv6 counters (диагностическая сборка)
+
+> Инструментализация ставилась только в отдельную debug-AAR; после прогона
+> удалена и release пересобран из чистого AAR (строки `DIAG-TUN`/`DIAG-FLOW`
+> в установленной `libgojni.so` отсутствуют).
+
+Фактический backend WARP — WireGuard-подобный (`device.NewDevice` +
+`SmartBind`), runtime UAPI: `allowed_ip=0.0.0.0/0,::/0`.
+
+Контролируемый прогон Firefox UID 10918 (table 1190/1191, `default dev tun0`),
+счётчики TUN + WireGuard bind:
+
+| Запрос | r4 | r6 | w4 | w6 | bind_tx | bind_rx |
+|---|---|---|---|---|---|---|
+| baseline | 809→830 | 73→76 | 548→560 | 52→54 | 851→875 | 601→615 |
+| IPv6 #1 icanhazip | — | 360→584 | — | 288→506 | 3550→3885 | 2778→3092 |
+| IPv6 #2 v6.ident.me | — | 591→691 | — | 510→596 | 3973→4619 | 3169→3673 |
+| IPv6 #3 icanhazip | — | 698→808 | — | 600→698 | 4666→4839 | 3708→3858 |
+| IPv4 regression | 4228→4339 | — | 3162→3262 | — | 4851→5046 | 3862→4035 |
+
+- `DIAG-FLOW`: `READ6 2606:4700:110:812c:...:ephem -> 2606:4700::6810:b8f1:443`,
+  ответ `WRITE6 2606:4700::6810:b8f1:443 -> ... len=1280/846/600`, т.е. полный
+  обмен TLS-данными через tun0.
+- Firefox отрисовал IPv6-адрес: `2a09:bac5:5157:2878::408:6f`, после
+  переподключения — `2a09:bac5:5157:26fa::3e2:36`. RDAP: `2a09:bac5::/32` =
+  **CLOUDFLAREWARP**. Глобального IPv6 вне tun0 у устройства нет.
+- Чистая release-сборка (без счётчиков) повторно: `ipv6.icanhazip.com` →
+  `2a09:bac5:5157:26fa::3e2:36`, `v6.ident.me` → тот же адрес,
+  IPv4 → `104.28.198.244`. Остаточных `DIAG-*` логов нет.
+
+| Участок | Результат |
+|---|---|
+| DNS AAAA для Firefox | PASS |
+| UID / allow-list / table / default dev tun0 | PASS |
+| IPv6 TCP/443 в TUN Read | **PASS** (per-flow log) |
+| Go-core routing IPv6 | PASS (пакеты ушли в bind TX, DROP не наблюдался) |
+| WARP transport TX | PASS (bind_tx растёт синхронно) |
+| WARP transport RX | PASS (bind_rx растёт) |
+| TUN Write IPv6 | PASS (WRITE6 обратно в приложение) |
+| Приложение получает IPv6-ответ | **PASS** (страница отрисовала WARP IPv6) |
+| WARP selected-app IPv6 | **PASS** |
+| IPv4 regression | PASS (`104.28.198.244`) |
+| Физическая IPv6-утечка | не наблюдалась (глобального IPv6 вне tun0 нет) |
+
+- Ранний `FAIL (connectivity)` (Firefox error 131) **не воспроизвёлся**: 6/6
+  IPv6-запросов PASS, в т.ч. после полного reconnect. Вероятная причина —
+  временная нестабильность WARP-сессии (по времени совпала с
+  `Retrying handshake because we stopped hearing back after 15 seconds`);
+  доказанной первопричиной handshake timeout не считается. Дефект Go-core
+  не подтверждён.
+- Счётчики агрегатные (UID на TUN недоступен); привязка к тесту — по
+  per-flow destination/source и TCP/443 + отрисованному IPv6-адресу.
+- Возврат в MULTI: UID 10155/10918 → table 1193, `unreachable default` —
+  route-level DROP подтверждён повторно; runtime IPv6 для MULTI — NOT TESTED
+  (диагностическое приложение не выбирается в split-list).
+- Production-код не менялся: правки `tunnel.go`/`smart_bind.go` откатаны,
+  `diag_tun.go` удалён; в диффе остались только ранее принятые P0/P1
+  изменения.
+
+## 2026-11-14 — P2: внешний UDP есть, non-RU egress нет
+
+- **P2.1 штатный PROTON (Wi-Fi и LTE): FAIL.** Оба прогона перебирали
+  импортированные Proton-конфиги (`warp-awg-exact`, 100 профилей), все
+  попытки закончились `success=false`, причина `no_traffic`; сессия
+  останавливалась. На Wi-Fi при этом штатный MULTI/WARP поднимался и TCP
+  работал.
+
+## 2026-11-14 — P-E.2A: WARP IPv6 diagnostic
+
+- Корректный AAAA-only endpoint `ipv6.icanhazip.com` (TLS valid, A нет);
+  Firefox UID 10918 в allow-list, `ip -6 rule` → table 1182,
+  `default dev tun0`.
+- IPv4 через Firefox/WARP: `104.28.198.244` — PASS.
+- IPv6 HTTPS: Firefox error 131, ответа и `client_ip_seen_by_server` нет —
+  **FAIL (connectivity)** для selected-app.
+- MULTI UID 10155: table 1175 `unreachable default` — route-level DROP.
+- Предыдущий literal `2606:4700:4700::1111` — DNS-резолвер Cloudflare, не
+  HTTP endpoint; его результат NOT TESTED и в классификацию не входит.
+
+| Участок | Результат |
+|---|---|
+| DNS AAAA для Firefox | PASS (endpoint AAAA-only) |
+| UID/allow-list/table | PASS |
+| IPv4 через WARP | PASS |
+| IPv6 TCP/443 в TUN | NOT TESTED (нет packet capture) |
+| Go-core Read IPv6 | NOT TESTED (нет счётчиков/логов) |
+| WARP transport IPv6 | NOT TESTED |
+| Return path в TUN | NOT TESTED |
+| WARP selected-app IPv6 | **FAIL (connectivity)** |
+| Физическая IPv6-утечка | не наблюдалась; packet-level NOT TESTED |
+
+- Наиболее ранняя подтверждённая точка: selected-app IPv6-соединение не
+  устанавливается после подтверждённого route/table; локализовать TUN vs
+  Go-core vs transport без packet-level/счётчиков нельзя.
+- Предложение для следующего шага (без внедрения): диагностические счётчики
+  `ipver=6` на `AndroidTUN.Read/Write`, runtime `allowed_ip` WireGuard и
+  pcap/tcpdump на корне; либо controlled endpoint с серверным логом.
+- Production-код, `NovaVpnService`, `nova-router`, `tun2proxy`, Go-core не
+  менялись.
+
+## 2026-11-14 — P-E.1 baseline: IPv6 route-level fail-closed
+
+- Снят `docs/fork/PE1-BASELINE.md`: LTE/Wi-Fi без глобального IPv6
+  (`NO BASELINE`); Wi-Fi IPv4 egress `194.34.99.100`, LTE `92.36.1.97`.
+- MULTI: `tun0` только `fe80::/64`; для выбранных VPN UID действует
+  `lookup 1170`, где `unreachable default` — IPv6 завершается DROP, а не
+  уходит физически. Это route-level fail-closed, не packet-level PASS.
+- WARP: `tun0` имеет IPv6 `2606:4700:110:.../128` и `default` в table 1171,
+  но фактическая передача IPv6 не подтверждена (`NOT TESTED`).
+- SOCKS5 IPv4 egress `104.28.255.123`; SOCKS5 IPv6 — connect fail.
+- P-E.2A diff для MULTI/OPERA/VLESS **не требуется** по baseline; добавление
+  `::/0` приостановлено до selected-app runtime на сети с глобальным IPv6.
+- KILL SWITCH: P-E.2B, не начат.
+- Root/tcpdump отсутствуют — packet-level ограничение зафиксировано.
+
+## 2026-11-14 — P-D: AUTO capability-aware и data plane UI
+
+- `RouterPolicyRequirements` — чистая функция: `requiresMulti` при smart routing,
+  любом service override != `auto` или kill switch; всегда генерируемые
+  `defaultOrder`/`exclude`/`local-tld` не считаются требованием MULTI.
+- `startSmartConnection`: AUTO + requirements → MULTI; при отказе MULTI —
+  retry/stop, без перехода на WARP/MASQUE/OPERA. Ручные режимы не подменяются
+  (`policyMulti` только для `auto`).
+- UI: `dataPlaneHint` показывает `MULTI: активны правила router` /
+  `Go-core: правила router не применяются` / `Один транспорт: ...`;
+  при kill switch вне MULTI — предупреждение, что Kill Switch не действует.
+- `RoutesActivity`: foreign-default переключатель отключён и помечен
+  «пока не подключено» (ключ не участвует в RouterConfig).
+- Тесты: 693 Kotlin, 0 failures (+5 RouterPolicyRequirements).
+- Device AUTO без router-requirements: `backend=WARP`, UI hint
+  «Go-core: правила router не применяются»; IP `104.28.198.***`, RU.
+  AUTO с активным override на устройстве — NOT VERIFIED (unit-тест).
+
+## 2026-11-14 — P-C: DNS resolver/egress separation и ограничения
+
+- **P-C.1 аудит:** MULTI использует virtual DNS tun2proxy; `nova-router`
+  видит для UDP `ATYP=IPv4` (QUIC), для TCP — домен/SNI. UDP/53 в router не
+  доходит. `LocalDnsProxyManager` не запускается, `DnsResponseCache` —
+  только внутри него. Go-core (WARP/MASQUE) имеет отдельный DNS intercept.
+- **P-C.2.1:** `dnsai` удалён из egress-слотов; Go `Config.validate()` теперь
+  отклоняет любой слот `type=dnsai`. DNS-AI остаётся в resolver-слое
+  (`PriorityDns`), не как транспорт.
+- **P-C.2.2 — BLOCKED BY TUN2PROXY:** `Tun2proxyDns_Virtual` отвечает
+  синтетическим адресом; в `tun2proxy.h` нет callback с реальными A/AAAA/
+  CNAME. IP→domain mapping по синтетике/последнему домену запрещён.
+- **P-C.3A:** вариант A — TCP по домену/SNI; UDP только IP/CIDR +
+  `defaultUdpOrder`; AI UDP/443 `allowQuic=false`; AI без verified non-RU —
+  DROP. Evристики IP→domain не вводились.
+- **P-C.4 факты:**
+  - Chrome/YouTube TCP идут по домену (`example.com:80 → primary`,
+    `youtube.com:443`), UDP QUIC — ATYP=IPv4, 443 DROP.
+  - DNS/53 в router не наблюдался; DoT/853 виден как TCP на IP
+    (`111.88.96.53:853 → primary`), QNAME внутри TLS недоступен.
+  - `ping youtube.com` — это системный netd resolver/Private DNS
+    (`dns.geohide.ru`), не virtual DNS приложения; `youtu.be` и wikipedia
+    резолвятся, youtube.com — NXDOMAIN/unknown host. Это не `udpOrder` и не
+    router; app-путь YouTube TCP работает.
+  - `LocalDnsProxyManager` в MULTI не активен; его TTL-кэш не считается
+    проверенным.
+- **Ограничения:** QNAME для UDP недоступен; DoH/DoT только endpoint/SNI;
+  AAAA/DNS over IPv6 не покрыты; при недоступном resolver — fail-closed для
+  AI, без direct fallback.
+- **Тесты:** Kotlin 688/0; Go `nova-router` ok/race; `TestDNSAISlotIsRejectedAsEgress`,
+  `TestUDPOrderIndependentFromTCP`, 443 allow/drop тесты — ok.
+
+## 2026-11-14 — P-B.2: allowQuic на уровне правила
+
+- `RuleSpec.allowQuic` (по умолчанию false) и Go `Rule.AllowQUIC`.
+- UDP/443 разрешается только при `allowQuic=true` **и** непустом `udpOrder`
+  **и** UDP-capable первом слоте; иначе DROP.
+- `allowQuic` не выбирает транспорт и не ослабляет `SupportsUDP`/egress.
+- Все текущие правила `allowQuic=false`; поведение UDP/443 не изменилось.
+- Тесты: drop без разрешения, dispatch с разрешением; Kotlin 688/0.
+
+## 2026-11-14 — P-B.1: tcpOrder/udpOrder
+
+- `RuleSpec` пишет `tcpOrder`/`udpOrder`; добавлен `defaultUdpOrder`.
+- Go `UDPOrderFor` различает «правило не найдено» (default) и «правило
+  найдено, udpOrder пуст» (DROP).
+- UDP dispatcher использует только `udpOrder`; TCP-семантика не изменена.
+- UDP-порядки: youtube/ru/default → primary (если primary UDP-capable),
+  telegram → awg (если awg UDP-capable), direct-правила → direct, AI/apis/
+  gemini-support/eu → [].
+- Тесты: независимые TCP/UDP порядки, Opera в TCP не влияет на UDP;
+  Go ok/race/count20.
+
+## 2026-11-14 — P-A.2.1: egress eligibility hardening
+
+- `EgressEligibility`: страна ровно 2 буквы, не RU/спецкод; IP публичный
+  (не private/loopback/link-local/multicast/CGNAT).
+- `multiEgressGeneration`/port guard: старый probe не меняет новый сеанс.
+- Тесты: NL/DE true; RU/unknown/T1/XX/EU false; private/loopback/CGNAT/
+  invalid false.
+
+
+- **P2.1 штатный PROTON (Wi-Fi и LTE): FAIL.** Оба прогона перебирали
+  импортированные Proton-конфиги (`warp-awg-exact`, 100 профилей), все
+  попытки закончились `success=false`, причина `no_traffic`; сессия
+  останавливалась. На Wi-Fi при этом штатный MULTI/WARP поднимался и TCP
+  работал.
+- **P2.2 внешний UDP (MULTI/WARP, Wi-Fi) — PASS:**
+  - `EXTERNAL_UDP_DNS PASS len=61 rcode=0`: DNS `1.1.1.1:53` через router →
+    WARP → ответ;
+  - `EXTERNAL_UDP_STUN PASS mapped=104.28.230.248:40314`: STUN Binding
+    Request через router → WARP; внешний сервер видит `104.28.230.248`.
+  - TCP-egress через тот же router: `104.28.230.248`; физический IP Wi-Fi:
+    `194.34.98.234`. UDP и TCP выходят одним WARP-адресом, direct-утечки нет.
+- **P2.3 non-RU egress — BLOCKED.** `104.28.230.248` по `ip-api.com`:
+  `country=RU, city=Moscow, org=Cloudflare WARP`. Это не non-RU выход,
+  поэтому для Google AI/Proton NL критерий не выполнен.
+- Вывод: UDP-транспорт и диспетчер доказаны на внешнем WARP; остаётся
+  получить рабочий non-RU endpoint (Proton NL / VPS). На проверенных Wi-Fi
+  и LTE маршрутах WARP дал RU egress; это не утверждение о поведении WARP
+  во всех сетях, а результат этих двух прогонов.
+- **P2.4 WARP LTE (Tele2):** `EXTERNAL_UDP_DNS PASS` (1.1.1.1;53),
+  STUN к `74.125.250.129:19302` — timeout (сервер недоступен на этом
+  маршруте). TCP-egress через router: `104.28.198.247`; `ip-api.com` —
+  `RU, Moscow, Cloudflare WARP`. На проверенном LTE-маршруте WARP также
+  дал RU egress, non-RU не получен. DNS-ответ доказывает внешний UDP и на
+  LTE.
+- Временная activity внешнего UDP удалена; release пересобран без неё.
+
+## 2026-11-14 — P1.3 Android: два домена, TCP-only drop, AWG-down drop
+
+- Локальный peer с двумя адресами `10.77.0.1`/`10.77.0.2`, DNS
+  `first.example → 10.77.0.1`, `second.example → 10.77.0.2`, echo на обоих
+  `:9000`; клиент — `AwgSocksBridge` в `:vpn` (`10.77.0.3`, peer
+  `127.0.0.1:51820`), UDP-клиент — временная activity через
+  `nova-router 127.0.0.1:1373`.
+- `ROUTER_UDP_TWO_DOMAINS PASS`: оба домена на порту 9000 одновременно с
+  одного клиента, nonce вернулись со своими IP (`10.77.0.1` и `10.77.0.2`);
+  в логах `[UDP-TEST-DNS] query=first.example` и `query=second.example`.
+- `ROUTER_UDP_TCP_ONLY DROP PASS`: `gemini.google.com:9000` (первый слот
+  правила — не UDP-транспорт) ответа не получил, в тестовый DNS запрос не
+  ушёл.
+- `ROUTER_UDP_NO_AWG DROP PASS`: после остановки локального peer повторный
+  `first.example:9000` ответа не получил; fallback на другой слот/direct не
+  произошёл.
+- Тестовая activity/peer/конфиг после прогона удалены; release пересобран
+  без них: в dex нет `UdpRouterTestActivity`, `libnova-router.so` в APK
+  совпадает с `jniLibs`.
+- Финальная регрессия: Telegram 200; YouTube — первый запрос ушёл в `spoof`
+  и получил TLS-таймаут, второй — 200 (~1.0 с, `primary`). Это отдельный
+  дефект TCP-fallback, не UDP-диспетчер. Kotlin — 679 тестов, 0 failures;
+  `nova-router` и `nova-core/engine` — ok.
+
+## 2026-11-13 — P1.1/P1.2 UDP capabilities и dispatcher в nova-router
+
+- `RouterConfig.SlotSpec` получил явное поле `udp`; JSON слота содержит
+  `"udp":true` только когда capability задана.
+- `RouterConfigFactory.build` принимает `udpSlots`; capability задаётся при
+  создании транспортного слота и **не выводится из номера порта**:
+  `multiPrimaryKind`/`multiCfProxyKind` фиксируют фактический bridge
+  (`awg`/`masque`), `multiAwgPort` — отдельный AWG-слот. Тест на смену
+  listen-порта AWG (`19378`) подтверждает сохранение `udp:true`.
+- Go `Slot` получил `UDP bool`; `Config.SupportsUDP(slot)` — чистая функция,
+  неизвестный слот false, без сокетов и изменения состояния.
+- **P1.2:** `serveUDPAssociate` больше не делает прямой `net.DialUDP` в обход
+  политики. Каждый датаграм проходит `routeOrderFor`; берётся **первый слот
+  правила**. Если у него нет `udp:true` — drop, без перебора и direct
+  fallback. Для `socks5` открывается SOCKS5 UDP ASSOCIATE к слоту (AWG
+  `127.0.0.1:1378`), hostname передаётся как `ATYP=DOMAIN`; ответы
+  фильтруются по отправленным адресам. `UDP/443` отбрасывается.
+- **Найден и исправлен баг фильтра ответов:** AWG-мост отвечает на
+  `ATYP=DOMAIN` уже разрешённым IP. Вместо эвристики по порту теперь для
+  каждого домена создаётся **отдельная upstream-ассоциация** (`slot + domain`),
+  поэтому ответы двух имён с одинаковым портом не смешиваются; для
+  IP-назначений ассоциация остаётся одна на слот с точной проверкой
+  `host:port`. Лимит — 32 ассоциации на клиента.
+- **Найден и исправлен race при параллельных датаграмах:** `payload` был
+  срезом переиспользуемого буфера `ReadFromUDP`, и следующий датаграм
+  перезаписывал данные до обработки в горутине. Теперь payload копируется
+  перед `go forward`; тест с двумя одновременными DOMAIN-запросами
+  (`first.example`/`second.example`, один порт) проходит, `-race` — ok.
+- Go-тесты `nova-router`: ok, `-race` — ok, `-count=20` — ok. Проверены:
+  direct UDP, маршрут через первый слот с сохранением домена, drop для
+  TCP-only первого слота, drop без capability, закрытие upstream при
+  закрытии клиентского control.
+- Kotlin unit-тесты: ok (28 тестов `RouterConfigFactoryTest`, включая
+  UDP-capability и смену порта).
+- `libnova-router.so` пересобран для arm64 и armv7; armv7 — cgo/NDK
+  `armv7a-linux-androideabi24-clang`, оба ELF `DYN` (PIE).
+- TCP-регрессия на arm64: YouTube 200, Telegram 200 через роутер.
+- Ограничение: строгий выбор первого слота означает, что UDP через
+  TCP-only слот (например, `secondary`/Opera) отбрасывается по контракту
+  fail-closed; DNS, который Android отправит по UDP/53 через такой слот,
+  тоже будет отброшен. Это ожидаемо до появления UDP-capable слота первым
+  в правиле (P2/AWG).
+- **P1.2 Android end-to-end с контролируемым локальным WireGuard-peer —
+  PASS:**
+  - сервер `10.77.0.1:9000`/`10.77.0.1:53` в основном процессе, клиент —
+    `AwgSocksBridge` в `:vpn` с тестовым конфигом `127.0.0.1:51820`;
+  - клиент — временная activity, SOCKS5 UDP ASSOCIATE к `nova-router`
+    `127.0.0.1:1373`;
+  - `ROUTER_UDP_DOMAIN PASS`: `youtube.com:9000` → правило youtube →
+    `primary` (AWG, `udp:true`) → `ATYP=DOMAIN` → внутренний DNS
+    `[UDP-TEST-DNS] query=youtube.com` → inner `10.77.0.1:9000`, payload 13 Б;
+  - `ROUTER_UDP_DNS PASS len=45 rcode=0`: IP-датаграм `10.77.0.1:53` через
+    router → AWG → ответ;
+  - это доказывает выбор слота по политике, сохранение домена, upstream
+    SOCKS5 UDP ASSOCIATE и возврат ответа через router;
+  - тестовая activity, локальный peer и тестовый конфиг удалены после
+    прогона; release пересобран без них.
+- Ограничение внешнего egress: Proton/WARP endpoint по-прежнему не всегда
+  завершает handshake (P2), поэтому реальный внешний UDP может быть
+  недоступен; на контролируемом peer диспетчер работает.
+- **Финальная чистая сборка:** тестовая activity/peer/конфиг удалены, в dex
+  нет `UdpRouterTestActivity`; `libnova-router.so` в APK совпадает с
+  `jniLibs`. TCP-регрессия: Telegram 200; YouTube 200 три раза подряд.
+  Первый запрос ушёл в `spoof` и получил TLS-таймаут — это существующий
+  TCP-fallback транспорт, повторные запросы прошли через `primary` (200,
+  ~1.2 с). Kotlin: 679 тестов, 0 failures. `nova-router`: ok, `-race` — ok,
+  `-count=20` — ok. `nova-core/engine`: ok; `cmd/pktcap` не собирается на
+  Windows (`syscall.AF_PACKET`) — Linux-only, не регрессия.
+
+## 2026-11-13 — P0 UDP ASSOCIATE на Android: FAIL по транспорту AWG
+
+```text
+APK: OBNOVA_1.34.11 (AAR с awg_socks_udp, Kotlin test activity)
+Режим: MULTI, PRIMARY = AWG SOCKS 127.0.0.1:1378
+Команда: adb shell am start -n com.brent.nova/com.example.nova.UdpAssociateTestActivity --ei cycles 1
+```
+
+- **Клиент дошёл до relay:** `SOCKS_TCP_CONNECTED 127.0.0.1:1378`,
+  `SOCKS_GREETING 05 00`, `SOCKS_BND 127.0.0.1:37081`.
+- **UDP-запрос ушёл:** `UDP_SEND 1.1.1.1:53 bnd=127.0.0.1:37081`.
+- **Ответа нет:** `FATAL SocketTimeoutException: Poll timed out` через 5 с.
+- **Причина выше UDP-кода:** `GoLog [AWG-SLOT] peer … Handshake did not
+  complete after 5 seconds, retrying` непрерывно; router TCP к 1378 —
+  `read tcp 127.0.0.1:…->127.0.0.1:1378: i/o timeout`. Bundled
+  `warp_awg_seed.conf` не поднимает data-plane на этой сети.
+- **`:udp-test`:** activity с `android:process=":udp-test"` не ставится на этом
+  ROM (`INSTALL_PARSE_FAILED_UNEXPECTED_EXCEPTION: ParsedActivityImpl cannot be
+  cast to String`); без `android:process` APK ставится, клиент работает в
+  основном процессе (всё равно отдельно от `:vpn`). Для точного `:udp-test`
+  нужен service/другой компонент.
+- **P0 verdict: FAIL (blocked by AWG handshake).** UDP ASSOCIATE/парсер/BND
+  работают; data-plane AWG мёртв. Следующий шаг — рабочий WARP/Proton config в
+  `AwgSocksBridge`, затем повторить single/DOMAIN/lifecycle/100/fail-closed.
+- **Перебор конфигов:** bundled WARP seed, PC Proton NL-FREE-241 (185.183.34.41:443),
+  NL-FREE#103 (212.8.253.154:443/1194), свежий generated NL-FREE#126
+  (185.107.56.69:88), свежий private key + NL-FREE#103 — везде
+  `Handshake did not complete after 5 seconds`. PC-диагностика `StartAwgSocks`
+  с тем же свежим конфигом тоже даёт `read udp 10.2.0.2:…: i/o timeout`.
+- **Вывод:** это не Android-специфичный и не UDP-ASSOCIATE дефект; на текущей
+  сети/конфигах не поднимается AWG data-plane. Нужен точный рабочий
+  Proton-профиль (как в сеансе 212.8.253.155), VPS или другая сеть; затем
+  повторить тест. Исходный `warp_awg_seed.conf` восстановлен.
+- **Аудит движков:** полный PROTON mode (`StartWireGuard`) и `StartAwgSocks`
+  используют один и тот же `configToUAPI` + `NewSmartBind` +
+  `wgdevice.NewDevice`; разница — TUN: `CreateAndroidTUN` vs
+  `wgnetstack.CreateNetTUN`. `NovaVpnService` ставит `setSocketProtector`;
+  `SmartBind.Open` вызывает `GlobalProtector` для IPv4/IPv6, но результат
+  `protect()` не логируется. PC `StartAwgSocks` с тем же свежим конфигом тоже
+  не завершает handshake; `pktmon` без прав администратора недоступен.
+  Повторный PROTON mode сейчас тоже не подключается и откатывается в MULTI/RU —
+  значит, блокер как минимум сеть/endpoint, а не только bridge.
+- **SmartBind/protect (добавлено логирование `[AWG-BIND]`):**
+  - Android: IPv4 `protect_called=true`, `protect_result=true`,
+    `local=0.0.0.0:37541`; IPv6 `protect_result=true`,
+    `local=[::]:49777`; `first_send_endpoint=8.6.112.6:8742`.
+  - PC: `protect_called=false` (нет Android), `local=0.0.0.0:65056`,
+    `first_send_endpoint=185.107.56.69:88`, затем `read udp 10.2.0.2:…:
+    i/o timeout`.
+  - Вывод: `SmartBind`/`protect` предварительно исправны, handshake уходит на
+    endpoint, но ответа нет ни на PC, ни на Android. Нужен контролируемый
+    WireGuard VPS для разделения «endpoint/ключи/сеть» и «движок bridge».
+- **Контролируемый локальный WireGuard peer (PC):** `TestWireGuardLoopHandshake`
+  поднимает userspace WireGuard-сервер на `127.0.0.1:51820` и `StartAwgSocks`
+  с отдельной парой ключей; handshake завершился за **0.29 с**, `-race` — ok.
+  Это доказывает, что движок/bind/`configToUAPI` bridge рабочие; отказ с
+  Proton/WARP — внешний endpoint/сеть/ключи, а не `StartAwgSocks`.
+- **P0 Android end-to-end с локальным peer — PASS:**
+  - тестовый сервер `10.77.0.1:9000` (userspace WireGuard, отдельные ключи) в
+    основном процессе, bridge — в `:vpn`, SOCKS5 127.0.0.1:1378;
+  - `LOCAL_ECHO PASS`: outer `127.0.0.1:49019`, inner `10.77.0.1:9000`,
+    payload 14 Б;
+  - `LIFECYCLE PASS`: после закрытия TCP control ответа нет;
+  - `STRESS DONE ok=100 failed=0 fd_before=157 fd_after=157 threads 43→43`;
+  - `FAIL_CLOSED PASS`: без сервера ответа нет.
+  - `DOMAIN_ECHO PASS`: `udp-test.example:9000` → `[UDP-TEST-DNS] query=udp-test.example`
+    (DNS-сервер `10.77.0.1:53` внутри туннеля) → inner `10.77.0.1:9000`,
+    payload 15 Б. Это доказывает `netStack.LookupContextHost` и ATYP=DOMAIN.
+  - Это доказывает весь UDP ASSOCIATE-путь на Android (SOCKS5 relay →
+    `netStack.DialUDP` → WireGuard handshake → echo → return), включая
+    `protect_called=true`/`protect_result=true` для IPv4/IPv6.
+  - Ограничение: сервер локальный (loopback), не Proton; DOMAIN и внешний
+    egress ещё не проверены. Тестовый клиентский конфиг лежит в
+    `assets/warp_awg_seed.conf` только на время теста; перед обычной сборкой
+    вернуть baseline.
+
+## 2026-11-13 — P0 UDP ASSOCIATE (Go, без AAR/Android)
+
+- Добавлен `nova-core/engine/awg_socks_udp.go`: SOCKS5 UDP ASSOCIATE поверх
+  `wgnetstack.Net` (host relay + `DialUDP`, DOMAIN через `LookupContextHost`,
+  FRAG=0, привязка к TCP peer IP/первому UDP-порту, idle 120 с, WaitGroup,
+  отмена контекста, без direct-fallback).
+- `awg_socks.go`: CMD 3, снятие deadline control, `dialUDP`-хук.
+- Тесты: `go test ./engine` — ok; focused `-count=100` — ok (161 с);
+  `-race` full engine — ok; focused `-race -count=20` — ok (33 с) через
+  MinGW-w64 gcc 16.2, `CGO_ENABLED=1`.
+- **Не проверено:** AAR/APK не пересобран, реальный UDP через Proton на
+  Android не запускался; `serve()` синхронно делает DNS/Dial — P1.
+- Граница: `nova-router`, `SupportsUDP`, `google-ai` не менялись.
+
+## 2026-11-13 — Gemini Android: причина найдена, рабочий транспорт Proton NL (RMX3370)
+
+```text
+APK: OBNOVA_1.34.11-arm64-v8a (AI-группы, 676 тестов)
+Режим: PROTON → AWG PROTON: NL, egress 212.8.253.155 (Naaldwijk, NL)
+```
+
+- **Симптом в MULTI + Opera (US):** Gemini Android отправляет сообщение и
+  зависает; в логах только `tun2proxy: Beginning #… UDP …:443`,
+  `Ending … with "timed out"`, TCP к `aida`/`generativelanguage` нет. Ошибки
+  сети/авторизации в logcat нет.
+- **Симптом в WARP (UDP, RU):** сообщение отправляется, ответ приходит быстро —
+  «Эта страна не поддерживается». Значит UDP-путь работает, но IP российский.
+- **Proton NL (UDP, non-RU):** `ipinfo.io` → **212.8.253.155, NL**;
+  `cloudflare-quic.com` → **«your browser used HTTP/3»** (QUIC/UDP 443 проходит);
+  Gemini Android: `Hi` → **«Hey! What can I help you with today?»**.
+- **ChatGPT app в том же Proton NL:** `Hi` → **«Hi! 😊 How can I help you
+  today?»** — сетевой ошибки нет; предыдущий 403 был свойством IP Opera, а не
+  маршрута.
+- **Остальные сервисы в Proton NL:** Claude (`claude.ai/login`) — страница
+  открылась; DeepSeek (`chat.deepseek.com`) — страница входа; Qwen
+  (`chat.qwen.ai`) — чат; Telegram — чаты загрузились; YouTube mobile — лента и
+  превью загрузились.
+- **Причина:** Gemini Android для генерации использует QUIC/UDP 443 и не
+  откатывается на TCP, если UDP недоступен. Opera — HTTP CONNECT, UDP не несёт;
+  `nova-router` в `serveUDPAssociate` явно пропускает `port == 443`. Поэтому в
+  MULTI приложение висит. WARP доказывает, что дело в IP, а не в UDP; Proton NL
+  закрывает оба условия.
+- **Ограничение:** это режим **PROTON**, а не MULTI. В MULTI нет non-RU
+  UDP-слота: `secondary` — TCP-only, `awg`/`primary` — TCP-мост с RU-выходом,
+  VLESS-профили мертвы, MASQUE не поднялся. Чтобы Gemini работал именно в MULTI,
+  нужен UDP-capable non-RU слот и пересылка UDP через него; в код это не
+  добавлялось, чтобы не ломать существующую логику (по указанию владельца).
+- **AI-группы:** `openai` (fail-closed), `google-ai`, `anthropic`
+  (fail-closed), `china-ai` (direct) собраны и покрыты тестами; в PROTON-режиме
+  роутер не участвует, поэтому их runtime-проверка в MULTI остаётся открытой.
+- **Тесты:** 676 тестов, 0 падений, 9 skipped; release-сборка успешна.
+- **Нестабильность Proton:** после установки финального APK повторные
+  подключения к Proton NL ушли в «ПОДКЛЮЧЕНИЕ... AWG Proton» на 3+ минуты;
+  сеанс остановлен вручную. Рабочий узел `212.8.253.155` подтверждён в
+  предыдущем сеансе, но бесплатные узлы Proton перебираются медленно и не
+  гарантируют соединение с первой попытки. Для стабильности нужен свой
+  VPS/AWG-узел или платный Proton.
+
+## 2026-11-13 — non-RU egress: Opera первым слотом (RMX3370)
+
+```text
+tools/rebuild-install-clean.ps1 -Variant release
+BUILD SUCCESSFUL; adb install -r → pm clear → launch
+adb reverse tcp:1371 tcp:1371   # Opera US на ПК
+```
+
+- **Egress по умолчанию:** Chrome `https://ipinfo.io/json` → `77.111.246.61`,
+  Ashburn, Virginia, `US`; через роутер `127.0.0.1:1373` — тот же адрес.
+  До правки маршрут по умолчанию был `primary` (RU).
+- **Проверка сервисов через роутер:** YouTube — **200** (0,58 с),
+  telegram.org — **200** (1,94 с), gemini.google.com — **200** (2,14 с),
+  chatgpt.com — **200** (2,10 с).
+- **Раздельное туннелирование:** на устройстве был включён режим «Только
+  выбранные» (после восстановления prefs), поэтому Chrome сначала ходил мимо
+  VPN (`92.36.79.163`, RU). Переключение на «Все» + полное переподключение
+  дало US-адрес. Мягкий REAPPLY сам по себе allow-list не перестраивает.
+- **Приложения AI:** ChatGPT — «Ошибка сети»;
+  `android.chat.openai.com` с IP Opera отвечает **403**
+  `{"cf_details":"Request is not allowed. Please try again later."}`. Gemini —
+  запрос уходит в QUIC/UDP 443 (`tun2proxy: Beginning #60 UDP …:443`,
+  `timed out`), TCP-прокси Opera UDP не несёт. Оба блокера внешние.
+- **ChatGPT-маршрут (код):** все домены OpenAI/ChatGPT, включая `chatgpt.com`,
+  `ws.chatgpt.com`, `auth0.openai.com`, `workos.com` и
+  `challenges.cloudflare.com`, сведены в одно правило `openai` до
+  `google-ai`; порядок fail-closed `secondary → vless`, без direct/dnsai.
+  Проверка после установки: `api.openai.com/v1/models` → **401** (дошло до
+  OpenAI), `chatgpt.com` → **200**, `android.chat.openai.com` → **403**
+  (IP Opera). Через AWG/DESYNC тот же хост — 000/403, лучше не становится.
+- **Релей с Android (проверено):** с PC-ключом мост
+  `OperaApiRelayBridge` стартует, но TCP до `relay.nova-app.eu:8443` с LTE
+  не встаёт (`SocketTimeoutException` 8 с), Opera останавливается на каждой
+  попытке. Для телефона без ПК этот путь на данной сети не работает.
+- **AI-группы:** добавлены независимые правила `anthropic` (Claude,
+  fail-closed `secondary → vless`) и `china-ai` (DeepSeek/Qwen,
+  `direct`); списки — `assets/lists/anthropic.txt`, `china_ai.txt`. Слоты
+  общие, поэтому новый AI-сервис добавляется списком и одной строкой порядка.
+- **Установка AI-групп:** APK собран и установлен. На момент проверки телефон
+  уже был в другом режиме (`sessionId=NovaVPN`, `tun1`), роутер не активен;
+  чтобы не прерывать сеанс пользователя, группы в MULTI на устройстве не
+  перепроверялись. Конфиг проверен unit-тестами (676 тестов).
+- **Тесты:** Kotlin — 84 класса / 676 тестов, 0 падений, 9 skipped;
+  release-сборка с `-PnovaCfProxySlot=true` успешна (environment
+  `NOVA_ALLOW_UNSIGNED_RELEASE=1`, `NOVA_ALLOW_UNPUBLISHABLE_BUILD=1`).
+- **Раздельное туннелирование (проверено на устройстве):** переключение
+  «Только выбранные» → «Все» перезапустило VPN-сеанс; `dumpsys connectivity`
+  показывает `Uids: <{0-10040 … 21002-99999}>`, Chrome снова в туннеле и
+  `ipinfo.io` → US. Мягкий REAPPLY для MULTI сам завершает процесс `:vpn`
+  (`force-stop tun2proxy`, `exit(-1)`), поэтому новый allow-list применяется.
+- **Controlled restart (код):** `SessionReapply` относит `NovaMultiVPN`,
+  `NovaDesyncVPN`, `NovaDnsVPN`, `NovaVlessVPN` к tun2proxy-сеансам; на этом
+  прогоне сработал существующий путь мягкого реаплая с перезапуском процесса,
+  отдельного controlled restart не потребовалось.
+
+## 2026-11-13 — чистый install, упрощённые маршруты (RMX3370)
+
+```text
+powershell tools/rebuild-install-clean.ps1 -Variant release
+gradlew clean assembleGithubRelease -PnovaCfProxySlot=true
+BUILD SUCCESSFUL
+adb install -r → pm clear com.brent.nova → launch
+```
+
+- **Чистый старт:** «регистрирую устройство» не висит; автогенератор WARP на
+  connect отключён. MULTI поднялся на `AWG bundled seed` / bundled WARP
+  bootstrap `162.159.195.9:500`, статус «АКТИВНО И РАБОТАЕТ».
+- **Через роутер 127.0.0.1:1373** (`curl --socks5-hostname`):
+  - `https://www.youtube.com/` → **200** (0,64 с)
+  - `https://telegram.org/` → **404** (соединение есть, 0,29 с)
+  - `https://gemini.google.com/` → **200** (14,9 с)
+  - `https://chatgpt.com/` → **403** (6,4 с) в первом прогоне; после
+    переподключения и работы DNS-AI — **200** (1,3 с). Приложение ChatGPT при
+    этом всё равно показывает «Ошибка сети» (app-хосты `ab.chatgpt.com`/
+    `android.chat.openai.com`), браузер работает.
+- **Автообновление меню:** при запуске `MainActivity` раз в сутки в фоне
+  вызывает `ProfileUpdateCoordinator.updateAll`, чтобы подписки сами
+  появлялись в меню; после CONNECTED база дополняется `syncFromLegacy`.
+- **Non-RU попытка:** после CONNECTED в фоне поднимается VLESS-слот
+  (`startVlessForForeignEgressInBackground`) и default-маршрут получает
+  `vless → primary → direct`. На этой сети все проверенные VLESS-семена не
+  прошли пробу, поэтому egress остался `loc=RU` (DME).
+- **Opera EU:** API `api2.sec-tunnel.com/v4/register_subscriber` — timeout до
+  выбора endpoint; `server-selection fastest/first` не наступает. Вшитый
+  `opera-proxy` — v1.31.0 (последний из `Alexey71/opera-proxy`).
+- **Маршруты:** OpenAI app — `secondary → vless` fail-closed; Telegram —
+  `awg → vless → primary`; Gemini support — `direct → primary`.
+- **Тесты:** 84 класса / 673 теста, 0 падений, 9 skipped.
+- **База профилей:** после CONNECTED выполняется автоперенос
+  `UnifiedProfileStore.syncFromLegacy` (меню не пустое).
+- **Не работает:** ChatGPT (нужен EU-egress); Telegram voice (нет UDP relay).
+- Карта планов: `docs/plans/2026-11-13-android-route-recovery-and-release.md`.
+
+## 2026-11-12 — стабилизация MULTI, живой прогон RMX3370
+
+```text
+./gradlew testGithubDebugUnitTest
+BUILD SUCCESSFUL; 84 класса / 672 теста, 0 падений, 9 skipped
+cd nova-router && go test ./...
+ok nova-router
+./gradlew assembleGithubRelease -PnovaCfProxySlot=true
+BUILD SUCCESSFUL
+```
+
+- **Флаг сборки:** первый релиз без `-PnovaCfProxySlot=true` дал на устройстве
+  `MULTI: DESYNC`; в логах `MASQUE-мост не поднялся`, `AWG seed не
+  запустился` — это `CF_PROXY_SLOT_ENABLED=false`, а не сетевой отказ.
+  С флагом: `MULTI: MASQUE 162.159.198.2:443`, `MULTI активен: router
+  127.0.0.1:1373 → PRIMARY1376 / DIRECT`.
+- **Проверка сервисов через роутер:** RU 302, US 302, YouTube 302,
+  Telegram 200, Gemini 200; ChatGPT `api.openai.com` — HTTP 403.
+- **DNS-AI:** до сброса override AI в маршрутах стоял `SECONDARY`, запросы шли
+  `chatgpt.com:443 → primary`. После миграции — `→ dnsai`; в логе
+  `DNS-AI chatgpt.com → [62.60.230.***]`, `DNS-AI gemini.google.com →
+  [109.120.131.***, 89.169.55.***]`. С этими адресами ChatGPT — timeout,
+  Gemini — TLS handshake failure. То есть слот и маршрут работают, но
+  полученные DNS-AI адреса в текущей сети не отвечают; нужен разбор способа
+  подключения DNS-AI (DoT/порт/профиль), а не «ещё один слот».
+- **Разбор DNS-AI (совет моделей + живые замеры):** сервис — прозрачный
+  SNI-splice на TCP/443: сертификат настоящий, ALPN пробрасывается, HTTP через
+  узел даёт 200 там, где прямой Cloudflare — 403. `chatgpt.com` жёстко прибит к
+  `62.60.230.61`, и этот узел сейчас мёртв (RST через ~19 с). У Gemini два
+  адреса: `109.120.131.200` отвечает 200 за 0,2 с, `89.169.55.148` — таймаут;
+  нужен failover. `192.144.59.14`/`186.246.49.127` в `endpoints.json` уже
+  `retired`; актуальные — `194.87.196.13` и `45.151.102.219` (DoH только по
+  HTTP/2, DoT 853). `PriorityDns.KNOWN_ADDRESSES` обновлены до upstream
+  (IPv6 + актуальные IPv4), `DnsRulesTest` больше не хардкодит старые адреса.
+  Для мобильного DPI добавлен `relayVia`: DoH — через PRIMARY, TCP/TLS к
+  релею — через AWG/VLESS (как на ПК), DESYNC — запас. После того как AWG-мост
+  поднялся, `chatgpt.com` через роутер отдал **200 OK за 1,2 с** (раньше — RST
+  на мёртвом узле). Gemini пока падает на TLS: DNS-AI отдаёт два адреса, выбор
+  шёл по TCP; добавлена TLS-проба с SNI перед выдачей соединения.
+- **AI на телефоне (финал):** после готовности AWG `chatgpt.com` через роутер —
+  **200 OK за 1,34 с** (маршрут `dnsai`, релей через AWG), `gemini.google.com` —
+  **200 OK за 13,1 с** (TLS-проба отбросила мёртвый узел; запрос ушёл `direct`
+  как запас). На ПК та же схема: DNS-AI DoH через WARP, ChatGPT/OpenAI —
+  Opera EU, Gemini — WARP.
+- **Почему «работали только Telegram и YouTube»:** в настройках стоял режим
+  «Только выбранные» (126 приложений). Переключено на «Все приложения
+  используют VPN»; после переподключения остальные приложения получили
+  маршрут. **Gemini-приложение** на вопрос «What is 2 plus 2?» ответило не
+  ошибкой сети, а плашкой **«Эта страна не поддерживается»** — это региональное
+  ограничение Google для приложения, а не обрыв VPN. **ChatGPT-приложение**
+  показывает сетевую ошибку: `ab.chatgpt.com` через DNS-AI отдаёт 403,
+  `android.chat.openai.com` — 403; PC использует для OpenAI Opera EU, а
+  Android-Opera сейчас не поднимается (API 502). Браузерный `chatgpt.com`
+  через роутер — 200. Вывод: для приложений нужен поддерживаемый страной
+  выход (Opera EU/VLESS EU), браузерные версии работают через DNS-AI.
+- **Кнопка «след. профиль»:** до фикса висела >55 с на `MASQUE-мост`;
+  причина — `stop()`/JNI `Close()` живого MASQUE-туннеля. После — при живом
+  мосте переключение уходит на VLESS, а у перебора MASQUE есть бюджет и
+  TCP-предпроверка.
+- **Потеря сети (svc data disable/enable):** watchdog сработал
+  (`MULTI rotate`, `живого VLESS-профиля нет`, `планируем новый MULTI-цикл`),
+  но `restorePersistedSession` ответил «restart session отсутствует»:
+  `decodeRestartSession` принимал только `warp`/`opera` и выбрасывал
+  `kind="multi"`. Исправлено; повторный прогон — после пересборки.
+
 ## 2026-11-09 — 1.34.11 / versionCode 175
 
 ```text

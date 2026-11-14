@@ -3,6 +3,223 @@
 > Формат: дата → что изменено → где → чем проверено. Все пути от корня
 > `C:\Users\User\Documents\Nova-Android-Fork`.
 
+## 2026-11-15 — OBNOVA 1.34.12 (176): Strict Full Tunnel (opt-in)
+
+- **Модель режимов:** `RoutePolicyMode` — `OFF / LIMITED / STRICT_FULL /
+  SELECTIVE`. Старый `killswitch=true` мигрирует только в `LIMITED`, Strict
+  включается отдельным подтверждением. `SELECTIVE` зарезервирован.
+- **RouterConfig:** в Strict нет слота `direct`, правил `exclude`/`local-tld`,
+  DIRECT-правил `spotify`/`china-ai`; `RouteClass.DIRECT` отклоняется.
+  Go-валидатор независимо отклоняет direct в слоте/типе/любом порядке и
+  `exclude`/`local-tld`, без автоисправления и fallback.
+- **Android full tunnel:** в Strict не применяются пользовательские
+  allow/disallow-списки, `DirectAppsPolicy`, DNS/domain/LAN-carve-outs;
+  только MULTI. Ручной WARP/OPERA/VLESS отклоняется, restore non-MULTI
+  блокируется. `protect()` сохранён для underlay.
+- **UI:** карточка политики с точной областью (Nova UID 10997 исключён,
+  tethering не подтверждена), подтверждение Strict, Lockdown ON/OFF/UNKNOWN;
+  после отказа backend — «НЕ ПОДКЛЮЧЕНО» + причина.
+- **Runtime:** все пользовательские UID (кроме 10997) в VPN table; банки,
+  госуслуги, операторы и новые приложения — в VPN; IPv4 PASS; IPv6
+  `unreachable default`; AUTO→MULTI; upstream loss — VPN/router живы, ответа
+  нет; MULTI failure через DIRECT-override — без WARP; Wi-Fi↔LTE; Lockdown
+  ON/OFF; DNS NXDOMAIN — без fallback.
+- **Ограничения:** Strict покрывает текущего пользователя Android (user 0);
+  tethering не покрыт; Nova UID 10997 — документированное исключение;
+  потеря primary-процесса и resolver outage — NOT TESTED. Strict по умолчанию
+  выключен.
+- Проверки: Kotlin **706/0**, Go test + `-race` PASS, release + R8 PASS.
+
+
+## 2026-11-14 — P2: внешний UDP через WARP есть, non-RU egress нет
+
+- Штатный PROTON на Wi-Fi и LTE не поднялся: импортированные Proton-конфиги
+  (`warp-awg-exact`) дают `no_traffic`, сессия останавливается.
+- Внешний UDP через MULTI/WARP подтверждён: DNS `1.1.1.1:53` — PASS,
+  STUN Binding — PASS, внешний адрес `104.28.230.248:40314`; TCP-egress тот
+  же `104.28.230.248`, физический IP Wi-Fi `194.34.98.234` — direct-утечки
+  нет.
+- WARP-адрес `104.28.230.248` геолокируется как **RU, Moscow**, поэтому
+  non-RU egress для Google AI/Proton NL не выполнен. На проверенном
+  LTE-маршруте WARP дал `104.28.198.247` — тоже **RU, Moscow**; DNS UDP
+  работает, STUN к Google IP на LTE недоступен. Нужен рабочий Proton NL или
+  VPS. Это результат двух проверенных сетей, а не утверждение о WARP
+  повсеместно.
+- Временная activity внешнего UDP удалена; release пересобран.
+
+## 2026-11-13 — P1.2: UDP dispatcher в nova-router
+
+- **UDP больше не уходит напрямую.** Раньше `serveUDPAssociate` делал
+  `net.DialUDP` в обход политики: DNS/QUIC любого приложения шли мимо
+  выбранного слота. Теперь каждый датаграм проходит ту же политику
+  (`routeOrderFor`), что и TCP, и обслуживается **только первым слотом**
+  правила.
+- **Explicit capabilities.** Если первый слот правила не имеет `udp:true`,
+  пакет отбрасывается (fail-closed), без перебора следующих слотов и без
+  direct fallback. `UDP/443` по-прежнему отбрасывается, чтобы QUIC шёл по TCP.
+- **SOCKS5 UDP ASSOCIATE к слоту.** Для `type=socks5` роутер открывает
+  upstream-ассоцирование на слот (IP-назначения) или отдельно на домен
+  (`slot + domain`), шлёт исходный hostname (`ATYP=DOMAIN`) и принимает
+  ответы только по отправленным flow. Доменная ассоциация изолирует два имени
+  с одинаковым портом и разными IP. Всё закрывается вместе с TCP control
+  клиента. Лимит — 64 flow на слот и 32 ассоциации на клиента, idle-таймаут
+  клиентской ассоциации — 120 с.
+- **Explicit direct.** `direct` обслуживает UDP напрямую только когда правило
+  само поставило его первым; это не fallback.
+- **Capability не привязана к порту.** `NovaVpnService` хранит
+  `multiCfProxyKind`/`multiPrimaryKind` и передаёт `udpSlots` по фактическому
+  транспорту, а не по совпадению порта с 1378.
+- **Тесты:** `go test ./...` в `nova-router` — ok, `-race` — ok,
+  `-count=20` — ok; добавлены проверки DOMAIN, drop для TCP-only слота,
+  drop без capability и закрытия upstream вместе с клиентом.
+- **Android end-to-end (контролируемый peer):** `ROUTER_UDP_DOMAIN PASS`
+  (`youtube.com:9000` → inner `10.77.0.1:9000`) и `ROUTER_UDP_DNS PASS`
+  через `nova-router`; временная activity/peer/конфиг после прогона удалены.
+- **P1.3 Android:** `ROUTER_UDP_TWO_DOMAINS PASS` (два домена на одном порту,
+  разные IP), `ROUTER_UDP_TCP_ONLY DROP PASS` и `ROUTER_UDP_NO_AWG DROP PASS`
+  — fallback на другой слот/direct отсутствует.
+- **Сборка:** `libnova-router.so` пересобран для arm64 и armv7 (armv7 —
+  через cgo/NDK `armv7a-linux-androideabi24-clang`), оба ELF PIE.
+
+## 2026-11-13 — Gemini Android заработал через Proton NL; AI-группы
+
+- **Причина (уточнено после разбора GPT):** Gemini Android в текущей
+  конфигурации шлёт QUIC/UDP 443; успешного TCP-запроса к AI-endpoint в окне
+  диагностики не видно, но **отсутствие TCP-fallback не доказано** (RFC 9114
+  рекомендует SHOULD-переход). Opera (secondary) — TCP-only, `nova-router`
+  пропускает `UDP/443`; в MULTI приложение висит. WARP (UDP, RU) отвечает
+  «страна не поддерживается», Proton NL (UDP, non-RU) — работает.
+- **Проверено в PROTON (AWG NL):** egress `212.8.253.155` (NL),
+  `cloudflare-quic.com` — HTTP/3; Gemini Android `Hi` → ответ; ChatGPT app
+  `Hi` → ответ; Claude/DeepSeek/Qwen открываются; Telegram и YouTube работают.
+- **Граница:** это режим PROTON, не MULTI. В MULTI нет non-RU UDP-слота;
+  `secondary` — TCP-only, `awg`/`primary` — TCP-мост с RU-выходом, VLESS мёртв,
+  MASQUE не поднялся. Для Gemini в MULTI нужен UDP-capable слот; без него
+  рабочий вариант — PROTON.
+- **AI-группы:** `openai` (fail-closed `secondary → vless`), `google-ai`,
+  `anthropic` (fail-closed), `china-ai` (direct); списки в assets, слоты общие.
+  В PROTON-режиме роутер не участвует, runtime-проверка групп в MULTI открыта.
+- **Тесты:** 676, 0 падений, 9 skipped; release-сборка успешна.
+
+## 2026-11-13 — non-RU egress для остальных приложений (Opera первым слотом)
+
+- **Opera стала первым слотом по умолчанию.** В `RouterConfigFactory` при живом
+  Opera `defaultOrder` = `secondary → primary → spoof → direct`, а не
+  `primary → …`. Telegram и YouTube этим не затрагиваются: у них закреплённые
+  правила (`telegram-ip/telegram` → `primary`, `youtube-ip/youtube` → `primary`).
+  Проверено на телефоне: Chrome `ipinfo.io` → `77.111.246.61`, Ashburn,
+  Virginia, **US**; Telegram/YouTube/Gemini/ChatGPT-веб через роутер — 200.
+  Мост с ПК включается `tools/enable-opera-bridge.ps1`.
+- **AI-правила:** `google_ai`/`ai` теперь начинаются с `secondary` (Opera),
+  затем DNS-AI/direct; `gemini-support` — тоже Opera первой. Причина: Gemini и
+  OpenAI смотрят на egress-IP, а DNS-AI меняет только резолвер.
+- **ChatGPT — один маршрут на весь набор доменов.** `openai` теперь
+  включает `chatgpt.com`, `chat.openai.com`, `auth.openai.com`,
+  `auth0.openai.com`, `ab.chatgpt.com`, `android.chat.openai.com`,
+  `api.openai.com`, `ws.chatgpt.com`, `oaistatic.com`, `oaiusercontent.com`,
+  `openaimerge.com`, `workos.com`, `challenges.cloudflare.com` и стоит до
+  `google-ai`. Порядок — fail-closed `secondary → vless`: авторизация, статика,
+  WebSocket и API выходят с одного IP.
+- **AI-группы поверх общего транспорта.** В `RouterConfigFactory` теперь
+  независимые правила `openai`, `anthropic`, `china-ai`, `google-ai` и
+  общий `ai`; слоты (`secondary`/`vless`/`primary`/`dnsai`/`direct`) описаны
+  один раз. `anthropic` — fail-closed `secondary → vless`; `china-ai`
+  (`deepseek.com`, `qwen.ai`, `dashscope.aliyuncs.com`) — `direct` с
+  возможностью переопределить группой. Списки — `assets/lists/anthropic.txt`,
+  `assets/lists/china_ai.txt`.
+- **Релей с Android не поднялся:** с PC-ключом `OperaApiRelayBridge` стартует,
+  но TCP до `relay.nova-app.eu:8443` с LTE уходит в timeout (8 с), Opera
+  останавливается на каждой попытке. Остаётся мост с ПК через `adb reverse`.
+- **Автообновление меню:** при запуске `MainActivity` раз в сутки в фоне зовёт
+  `ProfileUpdateCoordinator.updateAll`; подписки сами появляются в меню.
+- **Раздельное туннелирование:** после смены режима на «Все» мягкий REAPPLY
+  обновляет extras, но системный VPN сохраняет прежний allow-list до полного
+  переподключения. На устройстве проверено: смена режима перезапускает `:vpn`,
+  `dumpsys` показывает UIDs `0-99999`, Chrome снова в туннеле. В коде
+  `SessionReapply` дополнительно относит `NovaMultiVPN`, `NovaDesyncVPN`,
+  `NovaDnsVPN`, `NovaVlessVPN` к tun2proxy-сеансам.
+- **Что осталось внешним блокером:** ChatGPT-приложение получает 403
+  (`android.chat.openai.com` → `{"cf_details":"Request is not allowed…"}`) с
+  IP Opera; Gemini-приложение уходит в QUIC/UDP 443, который TCP-прокси не
+  несёт, и не отвечает. Нужен чистый non-RU egress с UDP (VPS/живой EU-релей).
+
+## 2026-11-13 — чистый цикл, упрощение маршрутов и bootstrap (без выпуска)
+
+> Актуальная карта планов и блокеров:
+> `docs/plans/2026-11-13-android-route-recovery-and-release.md`.
+
+- **Чистый цикл тестирования:** `tools/rebuild-install-clean.ps1` — `gradlew
+  clean` → release с `-PnovaCfProxySlot=true` → `adb install -r` → `pm clear`
+  данных приложения → запуск. Старые prefs/маршруты больше не попадают в тест.
+  Важно: `pm clear` стирает `masque_config.json`; для будущего нужен сброс
+  маршрутов без стирания учётных данных.
+- **Регистрация WARP:** автогенератор больше не запускается на connect, если
+  identity ещё нет; сначала используются bundled/feed-профили. В
+  `WarpProfileGenerator` публичный фид пробуется раньше Cloudflare-регистрации,
+  поэтому «регистрирую устройство» не висит на чистой установке.
+- **Bootstrap:** при отсутствии сохранённого WARP-конфига в MULTI кладётся
+  bundled `warp_bootstrap.json` (`162.159.195.9:500`). Это дало рабочее
+  подключение на чистом старте: PRIMARY = AWG bootstrap, TUN и роутер живы.
+- **AWG-ротация:** при отказе data-plane больше не уходим сразу в мёртвый VLESS,
+  а перебираем следующие AWG-seeds (`startNextAwgPrimary`).
+- **Маршруты упрощены:** OpenAI-приложение (`ab.chatgpt.com`,
+  `android.chat.openai.com`, `api.openai.com`, `auth.openai.com`,
+  `oaistatic/oaiusercontent`) — fail-closed `Opera → VLESS`, без DNS-AI/direct/
+  primary. Telegram — `AWG → VLESS → PRIMARY`, без Opera/спуфа.
+- **Единая база:** после первого CONNECTED, если `UnifiedProfileStore` пуст,
+  выполняется фоновый `syncFromLegacy`, чтобы меню не оставалось пустым на
+  чистой установке.
+- **Живой чистый прогон:** через роутер YouTube — 200, telegram.org — 404
+  (соединение есть), Gemini — 200, ChatGPT — 403. Opera API
+  (`api2.sec-tunnel.com/v4/register_subscriber`) — timeout до выбора endpoint;
+  EU-выхода нет. `opera-proxy` уже v1.31.0 (последний из
+  `Alexey71/opera-proxy`).
+- **Проверки:** Kotlin — 84 класса / 673 теста, 0 падений (9 skipped);
+  `assembleGithubRelease` с `-PnovaCfProxySlot=true` — успешно. Версия пока
+  **1.34.11 / 175**, релиз не публиковался.
+- **Осталось:** EU-egress для ChatGPT (Opera API-релей или свой EU-VLESS/VPS),
+  проверить, почему `masque_seed.json` не подхватывается, и решить вопрос
+  Telegram voice (UDP relay).
+
+## 2026-11-12 — стабилизация MULTI и DNS-AI (без выпуска)
+
+- **Флаг сборки:** личный release теперь обязан собираться с
+  `-PnovaCfProxySlot=true`. Без него `CF_PROXY_SLOT_ENABLED=false`, MULTI
+  остаётся на DESYNC, а слоты MASQUE/AWG и `dnsai` фактически отключены.
+  Это и было причиной «на устройстве MULTI: DESYNC» после переустановки.
+- **Сторож MULTI:** в `runMultiPhase` добавлена проба через локальный роутер
+  (6 с на экране, 15 с в фоне; 3 отказа/15 с). При отказе перезапускается
+  PRIMARY без разрыва TUN. Если горячий перезапуск не удался — цикл выходит и
+  `startSmartConnection` планирует новый с `RestartSession(kind="multi")`.
+- **Фон:** `scheduleMultiRetryInsteadOfStopping` сохраняет MULTI-сессию,
+  ставит будильник восстановления (переживает смерть `:vpn`) и повторяет с
+  backoff 2,5/5/15/30/60 с. `handleBackgroundHeartbeat` проверяет data-plane
+  и при выключенном экране (два промаха подряд до реконнекта).
+- **Кнопка «след. профиль» в MULTI:** больше не шлёт REAPPLY (он сносил TUN).
+  Новое `ACTION_SWITCH_MULTI_PROFILE` меняет PRIMARY горячо; занятый MASQUE/AWG
+  не останавливается (JNI `Close` может висеть), вместо этого переключение на
+  VLESS/AWG. У MASQUE-перебора появился жёсткий бюджет и TCP-предпроверка.
+- **DNS-AI:** в `nova-router` добавлен слот `dnsai` (DoH `dns.dns-ai.ru`,
+  bootstrap-адреса, HTTP/2, отрицательный кэш; DoH — через PRIMARY, соединение
+  к релею — через DESYNC `relayVia`). AI-правила идут
+  `dnsai → direct → secondary → vless/awg → primary`; старые override
+  `ai`/`google_ai` (SECONDARY/PRIMARY) одноразово сбрасываются в AUTO.
+  `PriorityDns.KNOWN_ADDRESSES` обновлены до upstream: старые
+  `192.144.59.14`/`186.246.49.127` помечены `retired`, актуальные —
+  IPv6 + `194.87.196.13`/`45.151.102.219`.
+- **Сверка с PC (`docs/releases/v1.44.2.32.md`):** DoH идёт через живой
+  WARP-слот; Gemini `89.169.55.148` отдаёт 200 через WARP; ChatGPT
+  `62.60.230.61` через WARP — 403, ему нужна Opera EU. Поэтому добавлено
+  отдельное правило `openai` (Opera → VLESS → DNS-AI), а релей DNS-AI теперь
+  идёт через AWG/VLESS, не только DESYNC.
+- **Живой AI-прогон:** ChatGPT — `200 OK` за 1,34 с (`dnsai`, релей через AWG),
+  Gemini — `200 OK` за 13,1 с (TLS-проба отбросила мёртвый узел, запрос ушёл
+  `direct` как запас). Оба работают без Opera.
+- **Диагностика:** в «Проверку сервисов» добавлены Gemini и ChatGPT.
+- Проверки: `go test ./...` в `nova-router` — ok; Kotlin — 84 класса / 673
+  теста, 0 падений (9 skipped); release с `-PnovaCfProxySlot=true` собран и
+  проверен на RMX3370. Живые результаты AI — см. `docs/fork/VERIFICATION.md`.
+
 ## 2026-11-09 — 1.34.11 / versionCode 175
 
 - **YouTube-видео (главный фикс):** `nova-router` для SOCKS-слота теперь

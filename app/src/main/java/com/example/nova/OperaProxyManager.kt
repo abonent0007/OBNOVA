@@ -128,8 +128,7 @@ object OperaProxyManager {
     private const val DEFAULT_SERVER_SELECTION = "fastest"
     private const val AM_SERVER_SELECTION = "first"
     private const val DEFAULT_SERVER_SELECTION_TIMEOUT = "10s"
-    private const val DEFAULT_TEST_URL =
-        "https://ajax.googleapis.com/ajax/libs/indefinite-observable/2.0.1/indefinite-observable.bundle.js"
+    private const val DEFAULT_TEST_URL = "https://cp.cloudflare.com/generate_204"
     private const val DEFAULT_API_CLIENT_TYPE = "se0316"
     private const val DEFAULT_API_CLIENT_VERSION = "Stable 114.0.5282.21"
     private const val DEFAULT_API_USER_AGENT =
@@ -586,8 +585,14 @@ object OperaProxyManager {
             // единственным потребителем, который о признаке не знал: запуск и discovery
             // шли в релей на каждой попытке. Отказ она теперь узнаёт сама — ответ
             // релея на `CONNECT` читает мост [OperaApiRelayBridge].
-            val relayPaused = NovaRelay.isPaused()
-            val apiRelays = if (relayPaused) emptyList() else apiRelays()
+            // PC-замер 2026-11-01: relay.nova-app.eu:8443/2053 не отвечает
+            // (TCP timeout), и попытка регистрации через него даёт 502 на
+            // каждом плане. В личном форке релея нет — API идёт напрямую,
+            // как в PC-failover после трёх отказов релея.
+            // В обычной сборке релей выключен: ключ Android привязан к versionCode,
+            // а в личном форке он может быть погашен. Включается только явно —
+            // `NOVA_OPERA_RELAY_ENABLED=true` при сборке.
+            val apiRelays = if (BuildConfig.OPERA_RELAY_ENABLED) apiRelays() else emptyList()
             val customApiProxy = resolveCustomApiProxy(clientData, launchLogger)
             val bootstrapProxy = bootstrapApiProxy.trim()
             val effectiveApiProxy = customApiProxy.ifEmpty {
@@ -691,15 +696,9 @@ object OperaProxyManager {
                         "Вызовы API SurfEasy для $requestedCountry сначала пробуем через свои релеи " +
                             "(${apiRelays.size}): туннель при этом набирается напрямую."
                     )
-                } else if (relayPaused) {
-                    launchLogger(
-                        "Свои релеи API SurfEasy на паузе ещё ${NovaRelay.describePause()}: ключ этой сборки " +
-                            "погашен сервером, discover идёт без них. ${NovaRelay.OUTDATED_MESSAGE}."
-                    )
                 } else {
                     launchLogger(
-                        "Релеи API SurfEasy не заданы в сборке — discover идёт напрямую. " +
-                            "Из России такой набор endpoint'ов обычно недостижим."
+                        "Релеи API SurfEasy не используются — discover идёт напрямую."
                     )
                 }
                 val directHosts = candidateHosts.ifEmpty { listOf("") }
@@ -854,11 +853,19 @@ object OperaProxyManager {
                     "-init-retry-interval",
                     "700ms",
                     "-server-selection",
-                    serverSelectionForCountry(requestedCountry),
+                    // Явный endpoint — это выбор "first": fastest перебирает
+                    // ротирующийся пул и на Android стабильно давал code 12.
+                    if (endpointOverride.isNullOrBlank()) {
+                        serverSelectionForCountry(requestedCountry)
+                    } else {
+                        "first"
+                    },
                     "-server-selection-test-url",
                     DEFAULT_TEST_URL,
                 )
-                if (serverSelectionForCountry(requestedCountry) == DEFAULT_SERVER_SELECTION) {
+                if (endpointOverride.isNullOrBlank() &&
+                    serverSelectionForCountry(requestedCountry) == DEFAULT_SERVER_SELECTION
+                ) {
                     args += listOf("-server-selection-timeout", DEFAULT_SERVER_SELECTION_TIMEOUT)
                 }
                 appendOperaApiProfileArgs(args, apiProfile)

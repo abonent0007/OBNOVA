@@ -1,0 +1,7 @@
+# Claude / Anthropic. Отдельная группа, чтобы менять маршрут независимо
+# от OpenAI и Gemini. Россия не входит в поддерживаемые регионы Anthropic.
+claude.ai
+api.anthropic.com
+anthropic.com
+console.anthropic.com
+claudeusercontent.com

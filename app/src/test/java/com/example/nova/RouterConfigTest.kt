@@ -1,4 +1,4 @@
-package com.example.nova
+﻿package com.example.nova
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -23,10 +23,43 @@ class RouterConfigTest {
             "{\"slots\":{\"direct\":{\"type\":\"direct\"}," +
                 "\"primary\":{\"type\":\"socks5\",\"addr\":\"127.0.0.1:1370\"}," +
                 "\"secondary\":{\"type\":\"http\",\"addr\":\"127.0.0.1:1371\"}}," +
-                "\"rules\":[{\"domains\":[\"youtube.com\"],\"order\":[\"secondary\",\"primary\",\"direct\"]}]," +
-                "\"defaultOrder\":[\"primary\",\"secondary\",\"direct\"]}",
+                "\"rules\":[{\"domains\":[\"youtube.com\"],\"tcpOrder\":[\"secondary\",\"primary\",\"direct\"],\"udpOrder\":[]}]," +
+                "\"defaultOrder\":[\"primary\",\"secondary\",\"direct\"],\"defaultUdpOrder\":[]}",
             json,
         )
+    }
+
+    @Test
+    fun `allowQuic is serialized only when enabled`() {
+        val enabled = RouterConfig.build(
+            slots = mapOf("primary" to RouterConfig.SlotSpec("socks5", "127.0.0.1:1378", udp = true)),
+            rules = listOf(
+                RouterConfig.RuleSpec(
+                    domains = listOf("quic.example"),
+                    order = listOf("primary"),
+                    name = "quic",
+                    udpOrder = listOf("primary"),
+                    allowQuic = true,
+                ),
+            ),
+            defaultOrder = listOf("primary"),
+            defaultUdpOrder = listOf("primary"),
+        )
+        assertTrue(enabled.contains("\"allowQuic\":true"))
+        val disabled = RouterConfig.build(
+            slots = mapOf("primary" to RouterConfig.SlotSpec("socks5", "127.0.0.1:1378", udp = true)),
+            rules = listOf(
+                RouterConfig.RuleSpec(
+                    domains = listOf("quic.example"),
+                    order = listOf("primary"),
+                    name = "quic",
+                    udpOrder = listOf("primary"),
+                ),
+            ),
+            defaultOrder = listOf("primary"),
+            defaultUdpOrder = listOf("primary"),
+        )
+        assertTrue(!disabled.contains("\"allowQuic\""))
     }
 
     @Test

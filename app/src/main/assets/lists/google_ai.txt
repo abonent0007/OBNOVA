@@ -4,7 +4,6 @@ gemini.google.com
 aistudio.google.com
 generativelanguage.googleapis.com
 makersuite.google.com
-openai.com
 api.openai.com
 chatgpt.com
 chat.openai.com

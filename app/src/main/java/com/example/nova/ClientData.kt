@@ -1137,6 +1137,15 @@ class ClientData(context: Context) {
          * пойман на устройстве, и повторять его здесь незачем.
          */
         registering: Boolean? = null,
+        /**
+         * Состояние Always-on и Lockdown, снятое самой службой через публичные
+         * `VpnService.isAlwaysOn()/isLockdownEnabled()` (API 29+). UI-процесс не
+         * может вызвать их у чужого экземпляра службы, поэтому значения едут
+         * через service_state.json. `null` — «нет новостей», прежнее значение
+         * сохраняется; на API < 29 остаётся неизвестным.
+         */
+        alwaysOn: Boolean? = null,
+        lockdown: Boolean? = null,
     ) {
         val normalizedState = state.ifBlank { NovaVpnService.STATE_STOPPED }
         val normalizedBackend = backend?.trim()?.takeIf { it.isNotEmpty() }
@@ -1198,6 +1207,8 @@ class ClientData(context: Context) {
             normalizedTransport,
             normalizedNotice,
             normalizedRegistering,
+            alwaysOn,
+            lockdown,
         )
     }
 
@@ -1246,6 +1257,14 @@ class ClientData(context: Context) {
     fun getServiceAttemptTotal(): Int =
         readServiceStateFile().optInt("attempt_total", -1).takeIf { it >= 0 }
             ?: prefs.getInt("service_attempt_total", 0)
+
+    /** Always-on, снятый службой (API 29+); null — неизвестно. */
+    fun getServiceAlwaysOn(): Boolean? =
+        readServiceStateFile().let { if (it.has("always_on")) it.optBoolean("always_on") else null }
+
+    /** Lockdown, снятый службой (API 29+); null — неизвестно. */
+    fun getServiceLockdown(): Boolean? =
+        readServiceStateFile().let { if (it.has("lockdown")) it.optBoolean("lockdown") else null }
     // Кэш числа попыток удалён намеренно, восстанавливать не нужно.
     //
     // Он лежал в SharedPreferences и писался только процессом `:vpn`, а читался в
@@ -1378,6 +1397,10 @@ class ClientData(context: Context) {
             ).takeIf { session ->
                 when (session.kind) {
                     "opera" -> true
+                    // MULTI восстанавливается по выбранному режиму, ключей у
+                    // него нет: отбрасывать сессию из-за пустых полей нельзя,
+                    // иначе после отказа restart_session молча исчезает.
+                    "multi" -> true
                     "warp" -> !session.privateKey.isNullOrBlank() &&
                         !session.ipv4.isNullOrBlank() &&
                         !session.ipv6.isNullOrBlank() &&
@@ -1716,6 +1739,12 @@ class ClientData(context: Context) {
      * кто ещё не подводил. Объём ограничен [MAX_VLESS_PROFILES] — подписки бывают на
      * тысячи записей, а под такой объём нужен Room (см. docs/vless-reality-plan.md).
      */
+    fun getLastProfileRefreshAt(): Long = prefs.getLong("last_profile_refresh_at", 0L)
+
+    fun setLastProfileRefreshAt(atMs: Long) {
+        prefs.edit().putLong("last_profile_refresh_at", atMs).commit()
+    }
+
     fun getVlessProfileLinks(): List<String> {
         val raw = readVlessStore().optString("links")
         if (raw.isBlank()) return emptyList()
@@ -4163,7 +4192,10 @@ class ClientData(context: Context) {
         transport: String,
         notice: String,
         registering: Boolean,
+        alwaysOn: Boolean? = null,
+        lockdown: Boolean? = null,
     ) {
+        val previous = readServiceStateFile()
         val payload = JSONObject().apply {
             put("state", state)
             put("backend", backend)
@@ -4173,6 +4205,14 @@ class ClientData(context: Context) {
             put("attempt_ordinal", attemptOrdinal.coerceAtLeast(0))
             put("attempt_total", attemptTotal.coerceAtLeast(0))
             put("updated_at", System.currentTimeMillis())
+            // null — «нет новостей»: не затираем снятое службой значение
+            // публикацией из UI-процесса, которая этих API не видит.
+            if (alwaysOn != null || previous.has("always_on")) {
+                put("always_on", alwaysOn ?: previous.optBoolean("always_on"))
+            }
+            if (lockdown != null || previous.has("lockdown")) {
+                put("lockdown", lockdown ?: previous.optBoolean("lockdown"))
+            }
         }.toString().toByteArray(Charsets.UTF_8)
         val stream = try {
             serviceStateFile.startWrite()

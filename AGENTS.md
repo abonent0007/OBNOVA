@@ -11,7 +11,7 @@ Nova для Android: приложение с активной адаптацие
 
 ## Текущее состояние личного форка
 
-- Версия **1.34.11 / versionCode 175** (OBNOVA).
+- Версия **1.34.12 / versionCode 176** (OBNOVA).
 - Встроенный апдейтер включён для `github`-сборки (`BuildConfig.UPDATER_ENABLED = true`)
   и читает релизы **`abonent0007/OBNOVA`** через GitHub API; `fdroid`-сборка
   апдейтер не включает (правило каталога). Облачные профили (Proton, VLESS, WARP)
@@ -61,6 +61,8 @@ Nova для Android: приложение с активной адаптацие
 - Требуются JDK 17 (`JAVA_HOME`), Android SDK (compileSdk 35, targetSdk 34) и
   Gradle wrapper 9.3.1. AVD для проверки — `Pixel_7_Pro`; MCP android-emulator
   глобально выключен, используйте `adb`/`emulator` как fallback.
+- Личный release собирается с `-PnovaCfProxySlot=true` (иначе MASQUE/AWG-слоты
+  MULTI и `dnsai` выключены); без флага MULTI остаётся на DESYNC.
 - Debug: `./gradlew assembleGithubDebug` (Windows: `gradlew.bat assembleGithubDebug`);
   результат — `app/build/outputs/apk/github/debug/`.
 - Release: `./gradlew assembleGithubRelease` — требует `keystore.properties`;
@@ -87,6 +89,11 @@ Nova для Android: приложение с активной адаптацие
 
 ## Проверки
 
+- Чистый цикл перед тестами на телефоне: `tools/rebuild-install-clean.ps1`
+  (по умолчанию release) — делает `gradlew clean`, собирает с
+  `-PnovaCfProxySlot=true`, ставит APK, **очищает данные приложения** `pm clear`
+  и запускает. Старые prefs/кэш профилей не переносятся в новую сборку.
+  Флаг `-KeepData` сохраняет данные, `-NoClean`/`-NoBuild` — частичный цикл.
 - Сборка: `./gradlew assembleGithubDebug`.
 - Тесты/линт: `./gradlew test`, `./gradlew lint`.
 - Release после R8 проверять на AVD отдельно: JNI/Go/Xray могут ломаться только

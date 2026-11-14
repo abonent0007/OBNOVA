@@ -180,7 +180,17 @@ object SessionReapply {
     private const val POST_STOP_DELAY_MS = 2_600L
 
     /** Метки системного VPN у транспортов поверх tun2proxy. */
-    private val TUN_PROXY_SESSION_LABELS = listOf("NovaOperaVPN", "NovaTorVPN")
+    private val TUN_PROXY_SESSION_LABELS = listOf(
+        "NovaOperaVPN",
+        "NovaTorVPN",
+        // MULTI/DESYNC/DNS/VLESS тоже держат TUN через tun2proxy. Без них смена
+        // раздельного туннелирования проходила «мягким» путём, а allow-list
+        // системного VPN оставался прежним до полного переподключения.
+        "NovaMultiVPN",
+        "NovaDesyncVPN",
+        "NovaDnsVPN",
+        "NovaVlessVPN",
+    )
 
     /** Желаемый транспорт по текущим предпочтениям — он же уходит в состояние службы. */
     fun desiredBackend(clientData: ClientData): String {

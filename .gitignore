@@ -31,3 +31,9 @@ keystore.properties
 *.log
 .DS_Store
 Thumbs.db
+
+# Local diagnostic / backups / bundled secret seed
+ipv6diag/
+*.bak-udp
+app/src/main/assets/*.bak
+app/src/main/assets/masque_seed.json

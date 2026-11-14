@@ -147,24 +147,27 @@ object WarpProfileGenerator {
                             "отбирать сессию у рабочего ключа (I27)."
                     )
                 }
-                publish(appContext, STATE_RUNNING, "WARP: регистрирую устройство", 0, targetCount)
-                val config = register { }
-                val registered = config?.let {
-                    WarpGeneratedStore.Identity(
-                        privateKey = it.privateKey,
-                        publicKey = it.publicKey,
-                        ipv4 = it.ipv4,
-                        ipv6 = it.ipv6,
-                        peerPublicKey = it.peerPublicKey,
-                        reserved = it.reserved.orEmpty(),
-                        createdAt = System.currentTimeMillis(),
-                    )
+                // Сначала фид: на чистой установке регистрация Cloudflare из РФ
+                // может висеть минутами (несколько стадий по 35–90 с), а
+                // пользователь видит «регистрирую устройство». Фид даёт готовую
+                // личность за секунды; регистрация остаётся только запасом.
+                LogManager.log("WARP-генератор: сначала пробуем публичный фид личности.")
+                val fromFeed = WarpConfigFeed.fetch()
+                val identity = fromFeed ?: run {
+                    publish(appContext, STATE_RUNNING, "WARP: регистрирую устройство", 0, targetCount)
+                    val config = register { }
+                    config?.let {
+                        WarpGeneratedStore.Identity(
+                            privateKey = it.privateKey,
+                            publicKey = it.publicKey,
+                            ipv4 = it.ipv4,
+                            ipv6 = it.ipv6,
+                            peerPublicKey = it.peerPublicKey,
+                            reserved = it.reserved.orEmpty(),
+                            createdAt = System.currentTimeMillis(),
+                        )
+                    }
                 }
-                // Если Cloudflare не ответил (из РФ его API фильтруется), берём
-                // готовый конфиг из публичного WARP-фида. Своя регистрация всегда
-                // первая; фид — только запасной путь, чтобы кнопка не оставалась
-                // без профилей.
-                val identity = registered ?: WarpConfigFeed.fetch()
                 if (identity == null) {
                     // Молчаливый отказ здесь неотличим от «сеть медленная» (I4), а
                     // лечение разное: одно — подождать, другое — включить релей.

@@ -297,8 +297,6 @@ t.co
 tadst.com
 tampermonkey.net
 tapeop.dev
-telegram.org
-telesco.pe
 tftrove.com
 thepiratebay.org
 tiktokcdn-us.com

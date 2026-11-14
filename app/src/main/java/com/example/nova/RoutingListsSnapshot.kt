@@ -13,6 +13,8 @@ class RoutingListsSnapshot(
     private val main: DomainList = DomainList.EMPTY,
     private val ai: DomainList = DomainList.EMPTY,
     private val googleAi: DomainList = DomainList.EMPTY,
+    private val anthropic: DomainList = DomainList.EMPTY,
+    private val chinaAi: DomainList = DomainList.EMPTY,
     private val spotify: DomainList = DomainList.EMPTY,
     private val youtube: DomainList = DomainList.EMPTY,
     private val telegram: DomainList = DomainList.EMPTY,
@@ -50,6 +52,8 @@ class RoutingListsSnapshot(
     fun mainDomains(): List<String> = main.domains()
     fun aiDomains(): List<String> = ai.domains()
     fun googleAiDomains(): List<String> = googleAi.domains()
+    fun anthropicDomains(): List<String> = anthropic.domains()
+    fun chinaAiDomains(): List<String> = chinaAi.domains()
     fun spotifyDomains(): List<String> = spotify.domains()
     fun youtubeDomains(): List<String> = youtube.domains()
     fun telegramDomains(): List<String> = telegram.domains()
